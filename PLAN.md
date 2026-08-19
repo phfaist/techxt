@@ -192,10 +192,11 @@ Porting references in the pylatexenc checkout (`pylatexenc/latex2text/__init__.p
 ≈3700 lines, `pylatexenc/latex2text/_defaultspecs.py` ≈2000 lines):
 
 **Adopt (redesigned into techxt's architecture):**
-- The five math modes with `fancy` as default, and the whole fancy math engine:
-  atom classes, plain-string segmentation, join rules, unary-minus reclassification,
-  script handling and sub/superscript unicode tables, wrappable pieces,
-  `math_expression_in` delimiters, `\sqrt` → `√`/`∛`/`∜`. (§10.5)
+- The fancy math engine, as the default mode: atom classes, plain-string
+  segmentation, join rules, unary-minus reclassification, script handling and
+  sub/superscript unicode tables, wrappable pieces, `math_expression_in` delimiters,
+  `\sqrt` → `√`/`∛`/`∜`. techxt's mode *set* is redesigned, not ported: exactly
+  `Fancy | Plain | Source` (§10.5), not v3's five modes. (§10.5)
 - Unicode font alphabets (`fmt_math_text_style`, offsets + exception tables) with
   separate text/math font-style state. (§10.5)
 - List rendering: per-depth markers `• – * ·` and `1. (a) i. A.`, *same-kind* depth
@@ -600,11 +601,21 @@ subsection) with underline length = display width of the heading line; deeper le
 
 ### 10.5 Math (`techxt::mathfmt` + `defs::math*`) — settled: full fancy engine in v1
 
-`MathMode` option: `Fancy` (default) | `Text` | `WithDelimiters` | `Verbatim` |
-`Remove`. Display detection: `math_form() == Display` or math environment. Display
-output is an indented block (4 spaces) in all convert-modes; `Verbatim` re-emits the
-subtree as LaTeX via `SourceRecomposer` (payload-based) — inline stays inline, display
-becomes a verbatim block; `Remove` emits nothing.
+`MathMode` option (settled — exactly three modes, at least initially; v3's
+`text`/`with-delimiters`/`remove` are deliberately not ported):
+- **`Fancy` (default)** — the full engine below.
+- **`Plain`** — content is converted through the same definitions database (unicode
+  symbols, sub/superscripts with unicode-or-`^(…)` fallback incl. the
+  `math_expression_in` wrapping, font alphabets), and source whitespace is ignored
+  exactly as in Fancy — but the atom-class joiner is **not** active: rule outputs
+  concatenate directly with no inserted spacing (`$a + b$` → `a+b`,
+  `$\sin(x + y)$` → `sin(x+y)`). Note this is *not* v3's `text` mode (which kept
+  source whitespace).
+- **`Source`** — re-emit the math subtree as LaTeX via the payload-based
+  `SourceRecomposer`: inline math stays inline, display math becomes a verbatim block.
+
+Display detection: `math_form() == Display` or math environment. Display output is an
+indented block (4 spaces) in `Fancy`/`Plain`.
 
 Fancy engine — port from v3 (`pylatexenc/latex2text/__init__.py`, lines ≈1067–1954):
 - `Atom { text: Box<str>, cls: (AtomClass, AtomClass), flags }` with
@@ -629,10 +640,17 @@ Fancy engine — port from v3 (`pylatexenc/latex2text/__init__.py`, lines ≈106
   chars (port `_fmt_superscript_chars`/`_fmt_subscript_chars` tables + the
   math-italic→ASCII normalization inverse table), retry with joiner-inserted spaces
   stripped, else fall back to `^(…)` wrappable. 
-- Font alphabets: port `_fmt_math_style_offsets` + `_fmt_math_style_exceptions`
-  (13 styles + reserved-codepoint exceptions). `FontStyle` in both text and math
-  variants with v3's three-valued semantics (style / upright-default / disabled).
-  Applied at chars leaves. `\emph` toggles; `\text{}`/`\mbox{}` switch mode only.
+- Font alphabets (settled: **full model with separate math and text style stacks**):
+  port `_fmt_math_style_offsets` + `_fmt_math_style_exceptions` (13 styles +
+  reserved-codepoint exceptions). `RenderState` carries two independent style
+  contexts, `text_font` and `math_font`; each style macro derives the appropriate one
+  via downward state, so nesting composes and restores automatically
+  (`\textit{a $\mathbf{x + \text{[b]}}$ c}` restores the outer italic after the
+  math group and after `\text{}`). Three-valued semantics per stack: a style /
+  upright-default / disabled (a disabled stack stays disabled through style macros).
+  Applied at chars leaves. `\emph` toggles relative to the enclosing text style;
+  `\text{}`/`\mbox{}` switch mode only, never style; math font macros used in text
+  mode set the text style (v3 behavior).
 - `\frac` → wrappable `{num}/{den}` handler; `\sqrt` handler (`√`, `∛`, `∜`, symbolic
   degree prefixed); `\operatorname`, operator-name macros as `Op` literals.
 - Math environments (`equation(*)`, `align(*)`, `gather(*)`, `multline(*)`,
@@ -640,10 +658,25 @@ Fancy engine — port from v3 (`pylatexenc/latex2text/__init__.py`, lines ≈106
   render via the math pipeline as display blocks; `&` in math context → alignment
   glue (two spaces), `\\` → HardBreak within the display block.
 - Matrices (`matrix/pmatrix/bmatrix/vmatrix/Vmatrix/smallmatrix` + `array`): block
-  atoms — split body flow at CellSep/RowSep (the `&`/`\\` rules emit these when
-  `in_table`-analog math-matrix context is set), render cells, measure with
-  `display_width`, right-justify, join `' '` / `'; '`, wrap in the env's delimiters
-  (`( )`, `[ ]`, …). Empty matrix → `[ ]` (no panic — v3 crashes on `max()` of empty).
+  atoms — split body flow at CellSep/RowSep (the `&`/`\\` rules emit these when the
+  math-matrix context is set), render cells, measure with `display_width`,
+  right-justify. Presentation is **context-dependent (settled)**:
+  - **Inline math** → single-line form: cells joined `' '`, rows joined `'; '`,
+    wrapped in the env's delimiters (`[ 1 2; 3 4 ]`).
+  - **Display math** → true multi-line layout: one output line per matrix row,
+    columns right-justified and joined with two spaces. Delimiters per
+    `Options::matrix_delimiters` (settled: **`Unicode` is the default**, `Ascii`
+    disables the bracket art): `Unicode` draws multi-row bracket pieces — parens
+    `⎛⎜⎝`/`⎞⎟⎠`, brackets `⎡⎢⎣`/`⎤⎥⎦`, vert `│`, double-vert `‖`; a one-row matrix
+    uses the plain single characters. `Ascii` repeats the plain delimiter character
+    (`(`,`[`,`|`,…) on every row.
+  - Multi-row pieces compose with surrounding display content via a simple **2D
+    baseline join**: every math piece is a rectangle of lines with a baseline
+    (single-line pieces: height 1; matrices: the middle row). Joining pads pieces to
+    the common height, aligns baselines, and concatenates row-wise; the joiner's
+    spacing rules apply on the baseline row (so `A = ⎛…⎞` aligns `A =` with the
+    matrix's middle row). Only matrices produce multi-row pieces in v1.
+  - Empty matrix → `[ ]` (no panic — v3 crashes on `max()` of empty).
 
 ### 10.6 Tables (`defs::tables`) — settled: basic aligned tables in v1
 
@@ -782,8 +815,9 @@ Tolerant; Strict makes `latex_to_text` return `Err` on first parse error).
 ```rust
 #[non_exhaustive]
 pub struct Options {
-    pub math_mode: MathMode,                  // Fancy
+    pub math_mode: MathMode,                  // Fancy   (variants: Fancy | Plain | Source)
     pub math_expression_in: MathWrapDelims,   // Parens
+    pub matrix_delimiters: MatrixDelims,      // Unicode (variants: Unicode | Ascii)
     pub wrap_width: Option<usize>,            // None
     pub keep_comments: bool,                  // false
     pub heading_style: HeadingStyle,          // NumberedUnderlined
@@ -806,8 +840,9 @@ converter's tables) and runs `TreeRecomposer`. The `TextRenderer` itself is publ
 ```
 techxt [OPTIONS] [FILE]        # FILE or stdin → stdout (or --output FILE)
   -o, --output <FILE>
-      --math-mode <fancy|text|with-delimiters|verbatim|remove>
+      --math-mode <fancy|plain|source>
       --math-wrap <parens|braces|none>
+      --matrix-delims <unicode|ascii>
   -w, --wrap <COLS>
       --keep-comments
       --heading-style <numbered-underlined|underlined|prefix|plain>
@@ -868,8 +903,10 @@ fine, hand-rolled — no chrono dependency; implementer's choice on exact format
   refs, links, graphics, titling, preamble, inputs}` + generation script §11.4 for
   accents/symbols data. Headings with counters/underlines; `\href`; maketitle.
 - **M5 — math engine.** §10.5 complete (atoms, segmentation, joiner, scripts,
-  wrappables, font alphabets, `\frac`/`\sqrt`, math envs, matrices, all five modes).
-  This is the largest milestone; port systematically from v3 with tests at each step.
+  wrappables, dual-stack font alphabets, `\frac`/`\sqrt`, math envs, matrices incl.
+  display multi-line layout + the 2D baseline join + both delimiter styles, all
+  three modes Fancy/Plain/Source). This is the largest milestone; port
+  systematically from v3 with tests at each step.
 - **M6 — blocks.** Lists §10.4, verbatim §10.7, tables §10.6, footnotes, theorems,
   quote/center blocks, `\input` rendering incl. resolver-configured integration test.
 - **M7 — CLI.** §14 + smoke tests + `defs::standard()` audit (run the CLI over a
