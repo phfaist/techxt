@@ -205,11 +205,12 @@ fn a_text_only_specials_does_not_fire_in_math() {
         "a—b\n"
     );
     // Inside math the trigger is not scanned at all, so the characters stay characters.
-    assert!(converter
-        .latex_to_text("$a---b$")
-        .expect("parses")
-        .text
-        .contains("---"));
+    // The math engine then reads them as what they are — three minus signs, the first
+    // binary and the two after it unary — which is why they are spaced rather than run
+    // together; what matters here is that no em dash was produced.
+    let in_math = converter.latex_to_text("$a---b$").expect("parses").text;
+    assert_eq!(in_math, "\u{1d44e} - --\u{1d44f}\n");
+    assert!(!in_math.contains('\u{2014}'));
 }
 
 #[test]

@@ -168,7 +168,8 @@ fn a_rule_outside_a_table_is_dropped_and_reported() {
 
 #[test]
 fn texorpdfstring_keeps_the_tex_form() {
-    assert_eq!(text(r"\texorpdfstring{$x$}{x}"), "x\n");
+    // The TeX form is rendered as TeX: the formula in it really is a formula.
+    assert_eq!(text(r"\texorpdfstring{$x$}{x}"), "\u{1d465}\n");
     assert_eq!(text(r"\texorpdfstring{a}{b}"), "a\n");
 }
 

@@ -10,6 +10,7 @@ use crate::diag::{HandlerFailed, UnknownEnvironment, UnknownMacro, UnknownSpecia
 use crate::flow::{Flow, FlowItem};
 
 use super::cx::{RenderCx, RenderError};
+use super::math;
 
 /// Render the callable `cx` is positioned on through `rule` (PLAN.md §10.4).
 ///
@@ -43,11 +44,16 @@ pub(crate) fn execute(rule: &TextRule, cx: &mut RenderCx<'_, '_>) -> Flow {
 /// running rule output through the math alphabets would italicize every operator name
 /// in the document.
 ///
-/// **M5b seam:** inside Fancy math this text must be segmented into math atoms
-/// (`mathfmt::segment_plain`), exactly as v3 segments its replacement strings, so that
-/// the joiner spaces `\to` as a relation. Until the math engine lands, math is rendered
-/// in text mode and this path is the text one.
-fn literal(text: &str, _cx: &mut RenderCx<'_, '_>) -> Flow {
+/// Inside fancy math it is segmented into atoms instead of into words, exactly as v3
+/// segments its replacement strings: that is how `\leq` → `"≤"` becomes a relation the
+/// joiner spaces, and `\alpha` → `"α"` an ordinary symbol it does not. A rule that
+/// knows its own atom class builds the atom itself and is never segmented — see
+/// [`defs::mathcore`](crate::defs::mathcore)'s operator names.
+fn literal(text: &str, cx: &mut RenderCx<'_, '_>) -> Flow {
+    if math::atoms_in_use(cx.state(), cx.options()) {
+        // DECISIONS.md D4, as in `TextRenderer::chars`.
+        return math::segmented(text, cx.state().math_font.is_style());
+    }
     Flow::from_plain_text(text)
 }
 
