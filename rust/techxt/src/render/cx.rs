@@ -93,10 +93,7 @@ impl core::error::Error for RenderError {}
 // here because PLAN.md §8 puts them in the run state, and because their *lifetime rules*
 // (document order, one push per open list) are what the renderer core guarantees — so
 // they are allowed to be unread until the handlers that read them exist.
-#[allow(
-    dead_code,
-    reason = "written by the M4/M6 sectioning and list handlers"
-)]
+#[allow(dead_code, reason = "the list counter stack is written by the M6 list handlers")]
 #[derive(Debug, Default)]
 pub(crate) struct RunState {
     pub(crate) diagnostics: Diagnostics<Option<String>>,
@@ -383,13 +380,11 @@ impl<'a, 't> RenderCx<'a, 't> {
     // ---------------------------------------------------- crate-internal accessors
 
     /// The section-level counters, indexed by heading level.
-    #[allow(dead_code, reason = "used by the M4 sectioning handlers")]
     pub(crate) fn heading_counters_mut(&mut self) -> &mut [u32; 7] {
         &mut self.renderer.run_mut().heading_counters
     }
 
     /// Whether a `\chapter` has been seen, which changes what `\section` numbers mean.
-    #[allow(dead_code, reason = "used by the M4 sectioning handlers")]
     pub(crate) fn chapter_seen_mut(&mut self) -> &mut bool {
         &mut self.renderer.run_mut().chapter_seen
     }

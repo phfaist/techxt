@@ -597,7 +597,9 @@ mod tests {
         // because techxt's own rules fold those regions through the renderer they hold
         // — which is the inner one. See the module documentation's note on the reach of
         // a wrapper.
-        assert_eq!(render(&flow, &LayoutOptions::default()), "A b c\n");
+        // The `b` is italic because the shipped `\emph` italicizes it (defs::fontstyles);
+        // what this test is about is that the wrapper's uppercasing did *not* reach it.
+        assert_eq!(render(&flow, &LayoutOptions::default()), "A \u{1d44f} c\n");
         // And the inner renderer still reported what it saw.
         assert_eq!(
             finish

@@ -93,6 +93,8 @@
 //! - [`def`] — what techxt knows about a construct: the entry builders a definitions
 //!   library is written with, the template mini-language, the rule model, and the spec
 //!   types that carry a rule into the parsed tree.
+//! - [`defs`] — the definitions library itself: one module per category, and
+//!   [`defs::standard`] stacking all of them.
 //! - [`flow`] — the typed token sequence handlers produce: words, breakable spaces,
 //!   vertical separation requests, blocks, verbatim runs.
 //! - [`layout`] — the single pass that turns a flow into text, deciding every line
@@ -115,6 +117,7 @@ extern crate alloc;
 
 pub mod convert;
 pub mod def;
+pub mod defs;
 pub mod diag;
 pub mod flow;
 pub mod layout;

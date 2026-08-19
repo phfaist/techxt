@@ -91,11 +91,8 @@ impl Converter {
         ConverterBuilder::new()
     }
 
-    /// A converter with the shipped definitions and [`Options::default`].
-    ///
-    /// **M4 seam:** "the shipped definitions" is currently a small placeholder set
-    /// (see [`ConverterBuilder::definitions`]), not the definitions library PLAN.md §12
-    /// describes.
+    /// A converter with the shipped definitions ([`defs::standard`](crate::defs::standard))
+    /// and [`Options::default`].
     ///
     /// ```
     /// use techxt::Converter;
@@ -283,7 +280,10 @@ impl ConverterBuilder {
     ///
     /// Everything the converter knows about macros, environments and specials comes
     /// from here — both how they parse and how they render. Categories shadow in push
-    /// order; see [`DefinitionSet`].
+    /// order; see [`DefinitionSet`]. Left unset, the converter uses
+    /// [`defs::standard`](crate::defs::standard); assemble a smaller set from the
+    /// modules of [`techxt::defs`](crate::defs), or push a category of your own on top
+    /// of `defs::standard()` to override part of it.
     pub fn definitions(mut self, definitions: DefinitionSet) -> ConverterBuilder {
         self.definitions = Some(definitions);
         self
@@ -397,7 +397,7 @@ impl ConverterBuilder {
             source_resolver,
         } = self;
 
-        let definitions = definitions.unwrap_or_else(placeholder::definitions);
+        let definitions = definitions.unwrap_or_else(crate::defs::standard);
         let BuiltDefinitions { state, fallback } = definitions.build()?;
 
         let mut overrides = RuleTable::new();
@@ -833,141 +833,6 @@ pub enum UnknownSpecialsPolicy {
     EmitChars,
     /// Render nothing at all.
     Skip,
-}
-
-/// The placeholder definition set that stands in for PLAN.md §12's library.
-///
-/// **M4 seam.** This exists so that the pipeline can be built and tested against
-/// something real: every entry is chosen to exercise a dispatch path or a rule kind,
-/// not to be a useful LaTeX vocabulary. When `techxt::defs` lands, this module goes away
-/// and [`Converter::standard`] uses `defs::standard()` instead.
-mod placeholder {
-    use alloc::sync::Arc;
-
-    use techy::core::node::NodeRef;
-    use techy::latexlike::Latexlike;
-
-    use crate::def::{Category, DefinitionSet, EnvDef, MacroDef, SpecialsDef, Template, TextRule};
-    use crate::flow::{Flow, FlowItem};
-    use crate::render::{ListKind, RenderCx, RenderError};
-
-    /// `\par`: a paragraph break, and nothing else.
-    #[derive(Debug)]
-    struct ParagraphBreak;
-
-    impl crate::def::TextHandler for ParagraphBreak {
-        fn render(
-            &self,
-            _node: NodeRef<'_, Latexlike>,
-            _cx: &mut RenderCx<'_, '_>,
-        ) -> Result<Flow, RenderError> {
-            let mut flow = Flow::new();
-            flow.push(FlowItem::ParagraphBreak);
-            Ok(flow)
-        }
-    }
-
-    /// `~`: a space that no line break may fall in.
-    ///
-    /// Emitted as text rather than as glue, which is precisely what makes it
-    /// unbreakable: adjacent text items are one word to the layout engine.
-    #[derive(Debug)]
-    struct NoBreakSpace;
-
-    impl crate::def::TextHandler for NoBreakSpace {
-        fn render(
-            &self,
-            _node: NodeRef<'_, Latexlike>,
-            _cx: &mut RenderCx<'_, '_>,
-        ) -> Result<Flow, RenderError> {
-            Ok(Flow::text("\u{a0}"))
-        }
-    }
-
-    /// A template rule written in the source syntax.
-    fn template(source: &str) -> TextRule {
-        TextRule::Template(Template::new(source))
-    }
-
-    /// The placeholder definitions.
-    pub(super) fn definitions() -> DefinitionSet {
-        let category = Category::new("techxt-placeholder")
-            // --- one entry per rule kind ---------------------------------------
-            .with_macro(
-                MacroDef::new("emph")
-                    .arg("m", "text")
-                    .rule(TextRule::Content),
-            )
-            // The same thing said with a template, so that the template path is
-            // exercised too — by name, and then by 1-based index.
-            .with_macro(
-                MacroDef::new("textbf")
-                    .arg("m", "text")
-                    .rule(template("{text}")),
-            )
-            .with_macro(
-                MacroDef::new("textit")
-                    .arg("m", "text")
-                    .rule(template("{1}")),
-            )
-            // A template that is more than one reference, and the `BracedOnly` argument
-            // code: a URL must never swallow a following expression the way `m` would.
-            .with_macro(
-                MacroDef::new("href")
-                    .arg("BracedOnly", "url")
-                    .arg("m", "text")
-                    .rule(template("{text} <{url}>")),
-            )
-            .with_macro(MacroDef::symbol("ldots", "\u{2026}"))
-            // A label contributes nothing to the text.
-            .with_macro(MacroDef::new("label").arg("m", "key").rule(TextRule::Skip))
-            .with_macro(MacroDef::new("par").rule(TextRule::Handler(Arc::new(ParagraphBreak))))
-            // A verbatim argument: its characters must survive untouched.
-            .with_macro(
-                MacroDef::new("verb")
-                    .arg("v", "text")
-                    .rule(TextRule::Content),
-            )
-            // An optional argument and a conditional, so that both are exercised.
-            .with_macro(
-                MacroDef::new("sect")
-                    .star()
-                    .arg("o", "short")
-                    .arg("m", "title")
-                    .rule(template("{?short:{short}|{title}}")),
-            )
-            .with_macro(MacroDef::symbol("TeX", "TeX"))
-            // Parses, but has no rule anywhere: dispatch falls through to the
-            // unknown-macro policy (PLAN.md §10.6).
-            .with_macro(MacroDef::new("phantom").arg("m", "text"))
-            // `\item`, which the list environments below bring into scope for their
-            // bodies.
-            .with_macro(MacroDef::new("item").arg("o", "label").rule(TextRule::Skip))
-            // --- specials ------------------------------------------------------
-            .with_specials(SpecialsDef::new("~").rule(TextRule::Handler(Arc::new(NoBreakSpace))))
-            // Likewise rule-less, for the unknown-specials policy.
-            .with_specials(SpecialsDef::new("&"))
-            // --- environments --------------------------------------------------
-            // A `{body}` template: the same result as `TextRule::Content` for an
-            // environment, chosen here so that the body segment is exercised.
-            .with_env(EnvDef::new("center").rule(template("{body}")))
-            .with_env(
-                EnvDef::new("verbatim")
-                    .verbatim_body()
-                    .rule(TextRule::Content),
-            )
-            .with_env(EnvDef::new("equation").math_body().rule(TextRule::Content))
-            .with_env(
-                EnvDef::new("itemize")
-                    .list_body(ListKind::Itemize)
-                    .rule(TextRule::Content),
-            )
-            // ... and for an environment, so that the unknown-environment policy has
-            // one too.
-            .with_env(EnvDef::new("unknownenv"));
-
-        DefinitionSet::new().with(category)
-    }
 }
 
 #[cfg(test)]
