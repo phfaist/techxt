@@ -86,15 +86,37 @@ fn enumerate_formats_cycle_through_the_configured_array() {
 }
 
 #[test]
-fn a_list_of_a_different_kind_restarts_the_marker_sequence() {
-    // PLAN.md §15: a list whose enclosing list is of a different kind starts its own
-    // marker sequence over. So the innermost `itemize` here — written inside an
-    // `enumerate` — is a *first-level* itemize and takes the first bullet again.
+fn a_list_of_another_kind_starts_its_own_marker_sequence() {
+    // The `enumerate` has no enclosing enumerate, so it numbers from `1.` rather than
+    // carrying on from the bullets — PLAN.md §15 example 22's semantics.
+    assert_eq!(
+        text(r"\begin{itemize}\item a\begin{enumerate}\item b\end{enumerate}\end{itemize}"),
+        "  • a\n    1. b\n"
+    );
+}
+
+#[test]
+fn a_list_of_another_kind_in_between_does_not_reset_the_marker_depth() {
+    // PLAN.md §9.4 counts *all* the enclosing lists of the same kind, wherever they
+    // sit, exactly as LaTeX's own itemize and enumerate depth counters do. The
+    // innermost itemize here has one enclosing itemize, so it is a second-level itemize
+    // and takes the second bullet: the `enumerate` in between resets nothing.
     assert_eq!(
         text(
             r"\begin{itemize}\item a\begin{enumerate}\item b\begin{itemize}\item c\end{itemize}\end{enumerate}\end{itemize}"
         ),
-        "  • a\n    1. b\n       • c\n"
+        "  • a\n    1. b\n       – c\n"
+    );
+}
+
+#[test]
+fn the_same_holds_for_an_enumerate_two_kinds_deep() {
+    // A second-level enumerate, which the default formats number `(a)`.
+    assert_eq!(
+        text(
+            r"\begin{enumerate}\item a\begin{itemize}\item b\begin{enumerate}\item c\end{enumerate}\end{itemize}\end{enumerate}"
+        ),
+        "  1. a\n     • b\n       (a) c\n"
     );
 }
 
@@ -243,4 +265,16 @@ fn text_after_a_list_is_no_longer_indented() {
 #[test]
 fn an_empty_list_renders_as_nothing() {
     assert_eq!(text(r"a\begin{itemize}\end{itemize}b"), "a\nb\n");
+}
+
+#[test]
+fn a_nested_list_does_not_disturb_the_counter_of_the_one_it_is_in() {
+    // One counter per open list: the inner `enumerate` counts in its own, and the outer
+    // one carries on where it left off.
+    assert_eq!(
+        text(
+            r"\begin{enumerate}\item a\begin{enumerate}\item x\item y\end{enumerate}\item b\end{enumerate}"
+        ),
+        "  1. a\n     (a) x\n     (b) y\n  2. b\n"
+    );
 }

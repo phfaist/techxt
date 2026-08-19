@@ -15,7 +15,8 @@ use crate::diag::TechxtCondition;
 use crate::flow::Flow;
 use crate::layout::render_inline;
 
-use super::state::RenderState;
+use super::math;
+use super::state::{ListKind, RenderState};
 
 /// Why a rule could not render a construct (PLAN.md §10.4).
 ///
@@ -98,6 +99,16 @@ pub(crate) struct RunState {
     pub(crate) heading_counters: [u32; 7],
     pub(crate) chapter_seen: bool,
     pub(crate) list_counter_stack: Vec<u32>,
+    /// The kinds of the open list environments, innermost last — the same stack
+    /// discipline as `list_counter_stack`, and pushed and popped alongside it.
+    ///
+    /// `RenderState::list` names only the *innermost* list, which cannot answer
+    /// PLAN.md §9.4's question "how many enclosing lists are of this kind?" once a list
+    /// of another kind intervenes: an `itemize` inside an `enumerate` inside an
+    /// `itemize` is a second-level itemize, and the innermost context alone cannot say
+    /// so. Keeping the enclosing kinds here answers it without widening the public
+    /// downward state.
+    pub(crate) list_kind_stack: Vec<ListKind>,
     pub(crate) footnotes: Vec<Flow>,
     pub(crate) doc_title: Option<Flow>,
     pub(crate) doc_author: Option<Flow>,
@@ -202,6 +213,18 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// Like [`arg`](Self::arg), but rendering the argument under a state of the
     /// handler's choosing — how `\text{…}` leaves math, or how a list environment
     /// tells its body how deeply it is nested.
+    ///
+    /// # An argument that enters math is a whole formula
+    ///
+    /// When `state` enters math and the construct itself is not in math — `\ensuremath`
+    /// is the shipped case — the argument is a complete **math scope**, so its atoms are
+    /// joined and converted to text before the flow is handed back (PLAN.md §9.5). A
+    /// handler therefore never has to know that the math pipeline exists in order to
+    /// render something as a formula, and a
+    /// [`MathAtom`](crate::flow::FlowItem::MathAtom) cannot leak out of one. Rendering an
+    /// argument in the math state the construct is *already* in — what `\frac` and
+    /// `\sqrt` do with their operands — leaves the atoms alone, which is what lets those
+    /// constructs read their operands' classes.
     pub fn arg_with_state(
         &mut self,
         name: &str,
@@ -214,7 +237,15 @@ impl<'a, 't> RenderCx<'a, 't> {
             .cx
             .recompose_argument_content_named(self.node, name, &state, self.renderer)
             .map_err(RenderError::region)?;
-        Ok(Some(flow))
+        Ok(Some(self.close_math_scope(flow, &state)))
+    }
+
+    /// Close a math scope that a derived state opened, if it opened one.
+    fn close_math_scope(&self, flow: Flow, derived: &RenderState) -> Flow {
+        match (self.state.math, derived.math) {
+            (None, Some(entered)) => math::finish(flow, entered.display, self.options()),
+            _ => flow,
+        }
     }
 
     /// Render the content of the argument at `index` in declaration order, counting
@@ -394,6 +425,26 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// count without knowing how deeply it is nested.
     pub(crate) fn list_counter_stack_mut(&mut self) -> &mut Vec<u32> {
         &mut self.renderer.run_mut().list_counter_stack
+    }
+
+    /// The kinds of the open list environments, innermost last.
+    ///
+    /// Pushed and popped by the list environment handlers exactly as the counter stack
+    /// is, and read to derive
+    /// [`ListCtx::same_kind_depth`](crate::render::ListCtx::same_kind_depth), which
+    /// counts *all* the enclosing lists of a kind and not only an unbroken run of them.
+    pub(crate) fn list_kind_stack_mut(&mut self) -> &mut Vec<ListKind> {
+        &mut self.renderer.run_mut().list_kind_stack
+    }
+
+    /// How many of the open list environments are of this kind.
+    pub(crate) fn enclosing_lists_of_kind(&self, kind: ListKind) -> usize {
+        self.renderer
+            .run()
+            .list_kind_stack
+            .iter()
+            .filter(|open| **open == kind)
+            .count()
     }
 
     /// The argument called `name`, or a region error naming what went wrong.

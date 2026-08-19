@@ -26,6 +26,14 @@
 //! second: both render exactly like `verbatim`, which loses a document nothing that a
 //! reader of the *text* would have seen.
 
+use alloc::string::String;
+use alloc::sync::Arc;
+
+use techy::core::constructs::OptionalGroupArgumentParser;
+use techy::core::specs::ArgumentSpec;
+use techy::core::token::GroupRule;
+use techy::latexlike::{GroupType, Latexlike};
+
 use crate::def::{Category, EnvDef, MacroDef, Template, TextRule};
 
 /// The verbatim category (PLAN.md §12.1).
@@ -40,7 +48,7 @@ pub fn category() -> Category {
     // content. They are still parsed, or they would show up in the code.
     category.add_env(
         EnvDef::new("lstlisting")
-            .arg("o", "options")
+            .arg_spec(adjacent_options())
             .verbatim_body()
             .rule(TextRule::Content),
     );
@@ -56,4 +64,26 @@ pub fn category() -> Category {
             .rule(TextRule::Template(Template::new("{text}"))),
     );
     category
+}
+
+/// `lstlisting`'s `[options]`: optional, and only if it comes *immediately*.
+///
+/// The adjacency requirement is not a nicety. Everything after the environment's
+/// arguments is raw listing text, so a listing whose first line begins with `[` —
+/// an array literal, a Markdown link, a BibTeX-ish record — would otherwise have that
+/// line parsed as the option list and silently eaten. techy's
+/// [`require_adjacent`](OptionalGroupArgumentParser::require_adjacent) (DECISIONS.md D8)
+/// says what LaTeX means here: `\begin{lstlisting}[language=C]` has options,
+/// `\begin{lstlisting}` followed by a newline and a `[` does not. pylatexenc spells the
+/// same requirement `allow_pre_space=False`, for the same reason.
+fn adjacent_options() -> ArgumentSpec<Latexlike> {
+    let delimiters = Arc::new(GroupRule {
+        group_type: GroupType::Content,
+        open: String::from("["),
+        close: String::from("]"),
+    });
+    ArgumentSpec::new(
+        OptionalGroupArgumentParser::new(delimiters).require_adjacent(),
+        "options",
+    )
 }

@@ -11,11 +11,12 @@
 //! different (PLAN.md §8's [`ListCtx`]):
 //!
 //! - [`same_kind_depth`](ListCtx::same_kind_depth) picks the *marker*, cycling through
-//!   the arrays in [`Options::list_style`](crate::Options::list_style). It counts the
-//!   run of enclosing lists of the **same kind**, and a list written inside one of
-//!   another kind starts that run over: an `enumerate` directly inside an `itemize`
-//!   numbers from `1.` again rather than continuing into `(a)`, which PLAN.md §15
-//!   example 22 states as the intended semantics.
+//!   the arrays in [`Options::list_style`](crate::Options::list_style). It counts only
+//!   the enclosing lists of the **same kind**, exactly as LaTeX's own `\@itemdepth` and
+//!   `\@enumdepth` do: an `enumerate` directly inside an `itemize` numbers from `1.`
+//!   rather than continuing into `(a)` (PLAN.md §15 example 22), while an `itemize`
+//!   inside an `enumerate` inside an `itemize` is a *second*-level itemize, because the
+//!   list of another kind in between does not reset anything.
 //! - [`depth`](ListCtx::depth) decides the indentation. Only the outermost list indents
 //!   its contents (by two spaces); every deeper list is already offset by the hanging
 //!   indent of the item it appears in, and indenting again would stack up fast.
@@ -119,15 +120,18 @@ impl TextHandler for ListEnv {
             cx.report(UnsupportedIgnored::new(name, "the list option list"));
         }
 
-        let context = self.context(cx.state().list);
+        let context = self.context(cx);
         let mut state = cx.state().clone();
         state.list = Some(context);
 
-        // One counter per open list, pushed for the body's extent. `enumerate` counts
-        // in it; the other kinds do not, but they still push so that the stack's top is
-        // always the innermost list's counter.
+        // One counter and one kind per open list, pushed for the body's extent, popped
+        // whatever the body did. `enumerate` counts in the counter; the other kinds do
+        // not, but they still push so that the stack's top is always the innermost
+        // list's counter — and so that the kinds line up with it.
         cx.list_counter_stack_mut().push(0);
+        cx.list_kind_stack_mut().push(self.kind);
         let body = cx.body_with_state(state);
+        cx.list_kind_stack_mut().pop();
         cx.list_counter_stack_mut().pop();
         let body = body?;
 
@@ -158,18 +162,20 @@ impl TextHandler for ListEnv {
 }
 
 impl ListEnv {
-    /// The context this list's body is rendered in, derived from the list it is written
-    /// inside (PLAN.md §9.4).
-    fn context(&self, outer: Option<ListCtx>) -> ListCtx {
+    /// The context this list's body is rendered in (PLAN.md §9.4).
+    ///
+    /// The total depth comes from the enclosing list's own context, and the marker
+    /// depth from the run's stack of open list kinds: it is `1 +` the number of
+    /// enclosing lists **of this kind**, counted wherever they are, so an `itemize`
+    /// written inside an `enumerate` inside an `itemize` is a second-level itemize and
+    /// takes the second bullet. The innermost
+    /// [`ListCtx`](crate::render::ListCtx) alone cannot answer that — it knows only the
+    /// list immediately around this one — which is why the kinds are kept in run state.
+    fn context(&self, cx: &RenderCx<'_, '_>) -> ListCtx {
         ListCtx {
             kind: self.kind,
-            same_kind_depth: match outer {
-                Some(outer) if outer.kind == self.kind => outer.same_kind_depth + 1,
-                // A list of a different kind starts its own marker sequence over, which
-                // is LaTeX's own behaviour and PLAN.md §15 example 22's semantics.
-                _ => 1,
-            },
-            depth: outer.map_or(0, |outer| outer.depth) + 1,
+            same_kind_depth: 1 + cx.enclosing_lists_of_kind(self.kind),
+            depth: cx.state().list.map_or(0, |outer| outer.depth) + 1,
         }
     }
 }
