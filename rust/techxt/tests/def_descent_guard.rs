@@ -116,3 +116,54 @@ fn the_default_guard_warns_before_it_refuses() {
     }
     assert!(warned, "the default guard should warn before refusing");
 }
+
+#[test]
+fn a_fold_that_only_approaches_the_limit_warns_rather_than_aborting() {
+    // DECISIONS.md D12. The fold-side early warning used to be minted as
+    // `techxt.render-aborted` at error severity, so a conversion that produced complete
+    // text still reported a failure — and PLAN.md §13 turns a failure into exit code 1.
+    // The warning must read like the parse side's: same condition, warning severity, and
+    // no error anywhere.
+    let parser = with_guard(StdDescentGuardInit::depth_limit(2000));
+    // The default guard is the one that warns at half its budget; how deep that is
+    // depends on the build profile, so the depth is searched for rather than assumed.
+    let renderer = Converter::standard();
+
+    let mut warned = false;
+    for depth in 1..400 {
+        let tree = parser
+            .language()
+            .parse(nested("x", depth))
+            .expect("parses")
+            .tree;
+        let conversion = renderer.tree_to_text(&tree);
+        if conversion.text.is_empty() {
+            // The guard refused this one: that is the genuine abort, and everything
+            // shallower has been seen.
+            break;
+        }
+        if conversion
+            .diagnostics
+            .with_identifier("core.constructs.descent-limit-approaching")
+            .count()
+            > 0
+        {
+            warned = true;
+            assert_eq!(conversion.text, "x\n");
+            assert!(
+                !conversion.diagnostics.has_errors(),
+                "a completed conversion reported an error: {:?}",
+                conversion.diagnostics
+            );
+            assert_eq!(
+                conversion
+                    .diagnostics
+                    .with_identifier("techxt.render-aborted")
+                    .count(),
+                0
+            );
+            break;
+        }
+    }
+    assert!(warned, "the default guard should warn before refusing");
+}

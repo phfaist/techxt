@@ -31,7 +31,11 @@
 //!    overflows; it is never split.
 //! 2. **Glue collapses.** Consecutive [`Glue`](FlowItem::Glue) is one potential break.
 //!    Glue at the start or end of a line is dropped, so no line ever ends in
-//!    whitespace.
+//!    *collapsible* whitespace. Raw content is exempt by construction: a
+//!    [`Verbatim`](FlowItem::Verbatim) payload and an
+//!    [`InlineVerbatim`](FlowItem::InlineVerbatim) word are emitted byte for byte, so
+//!    `\verb| x |` legitimately ends its line in a space, and a
+//!    [`Text`](FlowItem::Text) item is required to hold no whitespace of its own.
 //! 3. **Vertical separation is normalized here and only here.** Every request —
 //!    [`HardBreak`](FlowItem::HardBreak), [`ParagraphBreak`](FlowItem::ParagraphBreak),
 //!    [`BlockStart`](FlowItem::BlockStart), [`BlockEnd`](FlowItem::BlockEnd), a
@@ -171,12 +175,20 @@ pub fn render_inline(flow: &Flow) -> String {
             | FlowItem::BlockStart(_)
             | FlowItem::BlockEnd => pending_space = true,
             FlowItem::Verbatim(payload) => {
-                if !payload.is_empty() {
-                    if !out.is_empty() {
-                        out.push(' ');
-                    }
-                    // raw, except that the newlines cannot survive on one line
-                    out.extend(payload.chars().map(|c| if c == '\n' { ' ' } else { c }));
+                // Raw, except that the newlines cannot survive on one line. A block
+                // separates from its surroundings on both sides, so the separation is
+                // requested rather than written: routing the payload through
+                // `push_inline_word` like every other word is what stops a payload
+                // ending in a newline from contributing a space of its own on top of
+                // the one the following word already asks for.
+                let flattened: String = payload
+                    .chars()
+                    .map(|c| if c == '\n' { ' ' } else { c })
+                    .collect();
+                let flattened = flattened.trim();
+                if !flattened.is_empty() {
+                    pending_space = true;
+                    push_inline_word(&mut out, &mut pending_space, flattened);
                     pending_space = true;
                 }
             }
@@ -452,7 +464,7 @@ impl Engine<'_> {
 
     /// Record a request for vertical separation, merging it with any pending one.
     fn request_sep(&mut self, sep: Sep) {
-        // Glue never survives across a break: no line ends in whitespace.
+        // Glue never survives across a break: no line ends in collapsible whitespace.
         self.pending_glue = false;
         if !self.wrote_any {
             // Nothing to separate from yet, so no leading blank lines.
@@ -1013,9 +1025,22 @@ mod tests {
 
     #[test]
     fn render_inline_squeezes_verbatim_onto_the_line() {
+        // The payload's own spacing is content and survives; the newline it ends with
+        // is not, and asks for the same one separator the following word does rather
+        // than a second one of its own (DECISIONS.md D13).
         assert_eq!(
             render_inline(&flow(vec![t("a"), Verbatim("x  y\nz\n".into()), t("b")])),
-            "a x  y z  b"
+            "a x  y z b"
+        );
+        assert_eq!(
+            render_inline(&flow(vec![t("a"), Verbatim("x\n".into()), t("b")])),
+            "a x b"
+        );
+        // A payload that flattens to nothing is not a word, and contributes nothing at
+        // all — the same "not even a word boundary" an empty payload gets.
+        assert_eq!(
+            render_inline(&flow(vec![t("a"), Verbatim("\n".into()), t("b")])),
+            "ab"
         );
         assert_eq!(
             render_inline(&flow(vec![InlineVerbatim(" x ".into())])),

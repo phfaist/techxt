@@ -421,7 +421,7 @@ impl ConverterBuilder {
     ///     .recovery(Recovery::Strict)
     ///     .unknown_macro_resolution(UnknownMacroResolution::Accept)
     ///     .build()?;
-    /// assert_eq!(lenient.latex_to_text(r"a\nosuchmacro b")?.text, "a b\n");
+    /// assert_eq!(lenient.latex_to_text(r"a \nosuchmacro b")?.text, "a b\n");
     /// # Ok::<(), Box<dyn core::error::Error>>(())
     /// ```
     pub fn unknown_macro_resolution(
@@ -685,6 +685,25 @@ pub struct Options {
     /// which is what makes variables look like variables.
     pub math_font: FontStyle,
     /// What to do with a macro no rule renders. Default [`UnknownMacroPolicy::Skip`].
+    ///
+    /// # What it can and cannot see
+    ///
+    /// A command *no definition claims at all* reaches this policy only through the
+    /// catch-all provider, and that provider gives it a **zero-argument** spec — it has
+    /// no way to know what arguments the absent definition would have declared. So on a
+    /// genuinely absent name there is nothing to render and nothing to re-emit:
+    /// [`RenderArgs`](UnknownMacroPolicy::RenderArgs) is indistinguishable from
+    /// [`Skip`](UnknownMacroPolicy::Skip), and
+    /// [`KeepSource`](UnknownMacroPolicy::KeepSource) recovers `\foo`, never the whole
+    /// invocation `\foo{x}` — the `{x}` is an ordinary group that follows it and
+    /// survives whatever this policy says. The four policies differ only on a macro that
+    /// is *declared but rule-less*, which is the case that has arguments to act on.
+    ///
+    /// Whether the catch-all is registered at all is
+    /// [`ConverterBuilder::unknown_macro_resolution`]'s decision (and, by default, the
+    /// recovery mode's). Without it an unclaimed command never becomes a construct, and
+    /// this option is inert for it — it still applies to the declared-but-rule-less
+    /// macros, which parse either way.
     pub unknown_macro: UnknownMacroPolicy,
     /// What to do with an environment no rule renders. Default
     /// [`UnknownEnvPolicy::RenderBody`].
@@ -880,7 +899,12 @@ pub enum UnknownMacroResolution {
 /// is an unknown macro followed by an ordinary group: whatever this policy decides about
 /// `\foo`, the `x` inside the braces is text and survives. [`RenderArgs`](Self::RenderArgs)
 /// therefore differs from [`Skip`](Self::Skip) only for a macro that *is* defined —
-/// declared with arguments, but with no rule to render them.
+/// declared with arguments, but with no rule to render them — and
+/// [`KeepSource`](Self::KeepSource) can only re-emit `\foo`, never the invocation
+/// `\foo{x}` it was written as.
+///
+/// Whether an unclaimed command reaches this policy at all is settled at parse time by
+/// [`ConverterBuilder::unknown_macro_resolution`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum UnknownMacroPolicy {
     /// Render nothing at all. The default: an unknown macro is usually formatting, and

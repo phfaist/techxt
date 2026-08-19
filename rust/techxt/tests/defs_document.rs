@@ -1,7 +1,18 @@
 //! The document-furniture categories: `refs`, `links`, `graphics`, `titling`,
 //! `preamble` and `inputs` (PLAN.md §9.8), plus the stubs of PLAN.md §12.1.
 
-use techxt::def::DefinitionSet;
+use std::any::Any;
+use std::string::String;
+
+use techy::core::node::NodeRef;
+use techy::error::{Recovery, Severity};
+use techy::latexlike::{InputMacroSpec, Latexlike};
+use techy::source::SourceSpan;
+use techy::source::{
+    check_include_chain, MapResolver, ResolveError, ResolvedContent, SourceResolver,
+};
+
+use techxt::def::{DefinitionSet, TechxtMacroSpec};
 use techxt::diag::InputNotResolved;
 use techxt::Converter;
 
@@ -218,6 +229,169 @@ fn an_unresolved_include_is_a_note_and_not_an_error() {
             .count(),
         1
     );
+}
+
+/// A resolver that answers from a map and refuses an include cycle, which is the
+/// division of labour techy prescribes: recursion policy is the embedder's.
+#[derive(Debug)]
+struct Files {
+    map: MapResolver,
+}
+
+impl Files {
+    fn new(entries: &[(&str, &str)]) -> Files {
+        let mut map = MapResolver::new();
+        for (reference, content) in entries {
+            map.insert(*reference, *content);
+        }
+        Files {
+            // The cycle check compares origins, so each resolved source must carry its
+            // reference as its origin.
+            map: map.with_reference_as_origin(),
+        }
+    }
+}
+
+impl SourceResolver for Files {
+    fn resolve(
+        &self,
+        reference: &str,
+        triggered_at: &SourceSpan,
+    ) -> Result<ResolvedContent, ResolveError> {
+        check_include_chain(
+            &String::from(reference),
+            triggered_at,
+            |origin: &Option<String>| origin.clone(),
+            Some(8),
+        )?;
+        SourceResolver::<Option<String>>::resolve(&self.map, reference, triggered_at)
+    }
+}
+
+fn including(entries: &[(&str, &str)]) -> Converter {
+    Converter::builder()
+        .source_resolver(Files::new(entries))
+        .build()
+        .expect("builds")
+}
+
+#[test]
+fn an_input_pulls_in_the_resolved_content() {
+    // DECISIONS.md D15: `ConverterBuilder::source_resolver` reaches the `\input`
+    // definition, which is what makes inclusion work at all.
+    let converter = including(&[
+        ("intro.tex", "the beginning"),
+        ("both.tex", r"one \input{intro.tex} two"),
+    ]);
+    let conversion = converter
+        .latex_to_text(r"a \input{intro.tex} b")
+        .expect("parses");
+    assert_eq!(conversion.text, "a the beginning b\n");
+    assert!(
+        conversion.diagnostics.is_empty(),
+        "{:?}",
+        conversion.diagnostics
+    );
+
+    // Nested inclusion composes, and `\include` is registered the same way.
+    assert_eq!(
+        converter
+            .latex_to_text(r"\include{both.tex}")
+            .expect("parses")
+            .text,
+        "one the beginning two\n"
+    );
+}
+
+#[test]
+fn the_include_cycle_guard_still_fires() {
+    // The resolver's own policy (techy's `check_include_chain`) is what refuses the
+    // cycle; techxt must not swallow the resulting diagnostic.
+    let converter = including(&[("a.tex", r"x\input{a.tex}y")]);
+    let conversion = converter.latex_to_text(r"\input{a.tex}").expect("parses");
+
+    // The outer inclusion succeeded; the inner one was refused and rendered nothing.
+    assert_eq!(conversion.text, "xy\n");
+    let refusal = conversion
+        .diagnostics
+        .with_identifier("core.sources.unresolvable-reference")
+        .next()
+        .expect("the cycle is diagnosed");
+    assert!(refusal.message().contains("include cycle"), "{refusal:?}");
+}
+
+#[test]
+fn an_include_the_resolver_cannot_answer_stays_a_note() {
+    // DECISIONS.md C4, with a resolver in place: no attached slot is
+    // `Err(UnknownSlotName)`, which the handler reads as "not resolved" and reports as
+    // a note. techxt itself raises no error either way.
+    let conversion = including(&[("known.tex", "here")])
+        .latex_to_text(r"\input{missing.tex}")
+        .expect("parses");
+    assert_eq!(conversion.text, "");
+    let notes: Vec<&InputNotResolved> = conversion.diagnostics.conditions().collect();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].target, "missing.tex");
+    assert_eq!(
+        conversion
+            .diagnostics
+            .iter()
+            .filter(|d| {
+                d.identifier().starts_with("techxt.") && d.severity() == Severity::Error
+            })
+            .count(),
+        0
+    );
+}
+
+#[test]
+fn a_converter_without_a_resolver_does_not_even_try_to_resolve() {
+    // Registering techy's inclusion spec unconditionally would diagnose every `\input`
+    // in a resolver-less converter — and refuse to parse at all under strict recovery.
+    // The definitions therefore register it only when there is something to resolve.
+    let strict = Converter::builder()
+        .recovery(Recovery::Strict)
+        .build()
+        .expect("builds");
+    let conversion = strict
+        .latex_to_text(r"a\input{chapter.tex}b")
+        .expect("parses");
+    assert_eq!(conversion.text, "ab\n");
+    assert!(!conversion.diagnostics.has_errors());
+    assert_eq!(
+        conversion
+            .diagnostics
+            .conditions::<InputNotResolved>()
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn the_foreign_input_spec_resolves_its_rule_at_dispatch_step_3() {
+    // DECISIONS.md D15: techy's inclusion spec is not a `TechxtMacroSpec`, so the rule
+    // cannot ride inside it and step 2's downcast misses. The rule is found at step 3,
+    // in the name-keyed fallback table — which the rendered output above proves, and
+    // this test pins the mechanism so that a future "why is this spec not ours?" does
+    // not get answered by breaking it.
+    let converter = including(&[("intro.tex", "included")]);
+    let parsed = converter
+        .language()
+        .parse(r"\input{intro.tex}")
+        .expect("parses");
+    let node: NodeRef<'_, Latexlike> = parsed.tree.root().child(0).expect("the invocation");
+    let spec = node.spec().expect("a spec");
+    let object = &**spec as &dyn Any;
+    assert!(
+        object.downcast_ref::<TechxtMacroSpec>().is_none(),
+        "step 2 must miss: the spec is techy's, not techxt's"
+    );
+    assert!(
+        object.downcast_ref::<InputMacroSpec<Latexlike>>().is_some(),
+        "the registered spec is techy's inclusion spec"
+    );
+    // And the rule was still found, by name.
+    assert_eq!(converter.tree_to_text(&parsed.tree).text, "included\n");
 }
 
 // --------------------------------------------------------------------- stubs

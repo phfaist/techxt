@@ -16,8 +16,11 @@ use techy::core::{Language, ParsingState};
 use techy::error::Recovery;
 use techy::latexlike::{CallableType, Latexlike, LatexlikeDriver, MacroSpec};
 
-use techxt::convert::{UnknownEnvPolicy, UnknownMacroPolicy, UnknownSpecialsPolicy};
+use techxt::convert::{
+    UnknownEnvPolicy, UnknownMacroPolicy, UnknownMacroResolution, UnknownSpecialsPolicy,
+};
 use techxt::def::{Category, DefinitionSet, EnvDef, MacroDef, SpecialsDef, TextRule};
+use techxt::diag::UnknownMacro;
 use techxt::Converter;
 
 /// A literal rule.
@@ -369,4 +372,103 @@ fn a_specials_content_rule_emits_its_trigger() {
         converter.latex_to_text("a~b").expect("parses").text,
         "a~b\n"
     );
+}
+
+// ------------------------------------------------- unknown-macro resolution (D10)
+
+/// Convert `\nowhere` — a command no category defines — under one point of the
+/// {recovery} x {resolution} matrix.
+fn under_resolution(
+    recovery: Recovery,
+    resolution: UnknownMacroResolution,
+) -> Result<techxt::Conversion, techy::error::ParseError<Option<String>>> {
+    Converter::builder()
+        .recovery(recovery)
+        .unknown_macro_resolution(resolution)
+        .build()
+        .expect("builds")
+        .latex_to_text(r"a \nowhere b")
+}
+
+/// The conversion of an accepted unknown command: it renders as nothing (the default
+/// `Skip` policy) and is reported as a techxt warning.
+fn assert_accepted(recovery: Recovery, resolution: UnknownMacroResolution) {
+    let conversion = under_resolution(recovery, resolution)
+        .unwrap_or_else(|error| panic!("{recovery:?}/{resolution:?} should parse: {error}"));
+    assert_eq!(conversion.text, "a b\n", "{recovery:?}/{resolution:?}");
+    assert!(
+        !conversion.diagnostics.has_errors(),
+        "{recovery:?}/{resolution:?}: {:?}",
+        conversion.diagnostics
+    );
+    assert_eq!(
+        conversion.diagnostics.conditions::<UnknownMacro>().count(),
+        1,
+        "{recovery:?}/{resolution:?}"
+    );
+}
+
+#[test]
+fn following_recovery_ties_an_unknown_macro_to_the_recovery_mode() {
+    // DECISIONS.md D10: the default pairs the two. Tolerant accepts the command as an
+    // argument-less callable and warns; strict refuses to parse it at all.
+    assert_accepted(Recovery::Tolerant, UnknownMacroResolution::FollowRecovery);
+
+    let error = under_resolution(Recovery::Strict, UnknownMacroResolution::FollowRecovery)
+        .expect_err("strict refuses a command it cannot resolve");
+    assert_eq!(error.identifier(), "core.specs.unresolvable-command");
+}
+
+#[test]
+fn accept_keeps_unknown_macros_convertible_under_strict_recovery() {
+    assert_accepted(Recovery::Strict, UnknownMacroResolution::Accept);
+    assert_accepted(Recovery::Tolerant, UnknownMacroResolution::Accept);
+}
+
+#[test]
+fn reject_refuses_unknown_macros_under_tolerant_recovery_too() {
+    // Without the catch-all it is techy's own handling that applies: under tolerant
+    // recovery an error diagnostic plus the command recovered as literal characters,
+    // and no techxt warning at all — the macro never reached the renderer.
+    let conversion = under_resolution(Recovery::Tolerant, UnknownMacroResolution::Reject)
+        .expect("tolerant recovery keeps going");
+    assert!(conversion.text.contains("nowhere"), "{:?}", conversion.text);
+    assert!(conversion.diagnostics.has_errors());
+    assert_eq!(
+        conversion
+            .diagnostics
+            .with_identifier("core.specs.unresolvable-command")
+            .count(),
+        1
+    );
+    assert_eq!(
+        conversion.diagnostics.conditions::<UnknownMacro>().count(),
+        0
+    );
+
+    let error = under_resolution(Recovery::Strict, UnknownMacroResolution::Reject)
+        .expect_err("strict refuses it as well");
+    assert_eq!(error.identifier(), "core.specs.unresolvable-command");
+}
+
+#[test]
+fn a_declared_macro_is_unaffected_by_the_resolution_setting() {
+    // The setting is about commands *no definition claims*. A declared but rule-less
+    // macro still parses and still reaches the unknown-macro policy, whatever it says.
+    for resolution in [
+        UnknownMacroResolution::FollowRecovery,
+        UnknownMacroResolution::Accept,
+        UnknownMacroResolution::Reject,
+    ] {
+        let conversion = Converter::builder()
+            .recovery(Recovery::Strict)
+            .unknown_macro_resolution(resolution)
+            .definitions(with_ruleless())
+            .unknown_macro(UnknownMacroPolicy::RenderArgs)
+            .build()
+            .expect("builds")
+            .latex_to_text(r"a\ruleless{x}b")
+            .unwrap_or_else(|error| panic!("{resolution:?} should parse: {error}"));
+        assert_eq!(conversion.text, "axb\n", "{resolution:?}");
+    }
 }

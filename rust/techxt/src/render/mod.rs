@@ -88,9 +88,10 @@ pub(crate) use cx::RendererOps;
 use alloc::string::String;
 use core::convert::Infallible;
 
+use techy::core::constructs::DescentLimitApproaching;
 use techy::core::node::{NodeKind, NodeRef};
 use techy::core::DescentWarning;
-use techy::error::Diagnostics;
+use techy::error::{Diagnostic, Diagnostics, Severity};
 use techy::latexlike::{GroupType, Latexlike, MathGroupForm};
 use techy::recompose::{ConcatPieces, Recompose, RecomposeContext, Recomposer};
 
@@ -397,13 +398,24 @@ impl Recomposer<Latexlike, ()> for TextRenderer<'_> {
         })
     }
 
-    /// Report that the run is approaching techy's descent limit (DECISIONS.md C3).
+    /// Report that the run is approaching techy's descent limit (DECISIONS.md C3, D12).
     ///
-    /// The warning arrives while there is still output to save, and it names the same
-    /// condition the abort would: a document deep enough to warn is a document about to
-    /// lose its rendering entirely.
+    /// This is the guard's *early notice*, raised while the fold is going perfectly
+    /// well — under the default budget a moderately deep document reaches it and then
+    /// finishes normally. So it is a warning, and it is techy's own
+    /// `core.constructs.descent-limit-approaching`: the exact condition the parse side
+    /// of the same guard records, so that a fold-side near-miss reads identically to a
+    /// parse-side one. Reporting it as [`RenderAborted`] instead would claim an error
+    /// on a conversion that produced complete, correct text — and a caller who treats
+    /// `has_errors()` as the exit code would fail the run for it.
     fn observe_descent_warning(&mut self, warning: DescentWarning) {
-        self.abort(warning.detail);
+        if let Some(span) = self.run.document_span.clone() {
+            self.run.diagnostics.push(Diagnostic::new(
+                Severity::Warning,
+                DescentLimitApproaching::new(warning.detail),
+                span,
+            ));
+        }
     }
 }
 
@@ -631,8 +643,11 @@ mod tests {
     }
 
     #[test]
-    fn a_descent_warning_is_reported_rather_than_passing_silently() {
-        // DECISIONS.md C3: the warning arrives while there is still output to save.
+    fn a_descent_warning_is_a_warning_and_not_an_abort() {
+        // DECISIONS.md C3 and D12: the warning arrives while there is still output to
+        // save, so it must not claim the run was abandoned. It carries techy's own
+        // approaching-limit condition, at warning severity, exactly as the parse side
+        // of the same guard records it.
         let converter = Converter::standard();
         let tree = parse(&converter, "a");
         let mut renderer = converter.renderer();
@@ -644,10 +659,20 @@ mod tests {
         assert_eq!(
             finish
                 .diagnostics
-                .with_identifier("techxt.render-aborted")
+                .with_identifier("core.constructs.descent-limit-approaching")
                 .count(),
             1
         );
+        assert!(finish
+            .diagnostics
+            .with_identifier("techxt.render-aborted")
+            .next()
+            .is_none());
+        // The whole point: a conversion that completed reports no error.
+        assert!(!finish.diagnostics.has_errors());
+        let approaching: Vec<&DescentLimitApproaching> = finish.diagnostics.conditions().collect();
+        assert_eq!(approaching.len(), 1);
+        assert_eq!(approaching[0].detail, "half the budget is gone");
     }
 
     #[test]

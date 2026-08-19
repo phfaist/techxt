@@ -13,9 +13,10 @@
 //!
 //! # The pieces
 //!
-//! - [`FlowItem::Text`] is a run of non-whitespace text. **Adjacent `Text` items are
-//!   one unbreakable word**: `\textbf{bold}text` contributes `Text("𝐛𝐨𝐥𝐝")` then
-//!   `Text("text")`, and no line break may fall between them.
+//! - [`FlowItem::Text`] is a run of text carrying no *collapsible* whitespace.
+//!   **Adjacent `Text` items are one unbreakable word**: `\textbf{bold}text`
+//!   contributes `Text("𝐛𝐨𝐥𝐝")` then `Text("text")`, and no line break may fall
+//!   between them.
 //! - [`FlowItem::Glue`] is one collapsible inter-word space, and the *only* place a
 //!   line may break.
 //! - [`FlowItem::HardBreak`] and [`FlowItem::ParagraphBreak`] request vertical
@@ -210,17 +211,29 @@ impl ComposePiece for Flow {
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub enum FlowItem {
-    /// Non-whitespace text.
+    /// Text carrying no *collapsible* whitespace.
     ///
     /// **Adjacent `Text` items are glued**: no break may occur between them, and the
     /// wrap decision measures them as one word. That is what keeps
     /// `\textbf{bold}text` from wrapping between `bold` and `text`, without any
     /// handler having to know that it is adjacent to anything.
+    ///
+    /// A space that a handler *means* — `~` as `\u{00A0}`, `\quad` as `\u{2003}` — is
+    /// content and belongs here, even though Unicode calls those characters
+    /// whitespace: layout neither collapses nor trims a `Text` item, and breaking at
+    /// one would defeat the macro that asked for it. What must never appear here is
+    /// whitespace the layout engine would otherwise have collapsed — an ASCII space,
+    /// tab or newline. Those are [`Glue`](FlowItem::Glue), and putting one in a `Text`
+    /// leaks it into the output as a trailing space at a line end.
     Text(Box<str>),
     /// One collapsible inter-word space; the only place wrapping may break.
     ///
     /// Consecutive glue collapses to one, and glue at the start or end of a line is
-    /// dropped, so no output line ever carries trailing whitespace.
+    /// dropped, so no output line ends in *collapsible* whitespace. Whitespace that is
+    /// content — the spaces inside a [`Verbatim`](FlowItem::Verbatim) or
+    /// [`InlineVerbatim`](FlowItem::InlineVerbatim) payload, a no-break space emitted as
+    /// [`Text`](FlowItem::Text) — is not glue and is never dropped, so `\verb| x |` at
+    /// the end of a line does leave a space there.
     Glue,
     /// Forced line break (`\\`, `\newline`): the next content starts on a new line,
     /// without a blank line in between.

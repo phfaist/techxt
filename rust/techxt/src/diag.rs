@@ -4,8 +4,10 @@
 //! effect it cannot reproduce, a handler that failed — each produces a structured
 //! diagnostic with a source position, alongside the converted text. Conversion always
 //! continues; a diagnostic is a report, not a control-flow device. The one exception is
-//! techy's descent limit, which aborts the fold and is itself reported as
-//! [`RenderAborted`].
+//! techy's descent limit *refusing* to go deeper, which aborts the fold and is itself
+//! reported as [`RenderAborted`]; that guard's early warning is a different thing — an
+//! ordinary diagnostic on a run that goes on to finish normally, keeping techy's own
+//! `core.constructs.descent-limit-approaching` identifier (DECISIONS.md D12).
 //!
 //! # Reading diagnostics
 //!
@@ -260,9 +262,13 @@ impl TechxtCondition for InputNotResolved {
 ///
 /// This is the one non-continuable condition, and it has exactly one cause: techy's
 /// descent guard refused to go deeper, because the tree nests further than the
-/// configured limit. The conversion returns empty text plus this diagnostic. The same
-/// condition is also raised — before anything is lost — when the guard *warns* that the
-/// run is approaching its limit, so that a document about to fail says so.
+/// configured limit. The conversion returns empty text plus this diagnostic.
+///
+/// The guard's *early warning* — the notice that the limit is getting close — is not
+/// this condition (DECISIONS.md D12). The fold that saw it goes on to produce complete
+/// text, so claiming an abort would make a good conversion look like a failed one; it is
+/// reported instead as techy's own `core.constructs.descent-limit-approaching` at
+/// warning severity, which is what the parse side of the same guard records.
 #[derive(Debug, Clone, PartialEq, Eq, DiagnosticInfo)]
 #[non_exhaustive]
 #[diagnostic(

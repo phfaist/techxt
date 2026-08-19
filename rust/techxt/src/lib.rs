@@ -4,10 +4,10 @@
 //!
 //! `techxt` reads a document written in a LaTeX-like language, parses it with the
 //! [`techy`] parser, and renders it as human-readable plain text: `\emph{hi}` becomes
-//! `hi`, `\"o` becomes `ö`, `\frac{1}{2}` becomes `(1/2)`, `itemize` becomes a bulleted
-//! list, and a `tabular` becomes an aligned text table. The output is meant to be read
-//! by a person or fed to tools that want text rather than markup — search indexes,
-//! terminals, plain-text mail, screen readers.
+//! `ℎ𝑖`, `\"o` becomes `ö`, and `\section{Intro}` becomes a numbered heading over its
+//! underline. The output is meant to be read by a person or fed to tools that want
+//! text rather than markup — search indexes, terminals, plain-text mail, screen
+//! readers.
 //!
 //! It is a from-scratch redesign of the capabilities of
 //! [`pylatexenc.latex2text`](https://github.com/phfaist/pylatexenc); pylatexenc is an
@@ -105,11 +105,16 @@
 //! ## Status
 //!
 //! Early development, built up milestone by milestone. The conversion pipeline, the
-//! layout engine and the public API are in place; what is not yet is the *content*:
-//! the definitions library (so the set of macros and environments techxt knows is a
-//! deliberately small placeholder) and the math engine (so formulas render as their
-//! characters rather than as unicode math, except in
-//! [`MathMode::Source`](crate::convert::MathMode::Source), which is complete).
+//! layout engine, the public API and the definitions infrastructure are in place, as
+//! are the text-level categories: escapes and spacing, accents, font styles,
+//! sectioning, cross-references, links, graphics, titling, the preamble and `\input`.
+//!
+//! Not yet wired up, so the constructs below currently render as their bare contents:
+//! math (`\frac`, `\sqrt`, sub- and superscripts, math environments and matrices —
+//! except [`MathMode::Source`](crate::convert::MathMode::Source), which is complete,
+//! and the [`mathfmt`] engine itself, which is), lists, verbatim, tables, theorem
+//! environments and footnotes. Their categories in [`defs`] are documented stubs
+//! until then, and this section will shrink as they land.
 
 #![cfg_attr(not(test), no_std)]
 

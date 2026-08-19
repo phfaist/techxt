@@ -4,7 +4,9 @@
 //!
 //! 1. no line exceeds `wrap_width`, unless it holds a single oversized word or
 //!    verbatim content;
-//! 2. no line carries trailing whitespace;
+//! 2. no line ends in *collapsible* whitespace — whitespace that came from
+//!    [`FlowItem::Glue`]. Whitespace a payload carries is content: `\verb| x |` ends
+//!    its line in a space, and must;
 //! 3. two blank lines never follow one another;
 //! 4. `Verbatim` payloads appear in the output byte for byte;
 //! 5. the output is deterministic.
@@ -46,6 +48,22 @@ fn block_start() -> impl Strategy<Value = FlowItem> {
     })
 }
 
+/// The marker character every generated verbatim word carries, so that a space at a
+/// line end can be attributed: the only way one gets there is out of such a word, and
+/// the character before it is then this one.
+const VERBATIM_MARK: char = 'v';
+
+/// An inline-verbatim word carrying spaces of its own — `\verb| x |`, the case the
+/// *unqualified* "no trailing whitespace" invariant got wrong. Always holds at least
+/// one [`VERBATIM_MARK`], and no other non-space character.
+fn spaced_verbatim_word() -> impl Strategy<Value = Box<str>> {
+    prop::collection::vec(prop::sample::select(&[' ', 'v'][..]), 0..4).prop_map(|chars| {
+        let mut word = String::from(VERBATIM_MARK);
+        word.extend(chars);
+        word.into_boxed_str()
+    })
+}
+
 /// Items that layout is allowed to normalize: everything except verbatim content.
 fn layout_item() -> impl Strategy<Value = FlowItem> {
     prop_oneof![
@@ -55,6 +73,17 @@ fn layout_item() -> impl Strategy<Value = FlowItem> {
         2 => Just(FlowItem::ParagraphBreak),
         2 => block_start(),
         2 => Just(FlowItem::BlockEnd),
+    ]
+}
+
+/// Layout items plus inline-verbatim words that carry spaces, for the trailing-space
+/// invariant. They are words like any other — they wrap, they glue to their neighbours —
+/// so every other layout guarantee still holds over them; what they add is content
+/// whitespace at places layout could otherwise be tempted to trim.
+fn layout_item_with_raw_spaces() -> impl Strategy<Value = FlowItem> {
+    prop_oneof![
+        6 => layout_item(),
+        3 => spaced_verbatim_word().prop_map(FlowItem::InlineVerbatim),
     ]
 }
 
@@ -102,6 +131,23 @@ fn width(text: &str) -> usize {
     unicode_width::UnicodeWidthStr::width(text)
 }
 
+/// The case the qualification exists for, pinned deterministically so that the
+/// property above cannot be vacuous: a verbatim word's own trailing space is content
+/// and reaches the end of the output line.
+#[test]
+fn a_verbatim_word_keeps_its_trailing_space_at_a_line_end() {
+    let mut flow = Flow::new();
+    flow.push(FlowItem::Text("a".into()));
+    flow.push(FlowItem::Glue);
+    flow.push(FlowItem::InlineVerbatim("v ".into()));
+    let out = render(&flow, &options(None));
+    assert_eq!(out, "a v \n");
+    assert_ne!(
+        out.lines().next().unwrap().trim_end(),
+        out.lines().next().unwrap()
+    );
+}
+
 proptest! {
     /// §7.1: a line may only exceed the wrap width when it holds a single word that
     /// does not fit — which, with space-free block prefixes, means a line without a
@@ -120,9 +166,34 @@ proptest! {
         }
     }
 
-    /// §7.2: glue never survives to the end of a line.
+    /// §7.2: glue never survives to the end of a line — the invariant in its qualified
+    /// form, over flows that do carry raw spaces.
+    ///
+    /// Collapsible whitespace is glue, and glue at a line end is dropped. The
+    /// generated inline-verbatim words are the exception the qualification exists for:
+    /// their spaces are content, so a line *may* end in one — but only immediately
+    /// after such a word, which is what the marker character makes checkable.
     #[test]
-    fn no_line_ends_in_whitespace(
+    fn no_line_ends_in_collapsible_whitespace(
+        flow in flow_of(layout_item_with_raw_spaces()),
+        wrap in prop::option::of(1usize..24),
+    ) {
+        let out = render(&flow, &options(wrap));
+        for line in out.lines() {
+            let trimmed = line.trim_end();
+            if trimmed != line {
+                prop_assert!(
+                    trimmed.ends_with(VERBATIM_MARK),
+                    "line {line:?} ends in whitespace that no verbatim word put there"
+                );
+            }
+        }
+    }
+
+    /// The same invariant unqualified, over flows with no raw content at all: there,
+    /// every space is glue, and no line may end in one.
+    #[test]
+    fn no_line_ends_in_whitespace_without_raw_content(
         flow in flow_of(layout_item()),
         wrap in prop::option::of(1usize..24),
     ) {
