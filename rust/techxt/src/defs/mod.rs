@@ -1,7 +1,7 @@
 //! The default definitions library: what techxt knows about LaTeX out of the box
 //! (PLAN.md §12).
 //!
-//! Everything here is *data* in the sense that matters: one [`Category`] per theme,
+//! Everything here is *data* in the sense that matters: one [`Category`](crate::def::Category) per theme,
 //! each built from the entry builders of [`techxt::def`](crate::def), each usable on
 //! its own. [`standard`] stacks all of them into the [`DefinitionSet`] that
 //! [`Converter::standard`](crate::Converter::standard) uses.

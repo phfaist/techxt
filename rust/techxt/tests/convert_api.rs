@@ -7,7 +7,7 @@ use std::sync::Arc;
 use techxt::convert::{
     Conversion, MathMode, UnknownEnvPolicy, UnknownMacroPolicy, UnknownSpecialsPolicy,
 };
-use techxt::def::{TextHandler, TextRule};
+use techxt::def::{Category, DefinitionSet, MacroDef, SpecialsDef, TextHandler, TextRule};
 use techxt::diag::{HandlerFailed, UnknownEnvironment, UnknownMacro, UnknownSpecials};
 use techxt::flow::Flow;
 use techxt::render::{RenderCx, RenderError};
@@ -20,6 +20,19 @@ fn text(latex: &str) -> String {
         .latex_to_text(latex)
         .expect("parses")
         .text
+}
+
+/// The shipped library plus two constructs that exist only to be *rule-less*.
+///
+/// PLAN.md §10.6's policies act on a construct that parses — its arguments are
+/// declared — but carries no text rule anywhere. Every entry `techxt::defs` ships has a
+/// rule, as it should, so the dispatch chain's last step needs a vehicle of its own.
+fn with_ruleless() -> DefinitionSet {
+    techxt::defs::standard().with(
+        Category::new("test-ruleless")
+            .with_macro(MacroDef::new("ruleless").arg("m", "text"))
+            .with_specials(SpecialsDef::new("@@")),
+    )
 }
 
 // ------------------------------------------------------------- PLAN.md §11.1
@@ -53,7 +66,8 @@ fn the_three_layers_agree() {
     let from_tree: Conversion = converter.tree_to_text(&tree);
     let (flow, diagnostics) = converter.tree_to_flow(&tree);
 
-    assert_eq!(from_string.text, "a b c\n");
+    // `\emph` italicizes, which is what the shipped `defs::fontstyles` does with it.
+    assert_eq!(from_string.text, "a \u{1d44f} c\n");
     assert_eq!(from_tree.text, from_string.text);
     assert!(diagnostics.is_empty());
     assert_eq!(
@@ -85,8 +99,8 @@ fn the_builder_default_matches_the_options_default() {
 
 #[test]
 fn wrapping_happens_across_macro_boundaries() {
-    // PLAN.md §15 example 25's structure: the wrap decision sees "boldtext" as one
-    // word because the pieces are adjacent, and breaks at the glue before it.
+    // PLAN.md §15 example 25, exactly: the wrap decision sees the styled letters as
+    // ordinary words and breaks at the glue inside the macro's argument.
     let converter = Converter::builder()
         .wrap_width(Some(12))
         .build()
@@ -96,7 +110,7 @@ fn wrapping_happens_across_macro_boundaries() {
             .latex_to_text(r"aaa bbb \textbf{ccc ddd} eee")
             .expect("parses")
             .text,
-        "aaa bbb ccc\nddd eee\n"
+        "aaa bbb \u{1d41c}\u{1d41c}\u{1d41c}\n\u{1d41d}\u{1d41d}\u{1d41d} eee\n"
     );
 }
 
@@ -108,8 +122,8 @@ fn the_override_map_beats_the_embedded_rule() {
         .override_macro("emph", TextRule::Literal(Cow::Borrowed("OVERRIDDEN")))
         .build()
         .expect("builds");
-    // Without the override this renders the argument's content, "x".
-    assert_eq!(text(r"\emph{x}"), "x\n");
+    // Without the override this renders the argument, emphasized.
+    assert_eq!(text(r"\emph{x}"), "\u{1d465}\n");
     assert_eq!(
         converter.latex_to_text(r"\emph{x}").expect("parses").text,
         "OVERRIDDEN\n"
@@ -148,14 +162,16 @@ fn the_name_fallback_table_beats_the_unknown_policy() {
 
 #[test]
 fn the_unknown_policy_is_the_last_resort() {
-    // `\phantom` parses (it has an argument spec) but has no rule anywhere.
-    let conversion = Converter::standard()
-        .latex_to_text(r"a\phantom{x}b")
-        .expect("parses");
+    // `\ruleless` parses (it has an argument spec) but has no rule anywhere.
+    let converter = Converter::builder()
+        .definitions(with_ruleless())
+        .build()
+        .expect("builds");
+    let conversion = converter.latex_to_text(r"a\ruleless{x}b").expect("parses");
     assert_eq!(conversion.text, "ab\n");
     let unknown: Vec<&UnknownMacro> = conversion.diagnostics.conditions().collect();
     assert_eq!(unknown.len(), 1);
-    assert_eq!(unknown[0].name, "phantom");
+    assert_eq!(unknown[0].name, "ruleless");
 }
 
 #[test]
@@ -176,7 +192,7 @@ fn overrides_are_keyed_by_kind_as_well_as_name() {
     // `\emph` is untouched by an environment override.
     assert_eq!(
         converter.latex_to_text(r"\emph{x}").expect("parses").text,
-        "x\n"
+        "\u{1d465}\n"
     );
 }
 
@@ -189,12 +205,12 @@ fn rule_kind_literal() {
 
 #[test]
 fn rule_kind_template() {
-    // `\textbf` is a named reference, `\textit` a positional one, `\href` a template
-    // with literal text in it, and `center` a `{body}` template.
-    assert_eq!(text(r"\textbf{b}"), "b\n");
-    assert_eq!(text(r"\textit{i}"), "i\n");
+    // `\href` is a template with two named references and literal text between them,
+    // `\url` one reference inside literal text, and `\texorpdfstring` a template that
+    // deliberately drops an argument — which is why it is a template and not `Content`.
     assert_eq!(text(r"\href{u}{t}"), "t <u>\n");
-    assert_eq!(text(r"\begin{center}c\end{center}"), "c\n");
+    assert_eq!(text(r"\url{u}"), "<u>\n");
+    assert_eq!(text(r"\texorpdfstring{tex}{pdf}"), "tex\n");
 }
 
 #[test]
@@ -205,9 +221,10 @@ fn rule_kind_skip_prunes_the_subtree() {
 
 #[test]
 fn rule_kind_content() {
-    assert_eq!(text(r"\emph{x}"), "x\n");
-    assert_eq!(text(r"\verb+raw  text+"), "raw  text\n");
-    assert_eq!(text(r"\begin{verbatim}body\end{verbatim}"), "body\n");
+    // Small capitals and the over/under decorations have no plain-text rendering, so
+    // each renders exactly its argument's content.
+    assert_eq!(text(r"\textsc{x}"), "x\n");
+    assert_eq!(text(r"\overline{a b}"), "a b\n");
 }
 
 #[test]
@@ -345,15 +362,16 @@ fn every_unknown_macro_policy() {
     let cases = [
         (UnknownMacroPolicy::Skip, "ab\n"),
         (UnknownMacroPolicy::RenderArgs, "axb\n"),
-        (UnknownMacroPolicy::KeepSource, "a\\phantom{x}b\n"),
-        (UnknownMacroPolicy::Placeholder, "a<phantom>b\n"),
+        (UnknownMacroPolicy::KeepSource, "a\\ruleless{x}b\n"),
+        (UnknownMacroPolicy::Placeholder, "a<ruleless>b\n"),
     ];
     for (policy, expected) in cases {
         let converter = Converter::builder()
+            .definitions(with_ruleless())
             .unknown_macro(policy)
             .build()
             .expect("builds");
-        let conversion = converter.latex_to_text(r"a\phantom{x}b").expect("parses");
+        let conversion = converter.latex_to_text(r"a\ruleless{x}b").expect("parses");
         assert_eq!(conversion.text, expected, "policy {policy:?}");
         // The diagnostic is raised whatever the policy says.
         assert_eq!(
@@ -397,15 +415,16 @@ fn every_unknown_environment_policy() {
 #[test]
 fn every_unknown_specials_policy() {
     let cases = [
-        (UnknownSpecialsPolicy::EmitChars, "a & b\n"),
+        (UnknownSpecialsPolicy::EmitChars, "a @@ b\n"),
         (UnknownSpecialsPolicy::Skip, "a b\n"),
     ];
     for (policy, expected) in cases {
         let converter = Converter::builder()
+            .definitions(with_ruleless())
             .unknown_specials(policy)
             .build()
             .expect("builds");
-        let conversion = converter.latex_to_text("a & b").expect("parses");
+        let conversion = converter.latex_to_text("a @@ b").expect("parses");
         assert_eq!(conversion.text, expected, "policy {policy:?}");
         assert_eq!(
             conversion
@@ -421,6 +440,7 @@ fn every_unknown_specials_policy() {
 #[test]
 fn keep_source_is_protected_from_wrapping() {
     let converter = Converter::builder()
+        .definitions(with_ruleless())
         .unknown_macro(UnknownMacroPolicy::KeepSource)
         .wrap_width(Some(8))
         .build()
@@ -429,10 +449,10 @@ fn keep_source_is_protected_from_wrapping() {
     // splitting in the middle of a macro name.
     assert_eq!(
         converter
-            .latex_to_text(r"aa \phantom{bbbbbbbbbb} cc")
+            .latex_to_text(r"aa \ruleless{bbbbbbbbbb} cc")
             .expect("parses")
             .text,
-        "aa\n\\phantom{bbbbbbbbbb}\ncc\n"
+        "aa\n\\ruleless{bbbbbbbbbb}\ncc\n"
     );
 }
 

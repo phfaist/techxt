@@ -32,7 +32,7 @@
 //! # Upright is a style
 //!
 //! `\textrm`, `\mathrm` and `\operatorname` install
-//! [`FontStyleKind::Upright`](crate::mathfmt::FontStyleKind::Upright) (DECISIONS.md
+//! [`FontStyleKind::Upright`] (DECISIONS.md
 //! D7), which maps letters to themselves but is still a style: a nested `\mathbf`
 //! overrides it normally, so `\mathrm{a\mathbf{b}}` renders the `b` in bold.
 //!
@@ -202,10 +202,22 @@ mod tests {
     #[test]
     fn emphasis_toggles_rather_than_setting() {
         assert_eq!(toggle_italic(None), FontStyleKind::Italic);
-        assert_eq!(toggle_italic(Some(FontStyleKind::Italic)), FontStyleKind::Upright);
-        assert_eq!(toggle_italic(Some(FontStyleKind::Bold)), FontStyleKind::BoldItalic);
-        assert_eq!(toggle_italic(Some(FontStyleKind::BoldItalic)), FontStyleKind::Bold);
+        assert_eq!(
+            toggle_italic(Some(FontStyleKind::Italic)),
+            FontStyleKind::Upright
+        );
+        assert_eq!(
+            toggle_italic(Some(FontStyleKind::Bold)),
+            FontStyleKind::BoldItalic
+        );
+        assert_eq!(
+            toggle_italic(Some(FontStyleKind::BoldItalic)),
+            FontStyleKind::Bold
+        );
         // No italic counterpart: plain italic is the best there is.
-        assert_eq!(toggle_italic(Some(FontStyleKind::Fraktur)), FontStyleKind::Italic);
+        assert_eq!(
+            toggle_italic(Some(FontStyleKind::Fraktur)),
+            FontStyleKind::Italic
+        );
     }
 }

@@ -15,7 +15,7 @@
 //! Resolution is opt-in twice over: the converter needs a resolver, and the resolver
 //! has to answer. When either half is missing the invocation is staged with no attached
 //! slot at all — techy reports the lookup it attempted — and this handler renders
-//! nothing and raises [`InputNotResolved`](crate::diag::InputNotResolved), a *note*.
+//! nothing and raises [`InputNotResolved`], a *note*.
 //! Converting without a resolver is a perfectly ordinary configuration, and the missing
 //! slot is not a failure of anything: it is the absence of a feature nobody turned on
 //! (DECISIONS.md C4).

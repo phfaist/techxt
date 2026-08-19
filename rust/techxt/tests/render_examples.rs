@@ -6,12 +6,47 @@
 //! the very thing PLAN.md §7 guarantees.
 
 use techxt::convert::{MathMode, StdDescentGuardInit, UnknownEnvPolicy};
+use techxt::def::{Category, DefinitionSet, EnvDef, MacroDef, TextRule};
 use techxt::diag::{UnknownEnvironment, UnknownMacro};
 use techxt::Converter;
 
 /// Convert with the default options.
 fn text(latex: &str) -> String {
     Converter::standard()
+        .latex_to_text(latex)
+        .expect("a tolerant parse of well-formed input succeeds")
+        .text
+}
+
+/// The shipped library plus `\verb` and the `verbatim` environment.
+///
+/// **TODO(M6):** `defs::verbatim` is still a stub, so the constructs whose *rendering*
+/// these tests are about are declared here instead. What is under test is the renderer
+/// core and the layout engine — that raw content survives byte for byte and is never
+/// wrapped — and that does not depend on which category the declaration came from.
+/// When M6 fills `defs::verbatim`, delete this and use `Converter::standard()`.
+fn with_verbatim() -> DefinitionSet {
+    techxt::defs::standard().with(
+        Category::new("test-verbatim")
+            .with_macro(
+                MacroDef::new("verb")
+                    .arg("v", "text")
+                    .rule(TextRule::Content),
+            )
+            .with_env(
+                EnvDef::new("verbatim")
+                    .verbatim_body()
+                    .rule(TextRule::Content),
+            ),
+    )
+}
+
+/// Convert with the default options and the verbatim constructs above.
+fn verbatim_text(latex: &str) -> String {
+    Converter::builder()
+        .definitions(with_verbatim())
+        .build()
+        .expect("builds")
         .latex_to_text(latex)
         .expect("a tolerant parse of well-formed input succeeds")
         .text
@@ -49,7 +84,7 @@ fn example_9_keep_comments_gives_the_comment_its_own_line() {
 
 #[test]
 fn example_19_verb_keeps_its_characters() {
-    assert_eq!(text(r"\verb|x_1|"), "x_1\n");
+    assert_eq!(verbatim_text(r"\verb|x_1|"), "x_1\n");
 }
 
 #[test]
@@ -62,16 +97,18 @@ fn example_20_href_renders_text_then_url() {
 
 #[test]
 fn example_24_verbatim_body_survives_byte_for_byte() {
-    let converted = text("\\begin{verbatim}\n  keep   this\n\n    exactly\n\\end{verbatim}");
+    let converted =
+        verbatim_text("\\begin{verbatim}\n  keep   this\n\n    exactly\n\\end{verbatim}");
     assert_eq!(converted, "  keep   this\n\n    exactly\n");
 }
 
 #[test]
 fn example_24_verbatim_is_blank_line_separated_and_never_wrapped() {
     let converter = Converter::builder()
+        .definitions(with_verbatim())
         .wrap_width(Some(8))
         .build()
-        .expect("the minimal definitions build");
+        .expect("builds");
     let converted = converter
         .latex_to_text(
             "before\n\\begin{verbatim}\n  a very long verbatim line\n\\end{verbatim}\nafter",
@@ -103,9 +140,12 @@ fn example_26_unknown_environment_renders_its_body_and_warns() {
 
 #[test]
 fn adjacent_text_is_one_unbreakable_word() {
-    // PLAN.md §15 example 4's structure, without the font styling M5 adds: the two
-    // pieces must not be separated by a space, and (below) must not wrap apart.
-    assert_eq!(text(r"\textbf{bold}text"), "boldtext\n");
+    // PLAN.md §15 example 4, exactly: the styled argument and the text after it must
+    // not be separated by a space, and (below) must not wrap apart.
+    assert_eq!(
+        text(r"\textbf{bold}text"),
+        "\u{1d41b}\u{1d428}\u{1d425}\u{1d41d}text\n"
+    );
 }
 
 #[test]

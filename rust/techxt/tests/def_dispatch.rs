@@ -150,6 +150,32 @@ fn under_macro_policy(policy: UnknownMacroPolicy, latex: &str) -> String {
         .text
 }
 
+/// The shipped library plus a macro and a specials that are declared but rule-less.
+///
+/// Every entry `techxt::defs` ships carries a rule, as it should; the last link of the
+/// dispatch chain therefore needs constructs made for the purpose. Declaring the
+/// arguments is the point: it is the only case in which `RenderArgs` has anything to
+/// render and `KeepSource` has a full invocation to re-emit.
+fn with_ruleless() -> DefinitionSet {
+    techxt::defs::standard().with(
+        Category::new("test-ruleless")
+            .with_macro(MacroDef::new("ruleless").arg("m", "text"))
+            .with_specials(SpecialsDef::new("@@")),
+    )
+}
+
+/// [`under_macro_policy`] with the rule-less vehicles in scope.
+fn under_macro_policy_ruleless(policy: UnknownMacroPolicy, latex: &str) -> String {
+    Converter::builder()
+        .definitions(with_ruleless())
+        .unknown_macro(policy)
+        .build()
+        .expect("builds")
+        .latex_to_text(latex)
+        .expect("parses")
+        .text
+}
+
 #[test]
 fn every_unknown_macro_policy_acts_on_a_genuinely_unregistered_macro() {
     // `\foo` is defined nowhere. techxt's catch-all provider still gives it a spec, so
@@ -176,23 +202,23 @@ fn every_unknown_macro_policy_acts_on_a_genuinely_unregistered_macro() {
 
 #[test]
 fn every_unknown_macro_policy_acts_on_a_macro_that_parses_but_has_no_rule() {
-    // `\phantom` is declared with one argument and no rule, which is where the policies
-    // differ: only here can `RenderArgs` have arguments to render.
+    // `\ruleless` is declared with one argument and no rule, which is where the
+    // policies differ: only here can `RenderArgs` have arguments to render.
     assert_eq!(
-        under_macro_policy(UnknownMacroPolicy::Skip, r"a\phantom{x}b"),
+        under_macro_policy_ruleless(UnknownMacroPolicy::Skip, r"a\ruleless{x}b"),
         "ab\n"
     );
     assert_eq!(
-        under_macro_policy(UnknownMacroPolicy::RenderArgs, r"a\phantom{x}b"),
+        under_macro_policy_ruleless(UnknownMacroPolicy::RenderArgs, r"a\ruleless{x}b"),
         "axb\n"
     );
     assert_eq!(
-        under_macro_policy(UnknownMacroPolicy::KeepSource, r"a\phantom{x}b"),
-        "a\\phantom{x}b\n"
+        under_macro_policy_ruleless(UnknownMacroPolicy::KeepSource, r"a\ruleless{x}b"),
+        "a\\ruleless{x}b\n"
     );
     assert_eq!(
-        under_macro_policy(UnknownMacroPolicy::Placeholder, r"a\phantom{x}b"),
-        "a<phantom>b\n"
+        under_macro_policy_ruleless(UnknownMacroPolicy::Placeholder, r"a\ruleless{x}b"),
+        "a<ruleless>b\n"
     );
 }
 
@@ -253,17 +279,18 @@ fn the_unknown_environment_policies_each_act() {
 
 #[test]
 fn the_unknown_specials_policies_each_act() {
-    // `&` is declared with no rule in the placeholder definitions, so it is a specials
-    // the policy has to decide about.
+    // `@@` is declared with no rule, so it is a specials the policy has to decide
+    // about — unlike the `&` the shipped library defines.
     for (policy, expected) in [
-        (UnknownSpecialsPolicy::EmitChars, "a&b\n"),
+        (UnknownSpecialsPolicy::EmitChars, "a@@b\n"),
         (UnknownSpecialsPolicy::Skip, "ab\n"),
     ] {
         let conversion = Converter::builder()
+            .definitions(with_ruleless())
             .unknown_specials(policy)
             .build()
             .expect("builds")
-            .latex_to_text("a&b")
+            .latex_to_text("a@@b")
             .expect("parses");
         assert_eq!(conversion.text, expected, "{policy:?}");
         assert_eq!(

@@ -93,7 +93,10 @@ impl core::error::Error for RenderError {}
 // here because PLAN.md §8 puts them in the run state, and because their *lifetime rules*
 // (document order, one push per open list) are what the renderer core guarantees — so
 // they are allowed to be unread until the handlers that read them exist.
-#[allow(dead_code, reason = "the list counter stack is written by the M6 list handlers")]
+#[allow(
+    dead_code,
+    reason = "the list counter stack is written by the M6 list handlers"
+)]
 #[derive(Debug, Default)]
 pub(crate) struct RunState {
     pub(crate) diagnostics: Diagnostics<Option<String>>,

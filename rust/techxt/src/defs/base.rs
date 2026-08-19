@@ -488,7 +488,7 @@ impl TextHandler for ModeShift {
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let mut state = cx.state().clone();
-        state.math = self.math.then(|| MathCtx {
+        state.math = self.math.then_some(MathCtx {
             // An `\ensuremath` is inline by construction: it is what a macro writes so
             // that its body works in running text as well as in a formula.
             display: false,

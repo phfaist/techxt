@@ -15,32 +15,32 @@
 /// Sorted by macro name. The name is written without its escape character, as
 /// techy registers it: `"'"` is `\'`.
 pub(crate) static ACCENTS: &[(&str, char)] = &[
-    ("\"", '\u{0308}'), // COMBINING DIAERESIS
-    ("'", '\u{0301}'), // COMBINING ACUTE ACCENT
-    (".", '\u{0307}'), // COMBINING DOT ABOVE
-    ("=", '\u{0304}'), // COMBINING MACRON
-    ("H", '\u{030b}'), // COMBINING DOUBLE ACUTE ACCENT
-    ("^", '\u{0302}'), // COMBINING CIRCUMFLEX ACCENT
-    ("`", '\u{0300}'), // COMBINING GRAVE ACCENT
+    ("\"", '\u{0308}'),    // COMBINING DIAERESIS
+    ("'", '\u{0301}'),     // COMBINING ACUTE ACCENT
+    (".", '\u{0307}'),     // COMBINING DOT ABOVE
+    ("=", '\u{0304}'),     // COMBINING MACRON
+    ("H", '\u{030b}'),     // COMBINING DOUBLE ACUTE ACCENT
+    ("^", '\u{0302}'),     // COMBINING CIRCUMFLEX ACCENT
+    ("`", '\u{0300}'),     // COMBINING GRAVE ACCENT
     ("acute", '\u{0301}'), // COMBINING ACUTE ACCENT
-    ("b", '\u{0331}'), // COMBINING MACRON BELOW
-    ("bar", '\u{0305}'), // COMBINING OVERLINE
+    ("b", '\u{0331}'),     // COMBINING MACRON BELOW
+    ("bar", '\u{0305}'),   // COMBINING OVERLINE
     ("breve", '\u{0306}'), // COMBINING BREVE
-    ("c", '\u{0327}'), // COMBINING CEDILLA
+    ("c", '\u{0327}'),     // COMBINING CEDILLA
     ("check", '\u{030c}'), // COMBINING CARON
-    ("d", '\u{0323}'), // COMBINING DOT BELOW
-    ("ddot", '\u{0308}'), // COMBINING DIAERESIS
-    ("dot", '\u{0307}'), // COMBINING DOT ABOVE
+    ("d", '\u{0323}'),     // COMBINING DOT BELOW
+    ("ddot", '\u{0308}'),  // COMBINING DIAERESIS
+    ("dot", '\u{0307}'),   // COMBINING DOT ABOVE
     ("grave", '\u{0300}'), // COMBINING GRAVE ACCENT
-    ("hat", '\u{0302}'), // COMBINING CIRCUMFLEX ACCENT
-    ("k", '\u{0328}'), // COMBINING OGONEK
-    ("not", '\u{0338}'), // COMBINING LONG SOLIDUS OVERLAY
-    ("r", '\u{030a}'), // COMBINING RING ABOVE
+    ("hat", '\u{0302}'),   // COMBINING CIRCUMFLEX ACCENT
+    ("k", '\u{0328}'),     // COMBINING OGONEK
+    ("not", '\u{0338}'),   // COMBINING LONG SOLIDUS OVERLAY
+    ("r", '\u{030a}'),     // COMBINING RING ABOVE
     ("tilde", '\u{0303}'), // COMBINING TILDE
-    ("u", '\u{0306}'), // COMBINING BREVE
-    ("v", '\u{030c}'), // COMBINING CARON
-    ("vec", '\u{20d7}'), // COMBINING RIGHT ARROW ABOVE
-    ("~", '\u{0303}'), // COMBINING TILDE
+    ("u", '\u{0306}'),     // COMBINING BREVE
+    ("v", '\u{030c}'),     // COMBINING CARON
+    ("vec", '\u{20d7}'),   // COMBINING RIGHT ARROW ABOVE
+    ("~", '\u{0303}'),     // COMBINING TILDE
 ];
 
 /// The standalone (spacing) form of a combining mark, where unicode has one.

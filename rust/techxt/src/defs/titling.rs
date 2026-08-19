@@ -150,8 +150,16 @@ impl TextHandler for MakeTitle {
             None => today(cx),
         };
 
-        let lines = [title, alloc::format!("{INDENT}{author}"), alloc::format!("{INDENT}{date}")];
-        let width = lines.iter().map(|line| display_width(line)).max().unwrap_or(0);
+        let lines = [
+            title,
+            alloc::format!("{INDENT}{author}"),
+            alloc::format!("{INDENT}{date}"),
+        ];
+        let width = lines
+            .iter()
+            .map(|line| display_width(line))
+            .max()
+            .unwrap_or(0);
         let rule: String = core::iter::repeat_n('=', width).collect();
 
         let mut flow = Flow::new();

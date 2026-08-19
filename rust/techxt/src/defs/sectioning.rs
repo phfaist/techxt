@@ -163,11 +163,11 @@ impl Heading {
         }
         let first = if chapters { CHAPTER } else { SECTION };
         let mut number = String::new();
-        for level in first..=self.level {
+        for counter in &counters[first..=self.level] {
             if !number.is_empty() {
                 number.push('.');
             }
-            let _ = core::fmt::Write::write_fmt(&mut number, format_args!("{}", counters[level]));
+            let _ = core::fmt::Write::write_fmt(&mut number, format_args!("{counter}"));
         }
         Some(number)
     }
