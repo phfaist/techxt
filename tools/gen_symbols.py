@@ -11,14 +11,19 @@ Usage::
     tools/gen_symbols.py /path/to/pylatexenc [--out rust/techxt/src]
     tools/gen_symbols.py /path/to/pylatexenc --check   # regenerate and diff
 
-What it generates today (milestone M4):
+What it generates today:
 
-``defs/accents_data.rs``
+``defs/accents_data.rs`` (milestone M4)
     the accent table of PLAN.md §9.3 — the LaTeX accent macros and the combining
     character each installs, ported from pylatexenc's ``unicode_accents_list`` —
     plus the two unicode-derived tables the plan's accent rule needs: the spacing
     clone of every combining character (for ``\\'{}`` with an empty argument) and
     the (base, combining) pairs that compose to a precomposed character under NFC.
+
+``defs/symbols_extra_data.rs`` (milestone M8)
+    the ~1000-entry long tail of PLAN.md §12.3: every macro pylatexenc's two
+    default-spec tables know, with the replacement text, argument shape and mode
+    restriction of each.
 
 The composition and spacing tables are derived from the Python runtime's own
 unicode database rather than transcribed, because they are pure unicode facts:
@@ -27,10 +32,18 @@ of a combining mark.  pylatexenc calls ``unicodedata.normalize`` at run time for
 exactly this; techxt is ``no_std`` and has no unicode database, so the answer is
 precomputed here instead.
 
-Adding a generator (milestone M8's ``symbols_extra``, the ~1000-entry long tail):
-write a ``generate_<name>(pylatexenc)`` function returning the file body, and add
-it to ``GENERATORS``.  The pylatexenc reading helpers, the deduplicate-and-sort
-rule and the file writer are shared and need no change.
+Adding a generator: write a ``generate_<name>(pylatexenc)`` function returning the
+file body, and add it to ``GENERATORS``.  The pylatexenc reading helpers, the
+deduplicate-and-sort rule and the file writer are shared and need no change.
+
+Two ways of reading pylatexenc live here, and they are not interchangeable.
+:py:func:`read_literal` parses a literal out of a source file without executing it,
+which is right for a self-contained table such as ``unicode_accents_list``.
+:py:func:`import_pylatexenc` imports the checkout instead, which is what the symbol
+tables need: pylatexenc builds the Greek letters, the up-Greek variants and the
+operator names *at import time* with loops and ``unicodedata`` lookups, so a table
+read without executing the module would silently be missing about a hundred
+entries.
 """
 
 from __future__ import annotations
@@ -38,6 +51,7 @@ from __future__ import annotations
 import argparse
 import ast
 import difflib
+import importlib
 import re
 import shutil
 import subprocess
@@ -88,6 +102,32 @@ def read_literal(source: Path, name: str):
         raise SystemExit(f"{source}: {name!r} is not a literal: {error}") from error
 
 
+def import_pylatexenc(pylatexenc: Path, module: str):
+    """Import ``module`` from a pylatexenc checkout, without installing it.
+
+    Needed wherever a table is *built* at import time rather than written out as a
+    literal: ``latex2text/_defaultspecs.py`` appends the Greek letters, their
+    capital and up-Greek variants and the operator names to its own tables in
+    module-level loops, and ``latexwalker/_defaultspecs.py`` builds most of its
+    argument specs through helper functions.  :py:func:`read_literal` cannot see
+    any of that.
+
+    The checkout goes on ``sys.path`` ahead of everything else, so that a
+    pylatexenc that also happens to be installed cannot be picked up instead — the
+    generated output must depend only on the checkout that was named.
+    """
+    path = str(pylatexenc.resolve())
+    if sys.path[:1] != [path]:
+        sys.path.insert(0, path)
+    imported = importlib.import_module(module)
+    if not imported.__file__.startswith(path):
+        raise SystemExit(
+            f"{module} resolved to {imported.__file__}, which is not inside "
+            f"{path}; run this script in a fresh interpreter"
+        )
+    return imported
+
+
 def dedup_sorted(entries, key=lambda entry: entry[0]):
     """Deduplicate by ``key`` keeping the **last** occurrence, then sort by it.
 
@@ -113,9 +153,53 @@ def rust_char(character: str) -> str:
 
 
 def rust_str(text: str) -> str:
-    """A Rust string literal for a macro name (ASCII, may contain quotes)."""
-    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
+    """A Rust string literal for a macro name (ASCII, may contain quotes).
+
+    A name can be a single non-letter character — ``\\%``, ``\\&``, and the control
+    space and control newline — so the quote, the backslash and anything
+    unprintable are escaped.  ``\\<newline>`` written literally would put a line
+    break inside a string literal, which Rust reads as a line continuation and which
+    no reader of the table would recognize as a macro name.
+    """
+    escaped = []
+    for character in text:
+        if character in ('"', "\\"):
+            escaped.append("\\" + character)
+        elif character.isprintable() and character != " ":
+            escaped.append(character)
+        else:
+            escaped.append(f"\\u{{{ord(character):04x}}}")
+    return '"' + "".join(escaped) + '"'
+
+
+# Unicode general categories whose members must never be written literally into
+# generated Rust: whitespace and line/paragraph separators (indistinguishable from an
+# ordinary space in an editor), format and control characters (invisible), and the
+# combining marks (which would attach themselves to the preceding quote).
+UNPRINTABLE_CATEGORIES = frozenset(
+    ("Zs", "Zl", "Zp", "Cc", "Cf", "Co", "Cs", "Cn", "Mn", "Mc", "Me")
+)
+
+
+def rust_text(text: str) -> str:
+    """A Rust string literal for replacement text, escaped only where it must be.
+
+    A visible character is written as itself: a table of a thousand symbols whose
+    replacements all read ``\\u{2a7d}`` is unreviewable, and the whole point of
+    committing generated output is that a human can read the diff.  Everything that
+    would be invisible or ambiguous on the page — spaces, format characters,
+    combining marks — is escaped instead, together with the two characters Rust
+    itself reserves inside a string.
+    """
+    out = []
+    for character in text:
+        if character in ('"', "\\"):
+            out.append("\\" + character)
+        elif unicodedata.category(character) in UNPRINTABLE_CATEGORIES:
+            out.append(f"\\u{{{ord(character):04x}}}")
+        else:
+            out.append(character)
+    return '"' + "".join(out) + '"'
 
 
 def char_name(character: str) -> str:
@@ -271,9 +355,306 @@ def generate_accents(pylatexenc: Path) -> str:
     return "\n".join(out)
 
 
+# ------------------------------------------------------- the symbols_extra long tail
+
+# pylatexenc categories PLAN.md §4 drops outright.
+DROPPED_TEXT_CATEGORIES = frozenset(("latex-ethuebung", "nonstandard-qit"))
+# ... and the parse-side categories that go with them.  `natbib` is dropped here too,
+# but for the opposite reason: techxt curates it by hand in `defs::natbib`, whose
+# citation shapes are richer than a generated `Skip` would be (PLAN.md §9.8).
+DROPPED_WALKER_CATEGORIES = frozenset(("latex-ethuebung", "natbib"))
+
+# pylatexenc argument codes → techy's, which happen to be the same letters for the
+# three shapes a symbol table ever needs.
+ARGUMENT_CODES = {"*": "s", "[": "o", "{": "m"}
+
+# Macros whose upstream replacement is not a constant and so must never be baked into
+# a committed table.  `\today` is evaluated by pylatexenc at *import* time from the
+# system clock, which would make this generator's output differ from one day to the
+# next; PLAN.md §9.8 gives it to the embedder as `Options::today` instead, and
+# `defs::titling` implements that.
+NOT_CONSTANT = frozenset(("today",))
+
+
+def macro_arguments(spec):
+    """``[(code, name)]`` for one walker macro spec, or ``None`` if it cannot be ported.
+
+    ``None`` means the spec asks for something techxt's generated table has no way
+    to say — a verbatim-delimited argument (``\\verb``, ``\\url``, ``\\href``), or an
+    argument carrying a parsing-state delta (``\\ensuremath`` entering math,
+    ``\\text`` leaving it).  Every such macro is one PLAN.md §9 curates by hand, so
+    dropping it here loses nothing; generating a plain ``{…}`` argument in its place
+    would be actively wrong, because the entry would then parse its argument under
+    the wrong rules wherever the curated category is not also loaded.
+    """
+    declared = spec.arguments_spec_list
+    if declared is None:
+        return []
+    # A compact argspec is a plain string, one character per argument; the list form
+    # mixes those characters with `LatexArgumentSpec` objects.
+    arguments = list(declared) if isinstance(declared, str) else declared
+    ported = []
+    for index, argument in enumerate(arguments, start=1):
+        name = None
+        if isinstance(argument, str):
+            code = argument
+        else:
+            if getattr(argument, "parsing_state_delta", None) is not None:
+                return None
+            name = getattr(argument, "argname", None)
+            parser = argument.parser
+            if isinstance(parser, str):
+                code = parser
+            elif type(parser).__name__ == "LatexCharsGroupParser":
+                # A braced run of plain characters: a `{…}` group as far as parsing
+                # goes, and techxt renders its content as the text it is.
+                code = "{"
+            else:
+                return None
+        code = ARGUMENT_CODES.get(code)
+        if code is None:
+            return None
+        # Every argument in techxt's database is named (PLAN.md §10.1). pylatexenc
+        # names only a handful, so the rest are named after their position, which is
+        # also what a generated template refers to them by.
+        ported.append((code, name or ("star" if code == "s" else f"arg{index}")))
+    return ported
+
+
+def replacement_template(replacement: str):
+    """Convert a v3 ``%``-style replacement into techxt's template language.
+
+    PLAN.md §4 drops the ``%`` mini-language itself, and §10.5 replaces it: ``%s``
+    takes the next argument in order, ``%(n)s`` takes the *n*-th, and both become
+    ``{n}`` — a 1-based index reference.  Braces in the surrounding literal text are
+    doubled, since a brace is what a reference is written with.
+
+    Returns ``(template, highest_index)``, or ``(None, 0)`` for a replacement using
+    some other ``%`` conversion, which techxt has no equivalent for.
+    """
+    out = []
+    index = 0
+    highest = 0
+    position = 0
+    while position < len(replacement):
+        character = replacement[position]
+        if character == "%":
+            if replacement[position + 1 : position + 2] == "%":
+                out.append("%")
+                position += 2
+                continue
+            numbered = re.match(r"%\((\d+)\)s", replacement[position:])
+            if numbered is not None:
+                index = int(numbered.group(1))
+                out.append(f"{{{index}}}")
+                highest = max(highest, index)
+                position += numbered.end()
+                continue
+            if replacement[position + 1 : position + 2] == "s":
+                index += 1
+                out.append(f"{{{index}}}")
+                highest = max(highest, index)
+                position += 2
+                continue
+            return None, 0
+        out.append({"{": "{{", "}": "}}"}.get(character, character))
+        position += 1
+    return "".join(out), highest
+
+
+def ensuremath_evidence(uni2latex):
+    """``(bare, math)``: the macro names latexencode writes outside/inside ``\\ensuremath``.
+
+    This is the one place upstream records, per macro, whether LaTeX needs math mode
+    for it.  ``latexencode``'s ``defaults`` rule set maps a unicode character to the
+    LaTeX that produces it, and wraps the math-only commands in ``\\ensuremath{…}``
+    precisely so that the result can be pasted into running text.  A name that only
+    ever appears wrapped is math-only; one that only ever appears bare is text-only;
+    one that appears both ways (``\\Upsilon``, ``\\acute``) is neither.
+    """
+    bare, math = set(), set()
+    for produced in uni2latex.values():
+        # Split into (text, is_inside_ensuremath) runs.  The brace counting is what
+        # keeps `\ensuremath{\acute\upsilon}` from leaking into the bare set.
+        runs, position = [], 0
+        while True:
+            start = produced.find(r"\ensuremath{", position)
+            if start < 0:
+                runs.append((produced[position:], False))
+                break
+            runs.append((produced[position:start], False))
+            end = start + len(r"\ensuremath{")
+            depth = 1
+            while end < len(produced) and depth:
+                depth += {"{": 1, "}": -1}.get(produced[end], 0)
+                end += 1
+            runs.append((produced[start:end], True))
+            position = end
+        for text, inside in runs:
+            for name in re.findall(r"\\([a-zA-Z]+|.)", text):
+                if name != "ensuremath":
+                    (math if inside else bare).add(name)
+    return bare, math
+
+
+def symbol_mode(name: str, replacement: str, arguments, bare, math) -> str:
+    """``"Math"``, ``"Text"`` or ``"Any"`` — the modes an entry is visible in.
+
+    **An entry that declares arguments is never restricted.**  A mode-invisible
+    macro is not simply skipped: with techxt's catch-all fallback registered (the
+    default under tolerant recovery) it resolves to a *zero-argument* spec instead,
+    and its arguments are then parsed as ordinary groups and rendered — so
+    ``$\\textcolor{red}{x}$`` under a text-only ``\\textcolor`` prints "redx".  A
+    restriction is only ever safe on an entry with nothing to leak.
+
+    Mode-correctness is what keeps ``\\alpha`` from firing in a paragraph and
+    ``\\textbullet`` from firing in a formula, and pylatexenc records it nowhere: its
+    two spec tables are mode-blind.  So it is reconstructed from three signals, in
+    order of how much they are worth:
+
+    1. ``\\ensuremath`` evidence (see :py:func:`ensuremath_evidence`).  A name used
+       only inside one is math-only; that is upstream saying LaTeX rejects it in a
+       paragraph.
+    2. the ``text…`` naming convention, which is what the text-symbol packages use
+       for exactly the commands that are text-mode-only.
+    3. bare use in the same table, *unless* the replacement is a single character
+       unicode classifies as a symbol.  ``\\flat``, ``\\sharp`` and ``\\natural`` are
+       written bare there and are nonetheless math commands; a lone symbol character
+       is no evidence of text-mode-ness, whereas a letter or a piece of punctuation
+       (``\\ss``, ``\\guillemotleft``) is.
+
+    Anything left over is registered in **both** modes, which is pylatexenc's own
+    behavior and the safe answer: an over-broad entry renders something reasonable
+    where LaTeX would have complained, while a wrong restriction loses the symbol
+    altogether.
+    """
+    if arguments:
+        return "Any"
+    if name in math and name not in bare:
+        return "Math"
+    if name.startswith("text"):
+        return "Text"
+    symbolic = len(replacement) == 1 and unicodedata.category(replacement) in ("Sm", "So")
+    if name in bare and name not in math and not symbolic:
+        return "Text"
+    return "Any"
+
+
+def generate_symbols_extra(pylatexenc: Path) -> str:
+    """``defs/symbols_extra_data.rs`` — the long tail of PLAN.md §12.3.
+
+    The union of two pylatexenc tables: the render side
+    (``latex2text/_defaultspecs.py``), which says what a macro *becomes*, and the
+    parse side (``latexwalker/_defaultspecs.py``), which says what it *takes*.  A
+    macro known only to the parse side renders as nothing, which is what pylatexenc
+    itself does with a macro it can parse but has no text rule for — and the point
+    of carrying it is that its arguments are then consumed rather than spilled into
+    the reader's paragraph.
+
+    Entries this cannot port are collected and reported rather than guessed at; see
+    :py:func:`macro_arguments` and :py:func:`replacement_template`.
+    """
+    text_specs = import_pylatexenc(pylatexenc, "pylatexenc.latex2text._defaultspecs")
+    walker_specs = import_pylatexenc(pylatexenc, "pylatexenc.latexwalker._defaultspecs")
+    uni2latex = import_pylatexenc(pylatexenc, "pylatexenc.latexencode._uni2latexmap")
+
+    # What each macro renders as.  A callable `simplify_repl` is one of PLAN.md §9's
+    # handlers, curated by hand in another `defs` module; only the strings are data.
+    replacements = {}
+    for category, groups in text_specs.specs:
+        if category in DROPPED_TEXT_CATEGORIES:
+            continue
+        for spec in groups["macros"]:
+            if isinstance(spec.simplify_repl, str):
+                replacements[spec.macroname] = spec.simplify_repl
+
+    arguments = {}
+    unported = []
+    for category, groups in walker_specs.specs:
+        if category in DROPPED_WALKER_CATEGORIES:
+            continue
+        for spec in groups["macros"]:
+            ported = macro_arguments(spec)
+            if ported is None:
+                unported.append((spec.macroname, "argument shape techxt cannot declare"))
+            arguments[spec.macroname] = ported
+
+    bare, math = ensuremath_evidence(uni2latex.uni2latex)
+
+    entries = []
+    for name in sorted(set(replacements) | set(arguments)):
+        declared = arguments.get(name, [])
+        if declared is None:
+            continue
+        if name in NOT_CONSTANT:
+            unported.append((name, "upstream replacement is not a constant"))
+            continue
+        replacement = replacements.get(name)
+        if replacement is None or replacement == "":
+            # Parsed, and rendering nothing: pylatexenc's own default for a macro
+            # with no text rule, and for `\hspace`, whose replacement is "".
+            rule = "Skip"
+        elif "\n" in replacement:
+            # techxt spells a break as a `Flow` item, never as a character in
+            # replacement text (PLAN.md §6); `\vspace` is curated in `defs::base`.
+            unported.append((name, "replacement contains a line break"))
+            continue
+        elif "%" in replacement:
+            template, highest = replacement_template(replacement)
+            if template is None:
+                unported.append((name, f"unconvertible replacement {replacement!r}"))
+                continue
+            if highest > len(declared):
+                unported.append(
+                    (name, f"replacement wants argument {highest} of {len(declared)}")
+                )
+                continue
+            rule = f"Template({rust_text(template)})"
+        else:
+            rule = f"Literal({rust_text(replacement)})"
+        mode = symbol_mode(name, replacement or "", declared, bare, math)
+        declared_rust = (
+            "&[" + ", ".join(f"({rust_str(c)}, {rust_str(n)})" for c, n in declared) + "]"
+            if declared
+            else "&[]"
+        )
+        entries.append(f"    ({rust_str(name)}, {rule}, {declared_rust}, {mode}),")
+
+    for name, why in sorted(unported):
+        print(f"symbols_extra: not ported: \\{name} — {why}", file=sys.stderr)
+
+    return "\n".join(
+        [
+            HEADER,
+            "//",
+            "// Source: pylatexenc `latex2text/_defaultspecs.py` (what a macro renders as)",
+            "// and `latexwalker/_defaultspecs.py` (what it parses), minus the categories",
+            "// PLAN.md §4 drops, plus the mode evidence of `latexencode`'s default rules.",
+            "",
+            "//! The generated symbol table (PLAN.md §12.3, §12.4).",
+            "//!",
+            "//! One row per macro, sorted by name: what it is called, what it renders as,",
+            "//! the arguments it declares, and the modes it is visible in. See",
+            "//! [`defs::symbols_extra`](super) for what the columns mean and how they are",
+            "//! turned into definitions.",
+            "",
+            "use super::SymbolMode::{Any, Math, Text};",
+            "use super::SymbolRule::{Literal, Skip, Template};",
+            "use super::Symbol;",
+            "",
+            "/// Every macro of the long tail, sorted by name and free of duplicates.",
+            "pub(super) static SYMBOLS: &[Symbol] = &[",
+            *entries,
+            "];",
+            "",
+        ]
+    )
+
+
 # name → (relative path under the output root, generator)
 GENERATORS = {
     "accents": ("defs/accents_data.rs", generate_accents),
+    "symbols_extra": ("defs/symbols_extra_data.rs", generate_symbols_extra),
 }
 
 
