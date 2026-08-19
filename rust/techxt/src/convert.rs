@@ -40,8 +40,8 @@ use techy::recompose::TreeRecomposer;
 use techy::source::IntoSourceResolver;
 
 use crate::def::{
-    BuiltDefinitions, CallableKind, DefinitionSet, RuleTable, TemplateError, TemplateScope,
-    TextRule,
+    BuiltDefinitions, CallableKind, DefinitionSet, RuleTable, SpecBuildCx, TemplateError,
+    TemplateScope, TextRule,
 };
 use crate::flow::Flow;
 use crate::layout::{render, LayoutOptions};
@@ -241,6 +241,7 @@ pub struct ConverterBuilder {
     definitions: Option<DefinitionSet>,
     overrides: Vec<(CallableKind, Box<str>, TextRule)>,
     recovery: Recovery,
+    unknown_macro_resolution: UnknownMacroResolution,
     descent_guard: StdDescentGuardInit,
     source_resolver: Option<Arc<dyn techy::source::SourceResolver<Option<String>>>>,
 }
@@ -250,6 +251,7 @@ impl core::fmt::Debug for ConverterBuilder {
         f.debug_struct("ConverterBuilder")
             .field("options", &self.options)
             .field("recovery", &self.recovery)
+            .field("unknown_macro_resolution", &self.unknown_macro_resolution)
             .field("descent_guard", &self.descent_guard)
             .field("has_source_resolver", &self.source_resolver.is_some())
             .finish_non_exhaustive()
@@ -271,6 +273,7 @@ impl ConverterBuilder {
             definitions: None,
             overrides: Vec::new(),
             recovery: Recovery::Tolerant,
+            unknown_macro_resolution: UnknownMacroResolution::default(),
             descent_guard: StdDescentGuardInit::default(),
             source_resolver: None,
         }
@@ -377,12 +380,55 @@ impl ConverterBuilder {
     /// Choose the parser's recovery policy. The default is [`Recovery::Tolerant`], which
     /// converts a malformed document as best it can and reports what was wrong.
     ///
-    /// Note that an *unknown macro* is not malformedness under either policy: techxt's
-    /// catch-all provider (see [`Options::unknown_macro`]) resolves every command, so
-    /// even [`Recovery::Strict`] converts a document full of macros techxt has never
-    /// heard of, reporting each as a `techxt.unknown-macro` warning.
+    /// # It decides the fate of an unknown command too
+    ///
+    /// A command no definition claims cannot be shaped into an invocation by the parser,
+    /// so what happens to it is a *parsing* question (DECISIONS.md D10). Under the
+    /// default [`Tolerant`](Recovery::Tolerant) techxt registers a catch-all provider
+    /// that resolves every command as an argument-less callable, and `\foo` converts to
+    /// whatever [`Options::unknown_macro`] says, with a `techxt.unknown-macro` warning.
+    /// Under [`Strict`](Recovery::Strict) the catch-all is *not* registered, so an
+    /// unknown command is a hard parse error and
+    /// [`latex_to_text`](Converter::latex_to_text) answers `Err` — strict means strict.
+    ///
+    /// Decouple the two with [`unknown_macro_resolution`](Self::unknown_macro_resolution),
+    /// which overrides that pairing in either direction.
     pub fn recovery(mut self, recovery: Recovery) -> ConverterBuilder {
         self.recovery = recovery;
+        self
+    }
+
+    /// Decide the fate of a command no definition claims, independently of
+    /// [`recovery`](Self::recovery) (DECISIONS.md D10).
+    ///
+    /// The default, [`UnknownMacroResolution::FollowRecovery`], pairs the two: tolerant
+    /// parses accept unknown commands and strict ones refuse them.
+    /// [`Accept`](UnknownMacroResolution::Accept) keeps unknown commands convertible
+    /// under strict recovery — everything *else* strict still applies — and
+    /// [`Reject`](UnknownMacroResolution::Reject) refuses them under tolerant recovery,
+    /// where techy's own recovery then turns `\foo` into literal characters and reports
+    /// `core.specs.unresolvable-command`.
+    ///
+    /// ```
+    /// use techxt::convert::UnknownMacroResolution;
+    /// use techxt::Converter;
+    /// use techy::error::Recovery;
+    ///
+    /// let strict = Converter::builder().recovery(Recovery::Strict).build()?;
+    /// assert!(strict.latex_to_text(r"\nosuchmacro").is_err());
+    ///
+    /// let lenient = Converter::builder()
+    ///     .recovery(Recovery::Strict)
+    ///     .unknown_macro_resolution(UnknownMacroResolution::Accept)
+    ///     .build()?;
+    /// assert_eq!(lenient.latex_to_text(r"a\nosuchmacro b")?.text, "a b\n");
+    /// # Ok::<(), Box<dyn core::error::Error>>(())
+    /// ```
+    pub fn unknown_macro_resolution(
+        mut self,
+        resolution: UnknownMacroResolution,
+    ) -> ConverterBuilder {
+        self.unknown_macro_resolution = resolution;
         self
     }
 
@@ -393,12 +439,22 @@ impl ConverterBuilder {
             definitions,
             overrides: override_list,
             recovery,
+            unknown_macro_resolution,
             descent_guard,
             source_resolver,
         } = self;
 
         let definitions = definitions.unwrap_or_else(crate::defs::standard);
-        let BuiltDefinitions { state, fallback } = definitions.build()?;
+        // The definitions never see the recovery mode: what they need is the answer,
+        // and resolving `FollowRecovery` is the builder's job (DECISIONS.md D10).
+        let unknown_macro_fallback = match unknown_macro_resolution {
+            UnknownMacroResolution::FollowRecovery => recovery == Recovery::Tolerant,
+            UnknownMacroResolution::Accept => true,
+            UnknownMacroResolution::Reject => false,
+        };
+        let spec_cx = SpecBuildCx::with_source_resolver(source_resolver.clone());
+        let BuiltDefinitions { state, fallback } =
+            definitions.build(&spec_cx, unknown_macro_fallback)?;
 
         let mut overrides = RuleTable::new();
         for (kind, name, rule) in override_list {
@@ -774,6 +830,38 @@ pub enum CounterWrap {
     Dot,
     /// `(1)`
     Parens,
+}
+
+/// How the definitions decide the fate of a command no category defines
+/// (DECISIONS.md D10).
+///
+/// This is a *parsing* setting, chosen with
+/// [`ConverterBuilder::unknown_macro_resolution`] alongside
+/// [`recovery`](ConverterBuilder::recovery), because techy cannot shape an invocation it
+/// has no definition for: whether an unclaimed `\foo` becomes a callable node at all is
+/// settled before rendering, and only then does [`Options::unknown_macro`] — a rendering
+/// setting — get to say what it looks like.
+///
+/// The two interact in exactly one place: with no catch-all registered, an unknown
+/// command never reaches the renderer as a construct, so [`Options::unknown_macro`] is
+/// inert for it (it still applies to a macro that *is* declared but has no rule).
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum UnknownMacroResolution {
+    /// Default. Follow the recovery mode: [`Recovery::Tolerant`] registers the catch-all,
+    /// so an unknown command parses as a no-argument callable and reaches
+    /// [`Options::unknown_macro`]; [`Recovery::Strict`] registers nothing, so an unknown
+    /// command is a hard parse error.
+    #[default]
+    FollowRecovery,
+    /// Always register the catch-all, even under [`Recovery::Strict`]: an unknown command
+    /// is a no-argument callable and [`Options::unknown_macro`] decides what it renders
+    /// as.
+    Accept,
+    /// Never register the catch-all, even under [`Recovery::Tolerant`]: techy's own
+    /// unresolvable-command handling applies — an error diagnostic, and under tolerant
+    /// recovery the command survives as literal characters.
+    Reject,
 }
 
 /// What to do with a macro no rule renders (PLAN.md §10.6).

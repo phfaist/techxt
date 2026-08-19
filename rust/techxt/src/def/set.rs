@@ -19,7 +19,9 @@ use techy::latexlike::{builtin_package, CallableType, Latexlike, MacroSpec};
 use crate::convert::BuildError;
 
 use super::entry::{EnvDef, MacroDef, SpecialsDef};
-use super::spec::{EnvBodyKind, TechxtEnvironmentBehavior, TechxtMacroSpec, TechxtSpecialsSpec};
+use super::spec::{
+    EnvBodyKind, SpecBuildCx, TechxtEnvironmentBehavior, TechxtMacroSpec, TechxtSpecialsSpec,
+};
 use super::template::TemplateScope;
 use super::{CallableKind, TextRule};
 
@@ -160,12 +162,23 @@ impl DefinitionSet {
     /// names of the entry they belong to, category names — so that a bad definition
     /// costs a `build()` call rather than showing up as a hole in somebody's converted
     /// document.
-    pub(crate) fn build(&self) -> Result<BuiltDefinitions, BuildError> {
+    ///
+    /// Two things the *converter* decides reach the definitions here rather than being
+    /// read back out of them: `cx` is what an entry's own
+    /// [`CallableSpecSource`](super::CallableSpecSource) may consult (DECISIONS.md D15),
+    /// and `unknown_macro_fallback` says whether the catch-all provider is registered.
+    /// The set deliberately does not look at the recovery mode itself — the builder has
+    /// already resolved that question (DECISIONS.md D10).
+    pub(crate) fn build(
+        &self,
+        cx: &SpecBuildCx,
+        unknown_macro_fallback: bool,
+    ) -> Result<BuiltDefinitions, BuildError> {
         self.check_category_names()?;
 
         // The `\item` package is built first because every list environment's body
         // delta pushes it, and the behaviours that carry those deltas are built below.
-        let item = self.item_provider()?;
+        let item = self.item_provider(cx)?;
 
         let mut fallback = RuleTable::new();
         let mut providers: Vec<Arc<dyn SpecsProvider<Latexlike>>> =
@@ -175,8 +188,12 @@ impl DefinitionSet {
         // it reaches the renderer as a callable node and techxt's unknown-macro policy
         // can apply to it (PLAN.md §10.6). Being outermost, it is shadowed by every
         // real definition — suppression is a property of the search order, not a
-        // special case.
-        providers.push(Arc::new(unknown_command_provider()));
+        // special case. Whether it is registered at all is the converter's call
+        // (DECISIONS.md D10): without it an unclaimed command is techy's own
+        // unresolvable-command error.
+        if unknown_macro_fallback {
+            providers.push(Arc::new(unknown_command_provider()));
+        }
         // Then techy's own `\begin`/`\end`. The whole-stack replacement discards the
         // seed's copy of them, and they have to sit *above* the catch-all: below it,
         // the catch-all would answer for `\begin` and no environment would parse.
@@ -187,6 +204,7 @@ impl DefinitionSet {
                 category,
                 item.as_ref(),
                 &mut fallback,
+                cx,
             )?));
         }
 
@@ -227,7 +245,10 @@ impl DefinitionSet {
     /// would find it, so customizing `\item` customizes it inside every list too.
     /// `None` when the set defines no `\item`: a list body then simply has no `\item` of
     /// its own, and a top-level definition (or the unknown-macro policy) applies.
-    fn item_provider(&self) -> Result<Option<Arc<dyn SpecsProvider<Latexlike>>>, BuildError> {
+    fn item_provider(
+        &self,
+        cx: &SpecBuildCx,
+    ) -> Result<Option<Arc<dyn SpecsProvider<Latexlike>>>, BuildError> {
         let Some(definition) = self.categories.iter().rev().find_map(|category| {
             category
                 .macros
@@ -241,7 +262,7 @@ impl DefinitionSet {
         package.insert_in_modes(
             CallableType::Macro,
             ITEM_MACRO,
-            macro_spec(definition)?,
+            macro_spec(definition, cx)?,
             definition.modes(),
         );
         Ok(Some(Arc::new(package)))
@@ -254,11 +275,12 @@ impl DefinitionSet {
         category: &Category,
         item: Option<&Arc<dyn SpecsProvider<Latexlike>>>,
         fallback: &mut RuleTable,
+        cx: &SpecBuildCx,
     ) -> Result<Package<Latexlike>, BuildError> {
         let mut package = Package::<Latexlike>::new(category.name.clone());
 
         for definition in &category.macros {
-            let spec = macro_spec(definition)?;
+            let spec = macro_spec(definition, cx)?;
             if let Some(rule) = definition.text_rule() {
                 fallback.insert(CallableKind::Macro, definition.name(), rule.clone());
             }
@@ -317,7 +339,17 @@ impl DefinitionSet {
 }
 
 /// The techy spec one macro definition registers.
-fn macro_spec(definition: &MacroDef) -> Result<TechxtMacroSpec, BuildError> {
+///
+/// Normally that is techxt's own [`TechxtMacroSpec`], carrying the rule into the tree.
+/// An entry with a [`spec`](MacroDef::spec) source may hand back a techy spec of its own
+/// instead (DECISIONS.md D15) — its rule then travels no further than the name fallback
+/// table, which is built from the same entry either way. The declarations are validated
+/// in both cases: a template that names an argument the entry does not declare is a
+/// build error whoever ends up parsing the invocation.
+fn macro_spec(
+    definition: &MacroDef,
+    cx: &SpecBuildCx,
+) -> Result<Arc<dyn CallableSpec<Latexlike>>, BuildError> {
     let arguments = definition.arg_specs()?;
     let rule = validated_rule(
         definition.name(),
@@ -325,7 +357,12 @@ fn macro_spec(definition: &MacroDef) -> Result<TechxtMacroSpec, BuildError> {
         &definition.arg_names(),
         false,
     )?;
-    Ok(TechxtMacroSpec::new(arguments, rule))
+    if let Some(source) = definition.spec_source() {
+        if let Some(spec) = source.callable_spec(cx) {
+            return Ok(spec);
+        }
+    }
+    Ok(Arc::new(TechxtMacroSpec::new(arguments, rule)))
 }
 
 /// Check a rule's template against the entry it belongs to, and hand the rule back.

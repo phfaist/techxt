@@ -14,7 +14,7 @@ use techy::latexlike::{argument_specs_named, ArgumentCodeError, Latexlike, Mode}
 
 use crate::render::ListKind;
 
-use super::spec::EnvBodyKind;
+use super::spec::{CallableSpecSource, EnvBodyKind};
 use super::TextRule;
 
 /// One declared argument, in declaration order.
@@ -149,6 +149,7 @@ pub struct MacroDef {
     args: Args,
     rule: Option<TextRule>,
     modes: Modes,
+    spec: Option<Arc<dyn CallableSpecSource>>,
 }
 
 impl MacroDef {
@@ -160,6 +161,7 @@ impl MacroDef {
             args: Args::default(),
             rule: None,
             modes: None,
+            spec: None,
         }
     }
 
@@ -186,6 +188,28 @@ impl MacroDef {
     /// preceding space).
     pub fn arg_spec(mut self, spec: ArgumentSpec<Latexlike>) -> MacroDef {
         self.args.spec(spec);
+        self
+    }
+
+    /// Register a techy [`CallableSpec`](techy::core::specs::CallableSpec) of `source`'s
+    /// making instead of the one techxt builds from this entry's arguments
+    /// (DECISIONS.md D15).
+    ///
+    /// This is [`arg_spec`](Self::arg_spec)'s hatch one level up: it hands the *whole*
+    /// spec to a construct techy itself implements, which is what `\input` needs —
+    /// techy resolves an inclusion at parse time only for a macro registered with its
+    /// own input spec, and no combination of argument codes can ask for that.
+    ///
+    /// The source is consulted once, when the converter is built, and may decline (see
+    /// [`CallableSpecSource`]), in which case this entry registers exactly what it would
+    /// have without the hatch. Either way the entry's [`rule`](Self::rule) still applies:
+    /// a foreign spec cannot carry a rule into the tree, so the rule is found by name at
+    /// dispatch step 3 instead of by downcast at step 2 (PLAN.md §10.3). The arguments
+    /// declared with [`arg`](Self::arg) still name what the foreign spec parses, for the
+    /// templates and handlers that read them — a foreign spec whose argument names
+    /// differ is why a handler should tolerate both spellings.
+    pub fn spec(mut self, source: impl CallableSpecSource + 'static) -> MacroDef {
+        self.spec = Some(Arc::new(source));
         self
     }
 
@@ -240,6 +264,11 @@ impl MacroDef {
     /// The modes this macro is visible in, or `None` for all of them.
     pub(crate) fn modes(&self) -> Option<Vec<Mode>> {
         self.modes.clone()
+    }
+
+    /// What supplies this macro's techy spec, when it is not techxt that does.
+    pub(crate) fn spec_source(&self) -> Option<&Arc<dyn CallableSpecSource>> {
+        self.spec.as_ref()
     }
 }
 

@@ -30,6 +30,7 @@ use techy::latexlike::{
     EnvironmentBehavior, EnvironmentInvocation, EnvironmentSpec, Latexlike, Mode, VerbatimBehavior,
 };
 use techy::serialize::SerializableObject;
+use techy::source::SourceResolver;
 
 use crate::render::ListKind;
 
@@ -77,6 +78,102 @@ impl SerializableObject<Latexlike> for TechxtMacroSpec {}
 impl CallableSpec<Latexlike> for TechxtMacroSpec {
     fn arguments(&self) -> &[Arc<ArgumentSpec<Latexlike>>] {
         &self.arguments
+    }
+}
+
+/// Supplies a techy [`CallableSpec`] that techxt's own declarations cannot express
+/// (DECISIONS.md D15).
+///
+/// [`MacroDef::arg_spec`](super::MacroDef::arg_spec) is the same escape hatch one level
+/// down: it takes over one *argument* when a code cannot describe it. This one takes
+/// over the whole spec, for a construct techy itself implements and techxt only wants
+/// to register — the shipped case is `\input`, which techy resolves at parse time only
+/// when the macro is registered with its bespoke
+/// [`input_macro_spec`](techy::latexlike::input_macro_spec).
+///
+/// The spec is asked for once per converter, while the converter is being built, and
+/// gets a [`SpecBuildCx`] describing what that converter is configured with — the only
+/// moment at which both the definitions and the configuration are known. Answering
+/// `None` means "nothing special after all": the macro then registers the ordinary spec
+/// built from its own [`arg`](super::MacroDef::arg) declarations, which is how `\input`
+/// stays inert when no source resolver was configured.
+///
+/// # A foreign spec carries no rule
+///
+/// techxt's own specs carry the construct's [`TextRule`] into the tree, and the
+/// renderer recovers it by downcasting (dispatch step 2, PLAN.md §10.3). A foreign spec
+/// cannot: it is not a [`TechxtMacroSpec`], so the downcast misses and the rule is found
+/// at step 3 instead, in the name-keyed fallback table that
+/// [`DefinitionSet`](super::DefinitionSet) builds from every entry that declares one.
+/// Declaring a rule alongside the spec is therefore still required, and still works.
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use techxt::def::{CallableSpecSource, SpecBuildCx};
+/// use techy::core::specs::CallableSpec;
+/// use techy::latexlike::{Latexlike, MacroSpec};
+///
+/// /// Registers a macro that takes no arguments at all, whatever else it declares.
+/// #[derive(Debug)]
+/// struct Bare;
+///
+/// impl CallableSpecSource for Bare {
+///     fn callable_spec(&self, _cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<Latexlike>>> {
+///         Some(Arc::new(MacroSpec::new(Vec::new())))
+///     }
+/// }
+/// ```
+pub trait CallableSpecSource: Send + Sync + core::fmt::Debug {
+    /// The spec to register, or `None` to register the one techxt would have built.
+    fn callable_spec(&self, cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<Latexlike>>>;
+}
+
+/// What a [`CallableSpecSource`] may read about the converter being built
+/// (DECISIONS.md D15).
+///
+/// Definitions are compiled once, when the converter is built, so this is where a spec
+/// that depends on the converter's own configuration — rather than only on what the
+/// definition declares — reads that configuration.
+#[non_exhaustive]
+#[derive(Clone, Default)]
+pub struct SpecBuildCx {
+    source_resolver: Option<Arc<dyn SourceResolver<Option<String>>>>,
+}
+
+impl SpecBuildCx {
+    /// A context describing a converter with nothing configured.
+    pub fn new() -> SpecBuildCx {
+        SpecBuildCx::default()
+    }
+
+    /// The resolver [`ConverterBuilder::source_resolver`](crate::ConverterBuilder::source_resolver)
+    /// was given, if any.
+    ///
+    /// Its *presence* is what an inclusion spec keys on: techy runs the resolver from
+    /// the parsing driver, so a spec needs the handle itself only if it resolves
+    /// something of its own.
+    pub fn source_resolver(&self) -> Option<&Arc<dyn SourceResolver<Option<String>>>> {
+        self.source_resolver.as_ref()
+    }
+
+    /// The context for a converter built with this resolver.
+    pub(crate) fn with_source_resolver(
+        resolver: Option<Arc<dyn SourceResolver<Option<String>>>>,
+    ) -> SpecBuildCx {
+        SpecBuildCx {
+            source_resolver: resolver,
+        }
+    }
+}
+
+// `SourceResolver` is not `Debug` (it is `Send + Sync + Any`), so the handle is
+// reported by presence, exactly as `ConverterBuilder` reports it.
+impl core::fmt::Debug for SpecBuildCx {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SpecBuildCx")
+            .field("has_source_resolver", &self.source_resolver.is_some())
+            .finish_non_exhaustive()
     }
 }
 

@@ -52,7 +52,10 @@ mod template;
 pub use entry::{EnvDef, MacroDef, SpecialsDef};
 pub use rule::{CallableKind, TextHandler, TextRule};
 pub use set::{Category, DefinitionSet};
-pub use spec::{EnvBodyKind, TechxtEnvironmentBehavior, TechxtMacroSpec, TechxtSpecialsSpec};
+pub use spec::{
+    CallableSpecSource, EnvBodyKind, SpecBuildCx, TechxtEnvironmentBehavior, TechxtMacroSpec,
+    TechxtSpecialsSpec,
+};
 pub use template::{Template, TemplateError};
 
 pub(crate) use set::{BuiltDefinitions, RuleTable};
