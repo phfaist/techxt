@@ -28,6 +28,30 @@
 //! There are no cargo features to pick between: a build that never names a module
 //! drops it through dead-code elimination.
 //!
+//! # How much LaTeX this covers
+//!
+//! Everything standard: the LaTeX2e kernel's own commands and environments, the
+//! `amsmath` and `amssymb` families, and the packages a paper reaches for without
+//! thinking — `graphicx`, `hyperref`, `natbib`, `booktabs`, `multirow`, `longtable`,
+//! `verbatim`. That is what PLAN.md §12.2 asks for: nothing standard should reach the
+//! unknown policy out of the box, so an ordinary document converts without a single
+//! diagnostic. Where a construct has no plain-text meaning at all — a font size, a
+//! page break, a counter's value — it is still *declared*, which is what keeps its
+//! arguments out of the reader's paragraph, and it renders as nothing without
+//! complaining.
+//!
+//! Three things a document may contain are knowingly left out, and each reports
+//! itself when met:
+//!
+//! - **TeX's conditionals** (`\if…\else\fi`) and macro expansion generally. techxt
+//!   has no mouth (see [`preamble`]); a conditional is an unknown command.
+//! - **`tabbing`**, whose `\=` and `\>` collide with the accent macros of
+//!   [`accents`] — it would have to be a mode of its own, and it is rare in documents
+//!   written this century.
+//! - **Package-specific environments** beyond the list above (`IEEEeqnarray`,
+//!   `algorithmic`, …). Adding one is a `Category` of your own, pushed after
+//!   [`standard`]; see the crate documentation's "definitions of your own".
+//!
 //! # Order is meaning
 //!
 //! [`DefinitionSet`] resolves **later categories first** (see its documentation), so

@@ -230,12 +230,39 @@ impl MacroDef {
     }
 
     /// Make this macro visible in text mode only.
+    ///
+    /// See [`math_mode_only`](Self::math_mode_only) for what a mode restriction does
+    /// and does not buy.
     pub fn text_mode_only(mut self) -> MacroDef {
         self.modes = Some(alloc::vec![Mode::Text]);
         self
     }
 
     /// Make this macro visible in math mode only.
+    ///
+    /// # A restriction is a parse-side gate
+    ///
+    /// Visibility decides whether the *parser* resolves the name here, and that is all
+    /// it decides. With the catch-all fallback registered — the default under
+    /// [`Recovery::Tolerant`](crate::convert::Recovery) — a name this definition hides
+    /// still resolves, as an argument-less callable, and reaches the renderer; the
+    /// renderer then finds this entry's rule in the name-keyed fallback table of
+    /// PLAN.md §10.3 step 3, which records no modes (it exists to work on trees parsed
+    /// by someone else's definitions). So a math-only symbol still renders in a
+    /// paragraph unless the catch-all is off, which is what
+    /// [`UnknownMacroResolution::Reject`](crate::convert::UnknownMacroResolution::Reject)
+    /// and [`Recovery::Strict`](crate::convert::Recovery) do.
+    ///
+    /// The restriction bites unconditionally in one place that matters: the parse
+    /// itself. A hidden `_` is not a subscript, so `a_b` in running text stays three
+    /// characters (see [`defs::subsuperscripts`](crate::defs::subsuperscripts)).
+    ///
+    /// # Restrict only an entry with nothing to leak
+    ///
+    /// The catch-all's substitute spec takes **no arguments**, so a hidden entry's
+    /// arguments are read as ordinary groups and rendered: a text-only `\textcolor`
+    /// would print `redx` for `$\textcolor{red}{x}$`. Restrict symbols, not macros with
+    /// arguments.
     pub fn math_mode_only(mut self) -> MacroDef {
         self.modes = Some(alloc::vec![Mode::Math]);
         self

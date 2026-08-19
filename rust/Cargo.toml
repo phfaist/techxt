@@ -39,9 +39,11 @@ bare_urls = "warn"
 # Dependency versions live here so the members stay in lockstep and a bump is a
 # one-line change. PLAN.md §2 fixes the runtime set: `techxt` may depend on exactly
 # `techy` and `unicode-width`, `techxt-cli` on `techxt` and `clap` — plus, for the
-# CLI only, `stacker` (DECISIONS.md D9 item 3 authorizes it) and `techy` itself,
-# which the CLI names directly for the `SourceResolver` it implements, the
-# `Recovery` policy `--strict` selects and the `Diagnostics` it filters and renders.
+# CLI only, `stacker` (DECISIONS.md D9 item 3 authorizes it). The CLI does *not*
+# depend on techy: everything of techy's that it names — `SourceResolver`, the
+# `Recovery` policy `--strict` selects, the `Diagnostics` it filters and renders — is
+# re-exported by `techxt::convert`, which is what keeps an embedder at one
+# dependency.
 [workspace.dependencies]
 # techy is not on crates.io yet, so the dependency is a git revision pinned to the
 # exact commit the plan was written against (PLAN.md §3 describes that API). Switch

@@ -21,8 +21,8 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use techxt::convert::StdDescentGuardInit;
+use techxt::convert::{Diagnostics, Recovery, Severity};
 use techxt::Converter;
-use techy::error::{Diagnostics, Recovery, Severity};
 
 use cli::{Cli, Verbosity};
 
@@ -202,9 +202,8 @@ fn report(diagnostics: &Diagnostics, verbosity: Verbosity) -> Result<(), String>
     }
     // A collection that hit *its* own retention cap during the conversion has already
     // forgotten the rest; say so, since the report above is then not the whole story.
-    // (`Converter::latex_to_text` currently rebuilds its merged collection by pushing
-    // items, which loses the two inputs' suppression counts, so this reads zero in
-    // practice today — it is here so that a report can never quietly under-count.)
+    // The count survives the library's merge of its parse-side and render-side
+    // collections, so what this prints is the real surplus.
     if diagnostics.suppressed() > 0 {
         if !report.is_empty() {
             report.push('\n');

@@ -12,6 +12,12 @@
 //! one of these renders as `<cit.>` — the same honest marker
 //! [`defs::refs`](super::refs) uses, saying that a citation stood here (PLAN.md §9.8).
 //!
+//! **One command in the family is not a citation marker.** `\citetext{priv. comm.}`
+//! takes the *text* to set inside the citation delimiters, not a list of keys — it is
+//! the author's own prose — so it renders that prose (`priv. comm.`) rather than
+//! `<cit.>`. Throwing away an author's words to print a marker instead would be the
+//! one thing this category exists to prevent.
+//!
 //! This category is pushed **last** (PLAN.md §12.1) so that its fuller shapes shadow
 //! the plain `\cite` of [`defs::refs`](super::refs). That is not cosmetic: `refs`
 //! declares `\cite` as `[m]`, and against `\citep[see][p. 5]{x}` such a declaration

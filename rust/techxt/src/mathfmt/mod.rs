@@ -37,21 +37,24 @@
 //! - [`fmt_style`] applies the unicode math alphabets — **to document characters only**
 //!   (DECISIONS.md D6), never to a rule's replacement string.
 //!
-//! # Seams left for the renderer milestone
+//! # Self-contained, and configured by parameter
 //!
-//! This module is self-contained: it knows nothing of techy trees, of the definitions
-//! database or of the render state. Two options that PLAN.md §11.3 places on
-//! `Options` therefore appear here as parameters, because `techxt::convert` does not
-//! exist yet:
+//! This module knows nothing of techy trees, of the definitions database or of the
+//! render state, so the settings it needs arrive as parameters rather than by reading
+//! [`Options`](crate::Options). The four types those settings have are declared here,
+//! next to the code that acts on them, and
+//! [`convert`](crate::convert) re-exports every one of them — there is one
+//! [`MathWrapDelims`], one [`MatrixDelims`], one [`FontStyle`] and one
+//! [`FontStyleKind`], reachable by either path:
 //!
-//! - `Options::math_expression_in` → [`MathWrapDelims`], a parameter of
-//!   [`join_atoms_with`], [`frac_atom`] and [`sqrt_atom`];
-//! - `Options::matrix_delimiters` → [`MatrixDelims`], a parameter of the display
-//!   matrix builders.
-//!
-//! When `Options` lands it should re-export these two types rather than declare
-//! second copies of them. Likewise [`FontStyle`] and [`FontStyleKind`] live here, next
-//! to the alphabet tables they select.
+//! - [`Options::math_expression_in`](crate::Options::math_expression_in) →
+//!   [`MathWrapDelims`], a parameter of [`join_atoms_with`], [`frac_atom`] and
+//!   [`sqrt_atom`];
+//! - [`Options::matrix_delimiters`](crate::Options::matrix_delimiters) →
+//!   [`MatrixDelims`], a parameter of the display matrix builders;
+//! - [`Options::text_font`](crate::Options::text_font) and
+//!   [`Options::math_font`](crate::Options::math_font) → [`FontStyle`], which selects
+//!   one of the alphabet tables [`fmt_style`] applies.
 
 mod alphabets;
 mod atom;

@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf, MAIN_SEPARATOR_STR};
 use std::sync::Arc;
 
-use techy::source::{
+use techxt::convert::{
     check_include_chain, ResolveError, ResolvedContent, SourceResolver, SourceSpan,
 };
 

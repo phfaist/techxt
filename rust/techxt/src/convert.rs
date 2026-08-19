@@ -26,18 +26,18 @@
 //!   parsed (or transformed) yourself. Both are infallible.
 //! - [`Converter::renderer`] plus [`layout`](crate::layout) — drive the fold yourself,
 //!   which is what a consumer wrapping techxt's recomposer does.
+//!
+//! There is deliberately **no fourth layer converting a subtree**: techy's recomposer
+//! takes a whole [`NodeTree`] and its context has no public constructor, so a
+//! `node_to_text(NodeSlice)` cannot be built on the public API (PLAN.md §11.1 and §17
+//! anticipate this). Convert the tree, or drive the renderer yourself as above.
 
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use techy::core::node::NodeTree;
-use techy::core::{FinalizeError, Language};
-use techy::error::{Diagnostics, ParseError, Recovery};
-use techy::latexlike::{ArgumentCodeError, Latexlike, LatexlikeDriver};
-use techy::recompose::TreeRecomposer;
-use techy::source::IntoSourceResolver;
+use techy::latexlike::LatexlikeDriver;
 
 use crate::def::{
     BuiltDefinitions, CallableKind, DefinitionSet, RuleTable, SpecBuildCx, TemplateError,
@@ -73,15 +73,16 @@ pub use techy::core::node::{NodeRef, NodeSlice, NodeTree};
 /// [`MacroDef::arg_spec`](crate::def::MacroDef::arg_spec), a callable spec for
 /// [`MacroDef::spec`](crate::def::MacroDef::spec), and the language every techxt type
 /// is concrete over (PLAN.md §11.1).
-pub use techy::core::specs::{ArgumentSpec, CallableSpec, EnvironmentSpec};
+pub use techy::core::specs::{ArgumentSpec, CallableSpec};
 /// See [`ArgumentSpec`].
-pub use techy::latexlike::Latexlike;
+pub use techy::latexlike::{EnvironmentSpec, Latexlike};
 
-/// The diagnostics channel: the collection a [`Conversion`] carries, the severity to
-/// filter it by, and the parse error [`Converter::latex_to_text`] can fail with.
+/// The diagnostics channel: the collection a [`Conversion`] carries, one entry of it,
+/// the severity to filter by, and the parse error [`Converter::latex_to_text`] can fail
+/// with.
 ///
 /// [`Recovery`] is what [`ConverterBuilder::recovery`] takes.
-pub use techy::error::{Diagnostics, ParseError, Recovery, Severity};
+pub use techy::error::{Diagnostic, Diagnostics, ParseError, Recovery, Severity};
 
 /// Source resolution for `\input` (PLAN.md §9.8): the trait
 /// [`ConverterBuilder::source_resolver`] accepts, what an implementation answers with,
@@ -91,13 +92,20 @@ pub use techy::source::{
     SourceSpan,
 };
 
-/// The fold itself: the recomposer trait [`TextRenderer`](crate::render::TextRenderer)
+/// The fold itself: the recomposer trait [`TextRenderer`]
 /// implements, and the driver that runs it over a tree — what a consumer wrapping
 /// techxt's recomposer names (see [`Converter::renderer`]).
 pub use techy::recompose::{RecomposeError, Recomposer, TreeRecomposer};
 
-/// The parsing language a [`Converter`] holds, as returned by [`Converter::language`].
-pub use techy::core::Language;
+/// The parsing language a [`Converter`] holds, as returned by [`Converter::language`],
+/// and the two techy errors [`BuildError`] carries: an argument code techy did not
+/// understand, and a parsing state it could not finalize.
+pub use techy::core::{FinalizeError, Language};
+/// See [`Language`].
+pub use techy::latexlike::ArgumentCodeError;
+/// The conversion [`ConverterBuilder::source_resolver`] accepts its argument through:
+/// a resolver value, or one already shared in an `Arc`.
+pub use techy::source::IntoSourceResolver;
 
 /// The result of a conversion (PLAN.md §11.1).
 #[derive(Clone, Debug)]
@@ -251,20 +259,86 @@ impl core::fmt::Debug for Converter {
 }
 
 /// Concatenate two diagnostic collections without either one's retention cap silently
-/// eating the other's entries.
+/// eating the other's entries — and without losing what a cap already ate.
+///
+/// A [`Diagnostics`] collection retains at most
+/// [`DEFAULT_LIMIT`](Diagnostics::DEFAULT_LIMIT) entries and *counts* the rest, so that
+/// a report can end with "… and N more" instead of pretending the surplus never
+/// happened. Rebuilding a collection by pushing therefore has to carry three numbers
+/// across, not one: the retained entries, [`suppressed`](Diagnostics::suppressed), and
+/// [`error_count`](Diagnostics::error_count) — the last of which decides
+/// [`has_errors`](Diagnostics::has_errors), and so decides the CLI's exit code.
+///
+/// The suppressed surplus is replayed the only way techy's public API allows: by
+/// pushing into a collection that is exactly full, where a push stores nothing and
+/// moves the counters alone. The pushed values are unobservable — that is the whole
+/// point of pushing them past the cap — so what matters about each is its severity,
+/// which is what keeps the error count exact.
 fn merge(
     first: &Diagnostics<Option<String>>,
     second: &Diagnostics<Option<String>>,
 ) -> Diagnostics<Option<String>> {
-    let limit = core::cmp::max(
-        Diagnostics::<Option<String>>::DEFAULT_LIMIT,
-        first.len() + second.len(),
-    );
+    let retained = first.len() + second.len();
+    let suppressed = first.suppressed() + second.suppressed();
+    // With nothing suppressed there is nothing to replay, and the cap keeps the
+    // headroom a fresh collection has. With something suppressed the merged collection
+    // is already a capped one, and it has to be *exactly* full for the replay below to
+    // count rather than store.
+    let limit = if suppressed == 0 {
+        core::cmp::max(Diagnostics::<Option<String>>::DEFAULT_LIMIT, retained)
+    } else {
+        retained
+    };
     let mut merged = Diagnostics::with_limit(limit);
     for diagnostic in first.iter().chain(second.iter()) {
         merged.push(diagnostic.clone());
     }
+
+    if suppressed > 0 {
+        // How many of the suppressed entries were errors: the two collections counted
+        // every error they were given, retained or not, so the difference is exactly
+        // the errors that were dropped.
+        let errors_lost =
+            (first.error_count() + second.error_count()).saturating_sub(merged.error_count());
+        // A span is needed to build a diagnostic at all; any of them will do, and there
+        // is at least one because a collection only suppresses after it has filled up.
+        // (`limit == 0` is the exception, and then `retained == 0` and there is nothing
+        // to replay a severity onto either.)
+        if let Some(span) = first
+            .iter()
+            .chain(second.iter())
+            .next()
+            .map(|d| d.span().clone())
+        {
+            for index in 0..suppressed {
+                let severity = if index < errors_lost {
+                    Severity::Error
+                } else {
+                    Severity::Warning
+                };
+                merged.push(Diagnostic::new(severity, SuppressedSurplus, span.clone()));
+            }
+        }
+    }
     merged
+}
+
+/// The condition of a diagnostic pushed only to be counted (see [`merge`]).
+///
+/// It never reaches a report: every value of it is pushed into a collection that is
+/// already full, which stores nothing and counts one. It exists because techy's
+/// counters move through [`Diagnostics::push`] and nothing else.
+#[derive(Clone, Copy, Debug)]
+struct SuppressedSurplus;
+
+impl core::fmt::Display for SuppressedSurplus {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("a diagnostic beyond the retention cap")
+    }
+}
+
+impl techy::error::DiagnosticInfo for SuppressedSurplus {
+    const IDENTIFIER: &'static str = "techxt.diagnostics.suppressed-surplus";
 }
 
 /// Builds a [`Converter`] (PLAN.md §11.2).

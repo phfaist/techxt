@@ -451,9 +451,15 @@ fn the_inner_math_environments_hand_their_atoms_to_the_formula_around_them() {
         text(r"\begin{equation}\begin{aligned} a &= b \\ c &= d \end{aligned}\end{equation}"),
         "    𝑎 = 𝑏\n    𝑐 = 𝑑\n"
     );
-    assert_eq!(text(r"\begin{displaymath} x = y \end{displaymath}"), "    𝑥 = 𝑦\n");
+    assert_eq!(
+        text(r"\begin{displaymath} x = y \end{displaymath}"),
+        "    𝑥 = 𝑦\n"
+    );
     // `\begin{math}` is `$…$` written out: inline wherever it stands.
-    assert_eq!(text(r"in \begin{math}a+b\end{math} here"), "in 𝑎 + 𝑏 here\n");
+    assert_eq!(
+        text(r"in \begin{math}a+b\end{math} here"),
+        "in 𝑎 + 𝑏 here\n"
+    );
 }
 
 #[test]

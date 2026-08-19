@@ -49,6 +49,22 @@
 //! [`UnknownMacroResolution::Reject`](crate::convert::UnknownMacroResolution::Reject)
 //! (or [`Recovery::Strict`](techy::error::Recovery)) that the mode restriction shows.
 //!
+//! # Two gaps worth knowing about
+//!
+//! **`\xrightarrow` and `\xleftarrow` render as nothing.** The extensible arrows carry
+//! a label (`\xrightarrow{f}`), and pylatexenc v3 — which this table is a port of —
+//! gives them no replacement at all, so the arrow *and* its label are dropped. The port
+//! is faithful on purpose; correcting it means a curated entry in
+//! [`defs::mathcore`](super::mathcore), which is the mechanism this category is pushed
+//! first to leave room for.
+//!
+//! **A generated relation gets no relation spacing.** The class tables in
+//! [`classify_plain`](crate::mathfmt::classify_plain) are v3-sized: thirty binary operators
+//! and fifty-three relations, chosen when the only reachable symbols were the curated
+//! ones. The long tail reaches several hundred more, and a character outside the tables
+//! is [`Ord`](crate::mathfmt::AtomClass::Ord) — so `$a \lessapprox b$` renders `𝑎⪅𝑏`
+//! rather than `𝑎 ⪅ 𝑏`. Nothing is lost, only spacing.
+//!
 //! # Replacement text is never styled
 //!
 //! Every replacement here reaches the renderer as a [`TextRule::Literal`] or a

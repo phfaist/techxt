@@ -296,11 +296,19 @@ fn a_page_break_is_the_strongest_break_plain_text_has() {
 fn typesetting_only_commands_render_as_nothing_and_are_not_unknown() {
     let converted = conversion(r"a \hfill b \dotfill\ c \relax \allowbreak \makeatletter");
     assert_eq!(converted.text, "a b c\n");
-    assert!(converted.diagnostics.is_empty(), "{:?}", converted.diagnostics);
+    assert!(
+        converted.diagnostics.is_empty(),
+        "{:?}",
+        converted.diagnostics
+    );
 
     // A counter's value is a number techxt does not track (PLAN.md §17), so it renders
     // as nothing rather than as a wrong number — and the counter name does not leak.
     let converted = conversion(r"page \arabic{page} \stepcounter{page}");
     assert_eq!(converted.text, "page\n");
-    assert!(converted.diagnostics.is_empty(), "{:?}", converted.diagnostics);
+    assert!(
+        converted.diagnostics.is_empty(),
+        "{:?}",
+        converted.diagnostics
+    );
 }

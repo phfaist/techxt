@@ -14,20 +14,27 @@ tools/gen_symbols.py /path/to/pylatexenc          # regenerate
 tools/gen_symbols.py /path/to/pylatexenc --check  # is the committed output current?
 ```
 
-Generated today (milestone M4):
+Generated files:
 
 | file | contents |
 |---|---|
 | `rust/techxt/src/defs/accents_data.rs` | the accent macros and their combining marks (from `unicode_accents_list`), the standalone form of each mark, and the (base, mark) pairs that compose under NFC |
+| `rust/techxt/src/defs/symbols_extra_data.rs` | the ~1000-entry symbol long tail of PLAN.md §12.3: the union of pylatexenc's render-side (`latex2text/_defaultspecs.py`) and parse-side (`latexwalker/_defaultspecs.py`) macro tables — each row a name, what it renders as, the arguments it declares, and the mode it is visible in |
 
 The accent *table* is ported from pylatexenc; the composition and spacing-clone
 tables are derived from the Python runtime's unicode database, because they are
 pure unicode facts that `techxt` — being `no_std`, with no unicode database of its
 own — has to carry precomputed.
 
-Still to come: the `symbols_extra` long tail (milestone M8). Adding a generator is
-a new `generate_<name>()` function plus an entry in `GENERATORS`; the pylatexenc
-reader, the deduplicate-and-sort rule and the file writer are shared.
+Regenerate one file at a time with `--only accents` / `--only symbols_extra`.
+Adding a generator is a new `generate_<name>()` function plus an entry in
+`GENERATORS`; the pylatexenc reader, the deduplicate-and-sort rule and the file
+writer are shared.
+
+Entries the script cannot port faithfully — a replacement it cannot express as a
+template, an argument shape it does not recognize — are **collected and reported**
+rather than guessed at, so a pylatexenc change that outgrows the port shows up as a
+message and not as silently missing rows.
 
 ## Rules for generated output
 

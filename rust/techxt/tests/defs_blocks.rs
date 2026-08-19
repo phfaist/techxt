@@ -217,5 +217,8 @@ fn a_minipage_is_a_block_of_its_own() {
     // their body is set.
     assert_eq!(text(r"\begin{titlepage}Title\end{titlepage}"), "Title\n");
     assert_eq!(text(r"\begin{spacing}{1.5}wide\end{spacing}"), "wide\n");
-    assert_eq!(text(r"\begin{multicols}{2}columns\end{multicols}"), "columns\n");
+    assert_eq!(
+        text(r"\begin{multicols}{2}columns\end{multicols}"),
+        "columns\n"
+    );
 }

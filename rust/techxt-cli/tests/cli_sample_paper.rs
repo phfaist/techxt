@@ -49,7 +49,7 @@ fn the_sample_paper_converts_to_its_frozen_expectation() {
     for expected_fragment in [
         "On the Slow Convergence of Impatient Methods", // \maketitle
         "March 3, 2025",                                // \date, not \today
-        "A. Researcher and B. Coauthor",                // two authors, separated by \and
+        "A.\u{a0}Researcher and B.\u{a0}Coauthor",      // two authors, separated by \and
         "Abstract",                                     // the abstract environment
         "1 Introduction",                               // a numbered section
         "2.1 The impatient stopping rule",              // a numbered subsection

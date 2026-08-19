@@ -501,3 +501,46 @@ fn the_late_preamble_declarations_swallow_their_arguments() {
         converted.diagnostics
     );
 }
+
+#[test]
+fn a_definition_can_redefine_a_macro_techxt_knows() {
+    // The command argument is read as characters, so `\vec` in `{\vec}` is not the
+    // macro techxt has a rule for — it is four characters that render as nothing. Every
+    // physics preamble does this, and parsing it as markup made the whole document a
+    // failed conversion, because `\vec` takes an argument and there was none.
+    let converted = Converter::standard()
+        .latex_to_text("\\renewcommand{\\vec}[1]{\\mathbf{#1}}\nText.")
+        .expect("parses");
+    assert_eq!(converted.text, "Text.\n");
+    assert!(
+        converted.diagnostics.is_empty(),
+        "{:?}",
+        converted.diagnostics
+    );
+}
+
+#[test]
+fn an_environment_definition_may_be_unbalanced() {
+    // The two halves of a `\newenvironment` are deliberately unbalanced — that is what
+    // an environment definition *is* — and each is read as characters, so neither the
+    // unterminated `\begin` nor the orphan `\end` is a parse error.
+    let converted = Converter::standard()
+        .latex_to_text("\\newenvironment{myenv}{\\begin{center}\\bfseries}{\\end{center}}\nText.")
+        .expect("parses");
+    assert_eq!(converted.text, "Text.\n");
+    assert!(
+        converted.diagnostics.is_empty(),
+        "{:?}",
+        converted.diagnostics
+    );
+}
+
+#[test]
+fn a_definition_body_never_reaches_the_text() {
+    // Read as characters, staged, and dropped: the body is not rendered, and neither is
+    // a `#1` in it.
+    assert_eq!(
+        text(r"\newcommand{\ket}[1]{\lvert #1 \rangle}between\def\x{body}after"),
+        "betweenafter\n"
+    );
+}

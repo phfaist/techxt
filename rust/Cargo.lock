@@ -471,7 +471,6 @@ dependencies = [
  "clap",
  "stacker",
  "techxt",
- "techy",
 ]
 
 [[package]]

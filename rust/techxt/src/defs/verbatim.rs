@@ -46,11 +46,7 @@ pub fn category() -> Category {
     // *not* typeset. Reading it verbatim is what makes that safe — a commented-out
     // block routinely contains half a construct, and parsing it as markup would report
     // errors about text the author had already decided not to show.
-    category.add_env(
-        EnvDef::new("comment")
-            .verbatim_body()
-            .rule(TextRule::Skip),
-    );
+    category.add_env(EnvDef::new("comment").verbatim_body().rule(TextRule::Skip));
     // `lstlisting`'s key-value options say how the *listing* is typeset — which
     // language to colour it as, whether to number its lines — so there is nothing in
     // them for plain text and no diagnostic worth raising: dropping them loses no

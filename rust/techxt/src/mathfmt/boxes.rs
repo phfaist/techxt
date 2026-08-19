@@ -305,11 +305,12 @@ impl MatrixFence {
 }
 
 /// How the delimiters of a *display* matrix are drawn
-/// (`Options::matrix_delimiters`, PLAN.md §9.5).
+/// ([`Options::matrix_delimiters`](crate::Options::matrix_delimiters), PLAN.md §9.5).
 ///
-/// **Seam for M5b:** `techxt::convert` does not exist yet, so this enum lives here and
-/// the matrix builders take it as a parameter. When `Options` lands it should re-export
-/// this type rather than declare a second one.
+/// It lives here, next to the builders that draw with it, and reaches them as a
+/// parameter because this module reads no options of its own.
+/// `Options::matrix_delimiters` *is* this type, and
+/// [`convert`](crate::convert) re-exports it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MatrixDelims {
     /// Stack the unicode multi-row delimiter pieces (`⎛⎜⎝`, `⎡⎢⎣`, `⎧⎪⎨⎩`, …), which

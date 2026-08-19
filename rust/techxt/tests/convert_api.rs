@@ -492,3 +492,88 @@ fn diagnostics_carry_a_usable_position() {
     assert!(diagnostic.message().contains("myenv"));
     assert!(!diagnostic.render().is_empty());
 }
+
+#[test]
+fn the_surplus_past_the_retention_cap_is_counted_not_forgotten() {
+    // techy retains a thousand diagnostics and *counts* the rest, so that a report can
+    // end with "… and N more" rather than pretend the surplus never happened. The
+    // merge of the parse-side and render-side collections has to carry that count
+    // across, along with the error count that decides `has_errors`.
+    let document: String = (0..1500)
+        .map(|index| format!("\\nosuchmacro{index} "))
+        .collect();
+    let conversion = Converter::standard()
+        .latex_to_text(&document)
+        .expect("tolerant recovery keeps going");
+
+    assert_eq!(
+        conversion.diagnostics.len(),
+        1000,
+        "the retention cap holds"
+    );
+    assert_eq!(
+        conversion.diagnostics.suppressed(),
+        500,
+        "the surplus was counted"
+    );
+    // Every one of them is an unknown-macro warning, so nothing is an error — and the
+    // count is of *all* of them, retained and suppressed alike.
+    assert!(!conversion.diagnostics.has_errors());
+    assert_eq!(conversion.diagnostics.error_count(), 0);
+    assert!(!conversion.diagnostics.is_empty());
+}
+
+#[test]
+fn a_suppressed_error_still_counts_as_an_error() {
+    // The counters must survive the merge even when what they count is gone: a
+    // conversion whose error is pushed past the retention cap must still answer
+    // `has_errors`, which is what the CLI turns into exit code 1.
+    struct AlwaysFails;
+
+    impl core::fmt::Debug for AlwaysFails {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.write_str("AlwaysFails")
+        }
+    }
+
+    impl TextHandler for AlwaysFails {
+        fn render(
+            &self,
+            _node: NodeRef<'_, Latexlike>,
+            _cx: &mut RenderCx<'_, '_>,
+        ) -> Result<Flow, RenderError> {
+            Err(RenderError::Handler {
+                construct: "\\emph".into(),
+                detail: "deliberate".into(),
+            })
+        }
+    }
+
+    let converter = Converter::builder()
+        .override_macro("emph", TextRule::Handler(Arc::new(AlwaysFails)))
+        .build()
+        .expect("builds");
+
+    // A thousand and five warnings fill the render-side collection and start its
+    // suppression count; the error comes after them, and is suppressed too.
+    let mut document: String = (0..1005)
+        .map(|index| format!("\\nosuchmacro{index} "))
+        .collect();
+    document.push_str(r"\emph{x}");
+    let conversion = converter
+        .latex_to_text(&document)
+        .expect("tolerant recovery keeps going");
+
+    assert_eq!(conversion.diagnostics.len(), 1000);
+    assert_eq!(conversion.diagnostics.suppressed(), 6);
+    assert!(
+        conversion.diagnostics.has_errors(),
+        "the error was suppressed out of existence"
+    );
+    assert_eq!(conversion.diagnostics.error_count(), 1);
+    // …and it is nowhere in the retained entries, which is the point.
+    assert_eq!(
+        conversion.diagnostics.conditions::<HandlerFailed>().count(),
+        0
+    );
+}

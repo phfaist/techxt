@@ -520,10 +520,9 @@ fn quiet_and_verbose_together_are_a_usage_error() {
 fn a_document_full_of_diagnostics_is_reported_within_the_retention_cap() {
     // techy caps a diagnostics collection at a thousand retained items. What matters
     // here is that the cap is a *reporting* limit and nothing else: the text is still
-    // complete, the exit code still reflects the severities, and nothing panics on the
-    // way. (The five hundred warnings past the cap are dropped without a trace, because
-    // the library's merge of the parse-side and render-side collections rebuilds them by
-    // pushing items and so loses their suppression counts.)
+    // complete, the exit code still reflects the severities, nothing panics on the way,
+    // and the surplus is *counted* rather than forgotten — the report ends by saying how
+    // many diagnostics it is not showing.
     let document = (0..1500)
         .map(|index| format!("\\nosuchmacro{index} w{index} "))
         .collect::<String>();
@@ -534,6 +533,13 @@ fn a_document_full_of_diagnostics_is_reported_within_the_retention_cap() {
         "every word survived"
     );
     assert_eq!(result.stderr.matches("warning: ").count(), 1000);
+    assert!(
+        result
+            .stderr
+            .contains("… and 500 further diagnostics were not recorded"),
+        "the surplus went unreported: {}",
+        result.stderr
+    );
     assert_eq!(result.code, 0, "a thousand warnings are still not an error");
 }
 

@@ -63,7 +63,11 @@ pub fn category() -> Category {
         // engine collapses the glue against whatever is next to it.
         .with_macro(MacroDef::new("and").rule(TextRule::Literal(Cow::Borrowed(" and "))))
         // Not a title field, but the same shape and the same fate: it prints nothing.
-        .with_macro(MacroDef::new("thanks").arg("m", "text").rule(TextRule::Skip))
+        .with_macro(
+            MacroDef::new("thanks")
+                .arg("m", "text")
+                .rule(TextRule::Skip),
+        )
 }
 
 /// One of the three fields `\maketitle` prints.

@@ -19,12 +19,13 @@ use super::boxes::{baseline_join, MathBox};
 use super::segment::classify_plain;
 
 /// The delimiters a sub-expression is wrapped in when its extent would otherwise be
-/// unclear (`Options::math_expression_in`, PLAN.md §11.3).
+/// unclear ([`Options::math_expression_in`](crate::Options::math_expression_in),
+/// PLAN.md §11.3).
 ///
-/// **Seam for M5b:** `techxt::convert` does not exist yet, so this enum lives here and
-/// the joiner takes it as a parameter ([`join_atoms_with`]). When `Options` lands,
-/// `Options::math_expression_in` should be *this* type — re-exported from `convert` —
-/// rather than a second copy of it.
+/// It lives here, next to the joiner that acts on it, and reaches the joiner as a
+/// parameter ([`join_atoms_with`]) because this module reads no options of its own.
+/// `Options::math_expression_in` *is* this type, and
+/// [`convert`](crate::convert) re-exports it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum MathWrapDelims {
     /// `(` … `)`, the default.

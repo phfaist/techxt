@@ -28,6 +28,34 @@
 //! Expansion would need a whole TeX mouth, and the plan defers it (PLAN.md §17).
 //! `\def` is accepted in its simplest shape only — a name followed by a body — because
 //! its parameter text (`\def\x#1#2{…}`) has no fixed argument structure to declare.
+//!
+//! # A definition's name and body are read as characters
+//!
+//! What a definition *defines* is not document content, and parsing it as if it were
+//! is how a preamble ends up full of errors about text nobody will ever read:
+//!
+//! - `\renewcommand{\vec}[1]{\mathbf{#1}}` — the argument `{\vec}` would be parsed as
+//!   markup, and `\vec` is a macro techxt knows *and* one that takes an argument, so
+//!   the parse fails on an argument that was never meant to be there. Every physics
+//!   preamble redefining `\ket`, `\bra` or `\vec` hit this.
+//! - `\newenvironment{myenv}{\begin{center}}{\end{center}}` — the two halves of an
+//!   environment definition are deliberately unbalanced, and each is its own argument,
+//!   so parsing them as markup reports an unterminated `center` and an orphan `\end`.
+//!
+//! So the *command name* of `\newcommand` and its relatives, and the *body* of every
+//! definition here, are read with techy's chars-group parser: commands and specials
+//! off, the characters staged and dropped. Nothing is lost — none of it is ever
+//! rendered — and a definition can say anything it likes.
+//!
+//! The one cost is that such an argument must be **braced**: the chars-group parser has
+//! no single-token fallback, so `\newcommand\x{…}` (a spelling LaTeX tolerates but does
+//! not document) reports a missing argument where `\newcommand{\x}{…}` converts
+//! silently. `\def\x{…}`, which is *only* written unbraced, therefore keeps the
+//! ordinary parser for its name.
+
+use techy::core::constructs::CharsGroupArgumentParser;
+use techy::core::specs::ArgumentSpec;
+use techy::latexlike::{GroupType, Latexlike};
 
 use crate::def::{Category, EnvDef, MacroDef, TextRule};
 
@@ -54,12 +82,31 @@ pub fn category() -> Category {
     for (name, codes) in DECLARATIONS {
         let mut definition = MacroDef::new(*name);
         for (code, argument) in *codes {
-            definition = definition.arg(code, argument);
+            definition = match *code {
+                RAW => definition.arg_spec(raw_group(argument)),
+                code => definition.arg(code, argument),
+            };
         }
         category.add_macro(definition.rule(TextRule::Skip));
     }
 
     category
+}
+
+/// The argument code of this module's own: a braced group read as **characters**.
+///
+/// Not one of techy's codes, because techy's chars-group parser is only reachable as a
+/// spec (there is no letter for it), and not a code techxt invents in general: it is
+/// spelled out here and translated in [`category`] above.
+const RAW: &str = "raw";
+
+/// A braced group whose contents are read as characters: commands and specials off,
+/// nested groups still delimiting, everything staged and then dropped.
+///
+/// See the module documentation for why a definition's name and body are read this way
+/// — and for the one thing it costs.
+fn raw_group(name: &str) -> ArgumentSpec<Latexlike> {
+    ArgumentSpec::new(CharsGroupArgumentParser::new(GroupType::Content), name)
 }
 
 /// Every preamble declaration, with its argument shape.
@@ -78,34 +125,35 @@ static DECLARATIONS: &[Declaration] = &[
         "newcommand",
         &[
             ("s", "star"),
-            ("m", "command"),
+            (RAW, "command"),
             ("o", "count"),
             ("o", "default"),
-            ("m", "body"),
+            (RAW, "body"),
         ],
     ),
     (
         "renewcommand",
         &[
             ("s", "star"),
-            ("m", "command"),
+            (RAW, "command"),
             ("o", "count"),
             ("o", "default"),
-            ("m", "body"),
+            (RAW, "body"),
         ],
     ),
     (
         "providecommand",
         &[
             ("s", "star"),
-            ("m", "command"),
+            (RAW, "command"),
             ("o", "count"),
             ("o", "default"),
-            ("m", "body"),
+            (RAW, "body"),
         ],
     ),
-    // `\def` in its simplest shape only — see the module documentation.
-    ("def", &[("m", "command"), ("m", "body")]),
+    // `\def` in its simplest shape only — see the module documentation. Its name is
+    // written unbraced, always, so it keeps the ordinary parser; its body does not.
+    ("def", &[("m", "command"), (RAW, "body")]),
     (
         "newenvironment",
         &[
@@ -113,8 +161,8 @@ static DECLARATIONS: &[Declaration] = &[
             ("m", "name"),
             ("o", "count"),
             ("o", "default"),
-            ("m", "begin"),
-            ("m", "end"),
+            (RAW, "begin"),
+            (RAW, "end"),
         ],
     ),
     (
@@ -124,8 +172,8 @@ static DECLARATIONS: &[Declaration] = &[
             ("m", "name"),
             ("o", "count"),
             ("o", "default"),
-            ("m", "begin"),
-            ("m", "end"),
+            (RAW, "begin"),
+            (RAW, "end"),
         ],
     ),
     // `\newtheorem{env}[shares counter with]{Title}[reset by]`.
@@ -172,7 +220,7 @@ static DECLARATIONS: &[Declaration] = &[
     // the next `\newtheorem` takes.
     (
         "DeclareMathOperator",
-        &[("s", "star"), ("m", "command"), ("m", "name")],
+        &[("s", "star"), (RAW, "command"), ("m", "name")],
     ),
     ("numberwithin", &[("m", "counter"), ("m", "within")]),
     ("theoremstyle", &[("m", "style")]),

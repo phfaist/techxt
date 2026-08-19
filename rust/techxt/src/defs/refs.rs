@@ -10,6 +10,13 @@
 //! the point: a label key is not text, and a definition that did not declare the
 //! argument would leave `{eq:main}` in the reader's paragraph.
 //!
+//! Resolving a reference to the thing it names would take a second pass — collect every
+//! `\label` and the number of the construct it sits in, then convert again with that
+//! table in hand — and a citation would need the bibliography besides. Both are
+//! deliberate omissions of this version (PLAN.md §17), not oversights: an embedder that
+//! has the numbers can supply them today by overriding these rules
+//! ([`ConverterBuilder::override_macro`](crate::ConverterBuilder::override_macro)).
+//!
 //! # The bibliography
 //!
 //! `thebibliography` renders its entries, one paragraph each. Two things it does in
