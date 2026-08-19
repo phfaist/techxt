@@ -227,9 +227,12 @@ impl MatrixFence {
     pub fn for_environment(name: &str) -> Option<MatrixFence> {
         Some(match name {
             "matrix" | "smallmatrix" => MatrixFence::None,
-            "pmatrix" => MatrixFence::Parens,
-            "bmatrix" | "array" => MatrixFence::Brackets,
-            "Bmatrix" => MatrixFence::Braces,
+            "pmatrix" | "psmallmatrix" => MatrixFence::Parens,
+            "bmatrix" | "bsmallmatrix" | "array" => MatrixFence::Brackets,
+            // `cases` draws only a left brace in LaTeX; there is no half-delimited box
+            // here, and a pair of braces around a column of alternatives is what the
+            // construct means. `dcases` is the same environment in display size.
+            "Bmatrix" | "cases" | "dcases" => MatrixFence::Braces,
             "vmatrix" => MatrixFence::Vert,
             "Vmatrix" => MatrixFence::DoubleVert,
             _ => return None,

@@ -36,9 +36,11 @@ use alloc::string::String;
 use techy::core::node::NodeRef;
 use techy::latexlike::Latexlike;
 
-use crate::def::{Category, MacroDef, TextHandler};
+use crate::def::{Category, MacroDef, Template, TextHandler, TextRule};
 use crate::flow::Flow;
-use crate::mathfmt::{frac_atom, sqrt_atom, Atom, AtomClass, FontStyle, FontStyleKind};
+use crate::mathfmt::{
+    frac_atom, script_atom, sqrt_atom, Atom, AtomClass, FontStyle, FontStyleKind, ScriptKind,
+};
 use crate::render::{math, RenderCx, RenderError, RenderState};
 
 use super::handler;
@@ -61,7 +63,9 @@ pub fn category() -> Category {
     symbols(&mut category);
     operator_names(&mut category);
     fractions_and_roots(&mut category);
+    stacked(&mut category);
     delimiters(&mut category);
+    styles(&mut category);
     category
 }
 
@@ -484,6 +488,91 @@ fn fractions_and_roots(category: &mut Category) {
     );
 }
 
+/// The binomial coefficients and the stacking macros (amsmath).
+///
+/// `\binom{n}{k}` has no plain-text notation of its own, so it renders as TeX's own
+/// name for it: `(𝑛 choose 𝑘)`. The parentheses are what a binomial coefficient is
+/// written with and the word is what the primitive `\choose` is called, which together
+/// say exactly what the two operands are without inventing a notation the reader has
+/// to guess at.
+///
+/// `\overset`, `\underset` and `\stackrel` set one expression over or under another,
+/// and plain text has exactly one way to put something above or below a baseline:
+/// unicode's script characters. So the annotation is rendered as a **script** on the
+/// base — `\stackrel{\mathrm{def}}{=}` becomes `=ᵈᵉᶠ` — through the same all-or-nothing
+/// ladder `^` and `_` run (PLAN.md §9.5), which falls back to `^`/`_` notation for an
+/// annotation unicode cannot show. Nothing is dropped either way.
+fn stacked(category: &mut Category) {
+    for name in ["binom", "dbinom", "tbinom"] {
+        category.add_macro(
+            MacroDef::new(name)
+                .arg("m", TOP)
+                .arg("m", BOTTOM)
+                .rule(TextRule::Template(Template::new("({top} choose {bottom})"))),
+        );
+    }
+    for (name, kind) in [
+        ("overset", ScriptKind::Superscript),
+        ("stackrel", ScriptKind::Superscript),
+        ("underset", ScriptKind::Subscript),
+    ] {
+        category.add_macro(
+            MacroDef::new(name)
+                .arg("m", ANNOTATION)
+                .arg("m", BASE)
+                .rule(handler(Stacked(kind))),
+        );
+    }
+    // `\substack` stacks the lines of a limit (`\sum_{\substack{i<j \\ i,j \in S}}`).
+    // Its body is a formula whose `\\` the inline joiner already renders as a space,
+    // which is what a stack of conditions reads as on one line.
+    category.add_macro(
+        MacroDef::new("substack")
+            .arg("m", "lines")
+            .rule(TextRule::Content),
+    );
+}
+
+/// `\binom`'s two argument names.
+const TOP: &str = "top";
+/// See [`TOP`].
+const BOTTOM: &str = "bottom";
+/// `\overset`'s two argument names: the thing set over the base, and the base.
+const ANNOTATION: &str = "annotation";
+/// See [`ANNOTATION`].
+const BASE: &str = "base";
+
+// -------------------------------------------------------------- style declarations
+
+/// The math declarations that choose a *size* or a *layout*, and render as nothing.
+///
+/// `\displaystyle` and its three siblings pick the size of what follows; `\limits` and
+/// `\nolimits` decide whether an operator's limits go above it or beside it;
+/// `\nonumber` and `\notag` suppress an equation number techxt never printed. Plain
+/// text has one size, one place for a script and no equation numbers, so all of them
+/// are declared — so that they are not reported as unknown — and render as nothing.
+fn styles(category: &mut Category) {
+    for name in [
+        "displaystyle",
+        "textstyle",
+        "scriptstyle",
+        "scriptscriptstyle",
+        "limits",
+        "nolimits",
+        "nonumber",
+        "notag",
+    ] {
+        category.add_macro(MacroDef::new(name).rule(TextRule::Skip));
+    }
+    // `\intertext{…}` is ordinary prose written between two lines of a display; the
+    // prose is content, and it is all that is left of it.
+    category.add_macro(
+        MacroDef::new("intertext")
+            .arg("m", "text")
+            .rule(TextRule::Content),
+    );
+}
+
 /// `\frac`'s two argument names.
 const NUMERATOR: &str = "numerator";
 /// See [`NUMERATOR`].
@@ -615,6 +704,37 @@ impl TextHandler for Modulo {
         };
         let atom = Atom::from_text(text, (AtomClass::Op, cls));
         Ok(math::atom(atom, cx.state(), cx.options()))
+    }
+}
+
+/// `\overset{…}{…}`, `\underset{…}{…}` and `\stackrel{…}{…}`.
+///
+/// The base is emitted first and the annotation follows it as a script atom, which is
+/// exactly the shape `x^2` has — so the joiner binds the two the way it binds any base
+/// and script, and an annotation unicode cannot set falls back to `^`/`_` notation
+/// instead of being lost.
+#[derive(Debug)]
+struct Stacked(ScriptKind);
+
+impl TextHandler for Stacked {
+    fn render(
+        &self,
+        _node: NodeRef<'_, Latexlike>,
+        cx: &mut RenderCx<'_, '_>,
+    ) -> Result<Flow, RenderError> {
+        // Declaration order, as everywhere: the fold's side effects happen while a
+        // region is folded, and the annotation is written first.
+        let annotation = cx.arg(ANNOTATION)?.unwrap_or_default();
+        let base = cx.arg(BASE)?.unwrap_or_default();
+        let annotation = math::inline_text(&annotation, cx.state(), cx.options());
+        let atom = script_atom(
+            &annotation,
+            self.0,
+            math::atoms_in_use(cx.state(), cx.options()),
+        );
+        let mut flow = base;
+        flow.extend(math::atom(atom, cx.state(), cx.options()));
+        Ok(flow)
     }
 }
 

@@ -76,13 +76,39 @@ fn display_environments(category: &mut Category) {
         "split",
         "dmath",
         "dmath*",
+        // LaTeX's own displayed-formula environment, which `\[…\]` is short for.
+        "displaymath",
+        "flalign",
+        "flalign*",
+        // The inner forms: an `aligned` or a `gathered` is written *inside* another
+        // formula, and renders by handing its atoms to it — which is what every
+        // environment here does when math already surrounds it.
+        "aligned",
+        "gathered",
     ] {
         category.add_env(
             EnvDef::new(name)
                 .math_body()
-                .rule(handler(DisplayedFormula)),
+                .rule(handler(Formula { display: true })),
         );
     }
+    // `alignat` and its relatives take the number of column pairs, which says nothing
+    // about the text; it is parsed so that it cannot leak, and dropped.
+    for name in ["alignat", "alignat*", "alignedat"] {
+        category.add_env(
+            EnvDef::new(name)
+                .arg("m", "columns")
+                .math_body()
+                .rule(handler(Formula { display: true })),
+        );
+    }
+    // `\begin{math}` is `$…$`: a formula in running text, never displayed, wherever it
+    // is written.
+    category.add_env(
+        EnvDef::new("math")
+            .math_body()
+            .rule(handler(Formula { display: false })),
+    );
     // `subequations` only renumbers what is inside it, which plain text does not show;
     // its body is ordinary document content holding formulas of its own.
     category.add_env(EnvDef::new("subequations").rule(TextRule::Content));
@@ -104,6 +130,12 @@ fn matrices(category: &mut Category) {
         "vmatrix",
         "Vmatrix",
         "smallmatrix",
+        "psmallmatrix",
+        "bsmallmatrix",
+        // `cases` is a matrix in every way that plain text can see: rows of
+        // alternatives, a condition in the second column, and a brace around the lot.
+        "cases",
+        "dcases",
     ] {
         category.add_env(EnvDef::new(name).math_body().rule(handler(Matrix)));
     }
@@ -122,11 +154,17 @@ fn matrices(category: &mut Category) {
 
 // ------------------------------------------------------------------ handlers
 
-/// One displayed formula: `equation`, `align`, `gather`, … .
+/// One formula environment: `equation`, `align`, `gather`, `math`, … .
 #[derive(Debug)]
-struct DisplayedFormula;
+struct Formula {
+    /// Whether this environment *displays* its formula when nothing surrounds it.
+    ///
+    /// True for all of them but `math`, which is `$…$` written out and therefore
+    /// inline wherever it stands.
+    display: bool,
+}
 
-impl TextHandler for DisplayedFormula {
+impl TextHandler for Formula {
     fn render(
         &self,
         _node: NodeRef<'_, Latexlike>,
@@ -135,7 +173,7 @@ impl TextHandler for DisplayedFormula {
         let enclosing = cx.state().math;
         // A math environment *is* display math (PLAN.md §9.5) — unless it is written
         // inside an inline formula, where there is no second line to display it on.
-        let display = enclosing.is_none_or(|math| math.display);
+        let display = self.display && enclosing.is_none_or(|math| math.display);
 
         let mut inner = cx.state().clone();
         inner.math = Some(MathCtx {

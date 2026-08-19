@@ -53,7 +53,7 @@ const MULTICOLUMN: &str = "multicolumn";
 
 /// The environments that make a table body, and therefore end the search for the table
 /// a `\multicolumn` belongs to.
-const TABLE_ENVIRONMENTS: [&str; 3] = ["tabular", "tabular*", "tabularx"];
+const TABLE_ENVIRONMENTS: [&str; 4] = ["tabular", "tabular*", "tabularx", "longtable"];
 
 /// The tables category (PLAN.md §12.1).
 ///
@@ -73,6 +73,18 @@ pub fn category() -> Category {
             .arg("m", "colspec")
             .rule(handler(Tabular)),
     );
+    // `longtable` (the package of the same name) is a `tabular` that may break across
+    // pages — which plain text does not have, so what is left of it is a table. Its
+    // head and foot markers end a row group that only a page break would separate.
+    category.add_env(
+        EnvDef::new("longtable")
+            .arg("o", "position")
+            .arg("m", "colspec")
+            .rule(handler(Tabular)),
+    );
+    for name in ["endhead", "endfirsthead", "endfoot", "endlastfoot"] {
+        category.add_macro(MacroDef::new(name).rule(TextRule::Skip));
+    }
     category.add_env(
         EnvDef::new("tabularx")
             .arg("m", "width")
@@ -86,6 +98,15 @@ pub fn category() -> Category {
         MacroDef::new(MULTICOLUMN)
             .arg("m", "columns")
             .arg("m", "colspec")
+            .arg("m", "content")
+            .rule(TextRule::Template(Template::new("{content}"))),
+    );
+    // `\multirow{2}{*}{text}` spans rows rather than columns; the same reasoning
+    // applies, and the same rendering — the contents, in the one cell they start in.
+    category.add_macro(
+        MacroDef::new("multirow")
+            .arg("m", "rows")
+            .arg("m", "width")
             .arg("m", "content")
             .rule(TextRule::Template(Template::new("{content}"))),
     );

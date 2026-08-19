@@ -32,7 +32,7 @@ use alloc::string::String;
 use techy::core::node::NodeRef;
 use techy::latexlike::Latexlike;
 
-use crate::def::{Category, EnvDef, MacroDef, TextHandler};
+use crate::def::{Category, EnvDef, MacroDef, TextHandler, TextRule};
 use crate::flow::{BlockKind, Flow, FlowItem};
 use crate::layout::render_inline;
 use crate::render::{FloatKind, RenderCx, RenderError};
@@ -90,6 +90,36 @@ fn blocks(category: &mut Category) {
             indent: QUOTE_INDENT,
         })));
     }
+    // A `minipage` is a box set as a small page of its own, and a `titlepage` is a
+    // page; both are blocks of text with no shape plain text can show, and both keep
+    // every word inside them. `\begin{minipage}[t]{0.4\textwidth}`'s position and width
+    // are parsed so that they cannot leak.
+    category.add_env(
+        EnvDef::new("minipage")
+            .arg("o", "position")
+            .arg("o", "height")
+            .arg("o", "inner")
+            .arg("m", "width")
+            .rule(handler(Block { indent: "" })),
+    );
+    category.add_env(EnvDef::new("titlepage").rule(handler(Block { indent: "" })));
+    // `multicols` (the `multicol` package) sets its body in columns, and `spacing`
+    // (`setspace`) sets it at a different leading. Plain text has one column and one
+    // line spacing; both bodies are ordinary text.
+    category.add_env(
+        EnvDef::new("multicols")
+            .arg("m", "columns")
+            .arg("o", "heading")
+            .rule(handler(Block { indent: "" })),
+    );
+    category.add_env(
+        EnvDef::new("spacing")
+            .arg("m", "factor")
+            .rule(TextRule::Content),
+    );
+    // `sloppypar` only changes how its paragraphs are broken into lines, which is the
+    // layout engine's decision here; its body is ordinary text.
+    category.add_env(EnvDef::new("sloppypar").rule(TextRule::Content));
     category.add_env(EnvDef::new("abstract").rule(handler(Abstract)));
 }
 

@@ -38,7 +38,7 @@ use techy::core::node::NodeRef;
 use techy::latexlike::Latexlike;
 
 use crate::convert::HeadingStyle;
-use crate::def::{Category, MacroDef};
+use crate::def::{Category, MacroDef, TextRule};
 use crate::flow::{display_width, Flow, FlowItem};
 use crate::render::{RenderCx, RenderError};
 
@@ -79,7 +79,58 @@ pub fn category() -> Category {
                 .rule(handler(Heading { level })),
         );
     }
+    structure(&mut category);
     category
+}
+
+/// The document-structure commands that surround the headings.
+///
+/// None of them prints anything a converter can produce. A table of contents, a list of
+/// figures and a list of tables are *generated* from a document that has already been
+/// numbered and paginated; running heads name a page nobody is turning; and
+/// `\addcontentsline` writes into a file plain text has no equivalent of. Every one is
+/// declared — so that its arguments cannot leak — and renders as nothing.
+///
+/// `\appendix` is the interesting one: it switches section numbering to letters, which
+/// techxt does not do. Headings after it keep counting in the numbers they were up to
+/// (PLAN.md §17 leaves numbering to a later version), and the appendix's own heading
+/// text is rendered exactly as it was written.
+fn structure(category: &mut Category) {
+    for name in [
+        "tableofcontents",
+        "listoffigures",
+        "listoftables",
+        "appendix",
+        "frontmatter",
+        "mainmatter",
+        "backmatter",
+    ] {
+        category.add_macro(MacroDef::new(name).rule(TextRule::Skip));
+    }
+    category.add_macro(
+        MacroDef::new("markboth")
+            .arg("m", "left")
+            .arg("m", "right")
+            .rule(TextRule::Skip),
+    );
+    category.add_macro(
+        MacroDef::new("markright")
+            .arg("m", "right")
+            .rule(TextRule::Skip),
+    );
+    category.add_macro(
+        MacroDef::new("addcontentsline")
+            .arg("m", "file")
+            .arg("m", "level")
+            .arg("m", "entry")
+            .rule(TextRule::Skip),
+    );
+    category.add_macro(
+        MacroDef::new("addtocontents")
+            .arg("m", "file")
+            .arg("m", "content")
+            .rule(TextRule::Skip),
+    );
 }
 
 /// One heading command, identified by its level.

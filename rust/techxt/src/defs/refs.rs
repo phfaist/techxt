@@ -9,10 +9,25 @@
 //! `\label` renders as nothing at all, but its argument is still *declared*, which is
 //! the point: a label key is not text, and a definition that did not declare the
 //! argument would leave `{eq:main}` in the reader's paragraph.
+//!
+//! # The bibliography
+//!
+//! `thebibliography` renders its entries, one paragraph each. Two things it does in
+//! LaTeX are deliberately not done here: it prints no heading — which of "References"
+//! and "Bibliography" LaTeX prints depends on the document class, and techxt discards
+//! the class along with the rest of the preamble — and it numbers no entry, for the
+//! same reason `\cite` resolves to `<cit.>` rather than to `[7]`.
 
 use alloc::borrow::Cow;
 
-use crate::def::{Category, MacroDef, TextRule};
+use techy::core::node::NodeRef;
+use techy::latexlike::Latexlike;
+
+use crate::def::{Category, EnvDef, MacroDef, TextHandler, TextRule};
+use crate::flow::{Flow, FlowItem};
+use crate::render::{RenderCx, RenderError};
+
+use super::handler;
 
 /// The refs category (PLAN.md §12.1).
 pub fn category() -> Category {
@@ -44,7 +59,49 @@ pub fn category() -> Category {
         category.add_macro(MacroDef::new(name).arg("m", "key").rule(TextRule::Skip));
     }
 
+    // The bibliography. Its argument is the widest label, which sizes an indent that
+    // plain text does not have; the entries are what matters, and `\bibitem` is what
+    // keeps them apart.
+    category.add_env(
+        EnvDef::new("thebibliography")
+            .arg("m", "widest")
+            .rule(TextRule::Content),
+    );
+    category.add_macro(
+        MacroDef::new("bibitem")
+            .arg("o", "label")
+            .arg("m", "key")
+            .rule(handler(EntryBreak)),
+    );
+    // biblatex prints the bibliography from a database techxt cannot read.
+    category.add_macro(
+        MacroDef::new("printbibliography")
+            .arg("o", "options")
+            .rule(TextRule::Skip),
+    );
+
     category
+}
+
+/// `\bibitem`: the start of one bibliography entry.
+///
+/// Neither the key nor the optional label is rendered — a key is not text, and a label
+/// techxt cannot resolve a `\cite` to is not worth printing next to one it cannot
+/// either. What the entry needs is to begin on its own, which is what a paragraph
+/// break gives it.
+#[derive(Debug)]
+struct EntryBreak;
+
+impl TextHandler for EntryBreak {
+    fn render(
+        &self,
+        _node: NodeRef<'_, Latexlike>,
+        _cx: &mut RenderCx<'_, '_>,
+    ) -> Result<Flow, RenderError> {
+        let mut flow = Flow::new();
+        flow.push(FlowItem::ParagraphBreak);
+        Ok(flow)
+    }
 }
 
 /// A reference macro: one label argument, one fixed marker.

@@ -41,6 +41,13 @@ pub fn category() -> Category {
                 .arg(VERBATIM_BRACES, "url")
                 .rule(TextRule::Template(Template::new("<{url}>"))),
         )
+        // `\path{…}` (the `url` package) sets a file name, not a link: it prints what
+        // it was given, and the angle brackets of a URL would be an invention.
+        .with_macro(
+            MacroDef::new("path")
+                .arg(VERBATIM_BRACES, "path")
+                .rule(TextRule::Template(Template::new("{path}"))),
+        )
 }
 
 /// techy's argument code for "verbatim, delimited by braces": the `v` reader with the

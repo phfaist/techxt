@@ -104,6 +104,8 @@ pub fn category() -> Category {
         );
     }
 
+    declarations(&mut category);
+
     category.add_macro(MacroDef::new("emph").arg("m", TEXT).rule(handler(Emphasis)));
     // `\operatorname*{…}` differs only in where the operator's limits are set, which
     // plain text cannot show either way.
@@ -115,6 +117,55 @@ pub fn category() -> Category {
     );
 
     category
+}
+
+/// The font and size *declarations*: `{\bfseries loud}` rather than `\textbf{loud}`.
+///
+/// A declaration takes no argument — it changes the font for the rest of the group it
+/// stands in — and techxt's font state travels *down*, into a construct's arguments,
+/// never sideways to a construct's siblings. There is therefore nothing here for a
+/// declaration to change, and each of them renders as nothing: the styling is lost and
+/// every character of the text is kept, which is the right way round. The argument
+/// forms above are what carries a font into the output.
+///
+/// Sizes are declared for a second reason as well: plain text has one size, so `\huge`
+/// could not change anything even if it did reach the characters after it.
+fn declarations(category: &mut Category) {
+    for name in [
+        // LaTeX2e's family, series and shape declarations …
+        "rmfamily",
+        "sffamily",
+        "ttfamily",
+        "mdseries",
+        "bfseries",
+        "upshape",
+        "itshape",
+        "slshape",
+        "scshape",
+        "normalfont",
+        "em",
+        // … and the short forms of plain TeX and LaTeX 2.09 that documents still use.
+        "rm",
+        "sf",
+        "tt",
+        "bf",
+        "it",
+        "sl",
+        "sc",
+        // The ten standard sizes.
+        "tiny",
+        "scriptsize",
+        "footnotesize",
+        "small",
+        "normalsize",
+        "large",
+        "Large",
+        "LARGE",
+        "huge",
+        "Huge",
+    ] {
+        category.add_macro(MacroDef::new(name).rule(TextRule::Skip));
+    }
 }
 
 /// The name every entry here gives its argument.

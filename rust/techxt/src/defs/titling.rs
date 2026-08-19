@@ -24,13 +24,14 @@
 //! in a `no_std` library with no clock is [`Options::today`](crate::Options::today) if
 //! the caller set one and `<today>` otherwise.
 
+use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use techy::core::node::NodeRef;
 use techy::latexlike::Latexlike;
 
-use crate::def::{Category, MacroDef, TextHandler};
+use crate::def::{Category, MacroDef, TextHandler, TextRule};
 use crate::flow::{display_width, Flow, FlowItem};
 use crate::layout::render_inline;
 use crate::render::{RenderCx, RenderError};
@@ -52,12 +53,17 @@ pub fn category() -> Category {
         .with_macro(field("date", Field::Date))
         .with_macro(MacroDef::new("maketitle").rule(handler(MakeTitle)))
         .with_macro(MacroDef::new("today").rule(handler(Today)))
+        // `\and` separates two authors of the same paper. LaTeX sets them side by side
+        // in columns; a title block in plain text is one line per field, so the
+        // separator is the word the macro is named after — an English word, like the
+        // "Abstract" and "Theorem" the other categories generate, and localizing those
+        // is on PLAN.md §17's list. Written with its spaces, so that it separates two
+        // names whether or not the source put spaces around it: a literal's text goes
+        // through the same word-and-glue splitting as document text, and the layout
+        // engine collapses the glue against whatever is next to it.
+        .with_macro(MacroDef::new("and").rule(TextRule::Literal(Cow::Borrowed(" and "))))
         // Not a title field, but the same shape and the same fate: it prints nothing.
-        .with_macro(
-            MacroDef::new("thanks")
-                .arg("m", "text")
-                .rule(crate::def::TextRule::Skip),
-        )
+        .with_macro(MacroDef::new("thanks").arg("m", "text").rule(TextRule::Skip))
 }
 
 /// One of the three fields `\maketitle` prints.

@@ -42,6 +42,15 @@ pub fn category() -> Category {
     for name in ["verbatim", "verbatim*", "alltt"] {
         category.add_env(EnvDef::new(name).verbatim_body().rule(TextRule::Content));
     }
+    // The `comment` environment of the `verbatim` and `comment` packages: its body is
+    // *not* typeset. Reading it verbatim is what makes that safe — a commented-out
+    // block routinely contains half a construct, and parsing it as markup would report
+    // errors about text the author had already decided not to show.
+    category.add_env(
+        EnvDef::new("comment")
+            .verbatim_body()
+            .rule(TextRule::Skip),
+    );
     // `lstlisting`'s key-value options say how the *listing* is typeset — which
     // language to colour it as, whether to number its lines — so there is nothing in
     // them for plain text and no diagnostic worth raising: dropping them loses no

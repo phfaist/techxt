@@ -54,6 +54,8 @@ use crate::convert::FootnoteStyle;
 use crate::def::{Category, MacroDef, SpecialsDef, TextHandler, TextRule};
 use crate::diag::{MisplacedAlignment, UnsupportedIgnored};
 use crate::flow::{Flow, FlowItem};
+use crate::layout::render_inline;
+use crate::mathfmt::{fmt_script_text, ScriptKind};
 use crate::render::{MathCtx, RenderCx, RenderError};
 
 use super::handler;
@@ -68,6 +70,8 @@ pub fn category() -> Category {
     ligatures(&mut category);
     footnotes(&mut category);
     misc(&mut category);
+    boxes(&mut category);
+    typesetting_only(&mut category);
     text_symbols(&mut category);
     category
 }
@@ -129,6 +133,31 @@ fn breaks(category: &mut Category) {
     );
     category.add_specials(SpecialsDef::new("&").rule(handler(Alignment)));
     category.add_macro(MacroDef::new("hline").rule(handler(HorizontalRule)));
+
+    // Page breaks. Plain text has no pages, so the strongest break it can show is a
+    // paragraph break — which is also what a reader wants to see where a new page
+    // began. The optional `[0-4]` of `\pagebreak` is a strength nothing can render.
+    for name in ["newpage", "clearpage", "cleardoublepage"] {
+        category.add_macro(MacroDef::new(name).rule(handler(Emit(FlowItem::ParagraphBreak))));
+    }
+    category.add_macro(
+        MacroDef::new("pagebreak")
+            .star()
+            .arg("o", "strength")
+            .rule(handler(Emit(FlowItem::ParagraphBreak))),
+    );
+    // `\linebreak` is `\newline` with a strength; `\nopagebreak` asks for no break at
+    // all, which is what plain text does anyway unless something asks otherwise.
+    category.add_macro(
+        MacroDef::new("linebreak")
+            .arg("o", "strength")
+            .rule(handler(Emit(FlowItem::HardBreak))),
+    );
+    category.add_macro(
+        MacroDef::new("nopagebreak")
+            .arg("o", "strength")
+            .rule(TextRule::Skip),
+    );
 }
 
 /// The `[len]` argument of `\\`: optional, and only if it comes *immediately*.
@@ -277,6 +306,184 @@ fn misc(category: &mut Category) {
     }
 }
 
+// --------------------------------------------------------------------------- boxes
+
+/// The boxes and the case-changing macros of PLAN.md §9.8's "Misc".
+///
+/// A box is a *typesetting* instruction — fix this width, draw a frame, lift this off
+/// the baseline — and plain text can show none of it. What is inside one is ordinary
+/// content, though, and losing that would lose real text, so every box here renders
+/// its contents and nothing else, with the measurements parsed and discarded so that
+/// they cannot leak into the reader's paragraph.
+fn boxes(category: &mut Category) {
+    category.add_macro(
+        MacroDef::new("fbox")
+            .arg("m", CONTENT)
+            .rule(TextRule::Content),
+    );
+    category.add_macro(
+        MacroDef::new("boxed")
+            .arg("m", CONTENT)
+            .rule(TextRule::Content),
+    );
+    for name in ["framebox", "makebox"] {
+        category.add_macro(
+            MacroDef::new(name)
+                .arg("o", "width")
+                .arg("o", "position")
+                .arg("m", CONTENT)
+                .rule(only_content()),
+        );
+    }
+    category.add_macro(
+        MacroDef::new("parbox")
+            .arg("o", "position")
+            .arg("o", "height")
+            .arg("o", "inner")
+            .arg("m", "width")
+            .arg("m", CONTENT)
+            .rule(only_content()),
+    );
+    category.add_macro(
+        MacroDef::new("raisebox")
+            .arg("m", "raise")
+            .arg("o", "height")
+            .arg("o", "depth")
+            .arg("m", CONTENT)
+            .rule(only_content()),
+    );
+    category.add_macro(
+        MacroDef::new("smash")
+            .arg("o", "part")
+            .arg("m", CONTENT)
+            .rule(only_content()),
+    );
+    // A rule is a black rectangle: nothing but geometry, and nothing to render.
+    category.add_macro(
+        MacroDef::new("rule")
+            .arg("o", "raise")
+            .arg("m", "width")
+            .arg("m", "height")
+            .rule(TextRule::Skip),
+    );
+
+    // Case is content (PLAN.md §9.2): techxt never changes a letter's case, here no
+    // more than in a heading. The argument is rendered as it was written — which also
+    // keeps `\MakeUppercase{\ss}` from producing a letter its author did not write.
+    for name in ["uppercase", "lowercase", "MakeUppercase", "MakeLowercase"] {
+        category.add_macro(
+            MacroDef::new(name)
+                .arg("m", CONTENT)
+                .rule(TextRule::Content),
+        );
+    }
+
+    // Text-mode scripts. Unicode has script characters for some strings and not for
+    // others, so the rendering is the same all-or-nothing lookup a math script runs
+    // ([`fmt_script_text`](crate::mathfmt::fmt_script_text)) — `1\textsuperscript{st}`
+    // becomes `1ˢᵗ` — and what unicode cannot show is rendered as the plain text it
+    // was, which is still the right words in the right order.
+    category.add_macro(
+        MacroDef::new("textsuperscript")
+            .arg("m", CONTENT)
+            .rule(handler(TextScript(ScriptKind::Superscript))),
+    );
+    category.add_macro(
+        MacroDef::new("textsubscript")
+            .arg("m", CONTENT)
+            .rule(handler(TextScript(ScriptKind::Subscript))),
+    );
+}
+
+/// The argument name every box-like entry gives the part that is actually rendered.
+const CONTENT: &str = "content";
+
+/// The rule "render the `content` argument and nothing else".
+///
+/// [`TextRule::Content`] renders *every* provided argument, which for a box would put
+/// its width in the text; a template names the one argument that is content.
+fn only_content() -> TextRule {
+    TextRule::Template(crate::def::Template::new("{content}"))
+}
+
+// ---------------------------------------------------------- typesetting-only macros
+
+/// The commands that instruct the typesetter and say nothing to the reader.
+///
+/// Every one of them is *declared* rather than left unknown, and that is the point: an
+/// unknown command takes no arguments (see
+/// [`Options::unknown_macro`](crate::Options::unknown_macro)), so an undeclared
+/// `\settowidth{\x}{ab}` would print `ab`, and an undeclared `\hspace*{\fill}` would
+/// print nothing but warn about a construct techxt does in fact understand. Declaring
+/// them with [`TextRule::Skip`] is the complete and correct answer, and it is silent
+/// on purpose (`techxt.unknown-macro` means "techxt does not know this", not "this
+/// renders as nothing").
+///
+/// # Counters are not tracked
+///
+/// `\arabic{section}` and its siblings would print a counter's value, and techxt keeps
+/// no counters other than the heading numbers of [`defs::sectioning`](super::sectioning)
+/// — document numbering is on PLAN.md §17's list — so they render as nothing rather
+/// than as a wrong number.
+fn typesetting_only(category: &mut Category) {
+    for name in [
+        // Glue and leaders: horizontal or vertical space, filled or not.
+        "hfill",
+        "vfill",
+        "hrulefill",
+        "dotfill",
+        "smallskipamount",
+        "medskipamount",
+        "bigskipamount",
+        // Do-nothing primitives that documents genuinely contain.
+        "null",
+        "relax",
+        "protect",
+        "allowbreak",
+        "indent",
+        "unskip",
+        // Line-breaking policy, and the italic correction — adjustments to *how* the
+        // same characters are set. (The discretionary hyphen `\-` is not here: the
+        // generated table renders it as U+00AD SOFT HYPHEN, which is invisible and
+        // marks the break it permits.)
+        "sloppy",
+        "fussy",
+        "/",
+        // `\makeatletter` … `\makeatother` change what counts as a letter in a command
+        // name; techy's parser reads `@` as part of a name regardless.
+        "makeatletter",
+        "makeatother",
+        // The standard lengths, which appear as the values of the arguments above.
+        "textwidth",
+        "linewidth",
+        "columnwidth",
+        "textheight",
+        "paperwidth",
+        "paperheight",
+        "baselineskip",
+        "parindent",
+        "parskip",
+        "fill",
+    ] {
+        category.add_macro(MacroDef::new(name).rule(TextRule::Skip));
+    }
+    // Counter commands: the ones that change a counter, and the ones that would print
+    // one. See this function's documentation for why printing one renders nothing.
+    for name in [
+        "stepcounter",
+        "refstepcounter",
+        "arabic",
+        "roman",
+        "Roman",
+        "alph",
+        "Alph",
+        "fnsymbol",
+        "value",
+    ] {
+        category.add_macro(MacroDef::new(name).arg("m", "counter").rule(TextRule::Skip));
+    }
+}
+
 /// An argument parsed with math left behind (`\text{…}`).
 ///
 /// The exit is an [`Event`](techy::latexlike::Event) rather than a mode assignment
@@ -392,6 +599,32 @@ impl TextHandler for FixedText {
         _cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         Ok(Flow::text(self.0))
+    }
+}
+
+/// `\textsuperscript{…}` and `\textsubscript{…}`.
+///
+/// The argument is rendered first — it is ordinary text, and may hold a macro of its
+/// own — then looked up in unicode's script characters as a whole. A string unicode
+/// cannot show in a script renders as itself: the alternative, `^`/`_` notation, reads
+/// as mathematics in the middle of a sentence, which running text is.
+#[derive(Debug)]
+struct TextScript(ScriptKind);
+
+impl TextHandler for TextScript {
+    fn render(
+        &self,
+        _node: NodeRef<'_, Latexlike>,
+        cx: &mut RenderCx<'_, '_>,
+    ) -> Result<Flow, RenderError> {
+        let argument = cx.arg(CONTENT)?.unwrap_or_default();
+        let text = render_inline(&argument);
+        match fmt_script_text(&text, self.0) {
+            // One text item: a script is a single token, and no line break may fall
+            // inside it.
+            Some(script) => Ok(Flow::text(&script)),
+            None => Ok(argument),
+        }
     }
 }
 
