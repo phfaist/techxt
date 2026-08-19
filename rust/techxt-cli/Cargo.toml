@@ -42,11 +42,13 @@ clap.workspace = true
 # Only the CLI may link this: it measures the real thread stack so that the descent
 # guard can use it (DECISIONS.md D9 item 3). See `descent_guard` in `main.rs`.
 #
-# MSRV note: stacker builds on `psm`, and psm >= 0.1.31 declares `rust-version = 1.88`
-# (0.1.31 also picks up an `ar_archive_writer` build dependency that declares the same),
-# which cargo's resolver refuses on the 1.86 toolchain the MSRV job uses. `Cargo.lock`
-# therefore pins psm to 0.1.26, the last release that resolves on 1.86. The pin lives in
-# the lock file, so a bare `cargo update` would undo it; the durable fix is either
-# `resolver = "3"` in the workspace root, whose MSRV-aware resolution would pick a
-# compatible psm by itself, or raising the declared MSRV.
+# MSRV note: stacker builds on `psm`, whose newer releases declare `rust-version = 1.88`
+# and so cannot build on the 1.86 toolchain the MSRV job uses. The workspace root sets
+# `resolver = "3"`, whose MSRV-aware resolution declines those releases on our behalf, so
+# this no longer rests on the lock file alone.
+#
+# Resolver v3 can only honour a `rust-version` a crate actually declares, though: psm's
+# `ar_archive_writer` build dependency declares none and still needs a newer compiler, so
+# `Cargo.lock` remains the belt to that braces. If the MSRV job ever fails on a crate you
+# did not touch, look for one that resolved forward without declaring a floor.
 stacker.workspace = true

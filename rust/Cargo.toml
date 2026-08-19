@@ -2,7 +2,13 @@
 # A virtual workspace root has no `edition` to infer the resolver from, so pin it
 # explicitly: v1 would unify features across the no_std library and the std-linking
 # CLI, and could drag std into `techxt` through a shared dependency.
-resolver = "2"
+#
+# v3 rather than techy's v2 because it additionally makes dependency resolution
+# MSRV-aware: cargo then declines a dependency version whose own `rust-version`
+# exceeds ours. The CLI's `stacker` needs this — `psm` 0.1.31 requires 1.88, and
+# under v2 a bare `cargo update` would silently pick it and break the MSRV job.
+# Resolver v3 needs only Cargo 1.84, below this workspace's own 1.86 floor.
+resolver = "3"
 members = ["techxt", "techxt-cli"]
 
 # Shared metadata inherited by member crates (`<field>.workspace = true`).
