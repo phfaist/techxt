@@ -1,0 +1,81 @@
+On the Slow Convergence of Impatient Methods
+    A. Researcher B. Coauthor
+    March 3, 2025
+============================================
+
+Abstract
+
+    We revisit the classical fixed-point iteration and show that impatience
+    costs precisely one order of convergence. The argument is elementary[1]
+    and the constants are explicit.
+
+1 Introduction
+--------------
+
+Fixed-point iteration is the oldest trick in numerical analysis <cit.>. Given
+a contraction 𝑇 on a complete metric space, the sequence 𝑥ₙ₊₁ = 𝑇(𝑥ₙ)
+converges to the unique fixed point 𝑥^⋆, and the rate is governed by the
+Lipschitz constant 𝐿 < 1:
+
+    𝑑(𝑥ₙ, 𝑥^⋆ ) ≤ (𝐿ⁿ)/(1 - 𝐿) 𝑑(𝑥₁, 𝑥₀).
+
+What we add to this picture is the observation that 𝑠𝑡𝑜𝑝𝑝𝑖𝑛𝑔 𝑒𝑎𝑟𝑙𝑦 — the
+practice we call 𝐢𝐦𝐩𝐚𝐭𝐢𝐞𝐧𝐜𝐞 — changes the exponent rather than the constant.
+
+2 Setting
+---------
+
+Throughout, (𝑋, 𝑑) is a complete metric space and 𝑇 : 𝑋 → 𝑋 satisfies 𝑑(𝑇(𝑥),
+𝑇(𝑦)) ≤ 𝐿 𝑑(𝑥, 𝑦) for all 𝑥, 𝑦 ∈ 𝑋. We assume:
+  • 0 < 𝐿 < 1, so that 𝑇 is a genuine contraction;
+  • 𝑥₀ ∈ 𝑋 is arbitrary, and α = 𝑑(𝑥₁, 𝑥₀) > 0;
+  • the tolerance ε satisfies ε < α.
+
+The three assumptions are independent, and each is used exactly once below.
+
+2.1 The impatient stopping rule
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+An 𝑖𝑚𝑝𝑎𝑡𝑖𝑒𝑛𝑡 run stops at the first index 𝑛 with 𝑑(𝑥ₙ₊₁, 𝑥ₙ) ≤ ε, rather than
+at the first 𝑛 with 𝑑(𝑥ₙ, 𝑥^⋆ ) ≤ ε. The two differ by a factor of 1 - 𝐿,
+which is small exactly when the iteration is slow.
+
+Theorem. Let 𝑛^⋆ be the impatient stopping index. Then 𝑑( 𝑥_𝑛^⋆ , 𝑥^⋆ ) ≤ ε/(1
+- 𝐿), and this bound is attained.
+
+Proof. Sum the geometric series ∑_(𝑘 ≥ 0) 𝐿ᵏ from the triangle inequality, and
+note that equality holds for the affine map 𝑇(𝑥) = 𝐿𝑥 on ℝ. □
+
+3 Experiments
+-------------
+
+We ran the iteration for four values of 𝐿. The measured iteration counts are:
+
+---------------------------------
+Contraction 𝐿  Patient  Impatient
+---------------------------------
+0.5                 34         33
+0.9                219        197
+0.99              2291       1832
+---------------------------------
+
+Table: Iterations to reach ε = 10⁻⁶.
+
+The gap widens as 𝐿 → 1, as Theorem <ref> predicts.
+
+    < g r a p h i c s >
+
+Figure: Distance to the fixed point against the iteration count, on a
+logarithmic scale.
+
+4 Conclusion
+------------
+
+Impatience is cheap when 𝐿 is small and expensive when it is not; a
+practitioner who wants the bound of Equation (<ref>) should divide the
+tolerance by 1 - 𝐿 before starting.[2]
+
+---
+[1] It is elementary in the sense that it uses no machinery the reader does
+    not already have.
+[2] Or, equivalently, be patient.

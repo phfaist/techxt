@@ -32,7 +32,10 @@ bare_urls = "warn"
 
 # Dependency versions live here so the members stay in lockstep and a bump is a
 # one-line change. PLAN.md §2 fixes the runtime set: `techxt` may depend on exactly
-# `techy` and `unicode-width`, `techxt-cli` on `techxt` and `clap`.
+# `techy` and `unicode-width`, `techxt-cli` on `techxt` and `clap` — plus, for the
+# CLI only, `stacker` (DECISIONS.md D9 item 3 authorizes it) and `techy` itself,
+# which the CLI names directly for the `SourceResolver` it implements, the
+# `Recovery` policy `--strict` selects and the `Diagnostics` it filters and renders.
 [workspace.dependencies]
 # techy is not on crates.io yet, so the dependency is a git revision pinned to the
 # exact commit the plan was written against (PLAN.md §3 describes that API). Switch
@@ -43,6 +46,13 @@ techy = { git = "https://github.com/phfaist/techy", rev = "8167971" }
 # column accounting (PLAN.md §7). no_std-capable and dependency-free.
 unicode-width = "0.2"
 clap = { version = "4", features = ["derive"] }
+# The std caller's stack probe (DECISIONS.md D9 item 3). techy's descent guard is
+# `no_std` and cannot ask the operating system how much stack is left, so its default
+# is a deliberately tight fixed budget; `techxt-cli` links std and can do better, and
+# `stacker::remaining_stack()` is exactly the `fn() -> Option<usize>` probe that
+# `StdDescentGuardInit::computed_stack_budget` wants. CLI-only: `techxt` itself must
+# stay no_std.
+stacker = "0.1"
 proptest = "1"
 
 # Profiles apply workspace-wide and are only honored in the workspace root manifest.
