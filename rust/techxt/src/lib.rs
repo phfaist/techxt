@@ -69,6 +69,14 @@
 //! malformed. A caller contract violation (for instance an out-of-range index passed to
 //! a public accessor) may panic, following the usual Rust conventions.
 //!
+//! ## Modules
+//!
+//! - [`flow`] — the typed token sequence handlers produce: words, breakable spaces,
+//!   vertical separation requests, blocks, verbatim runs.
+//! - [`layout`] — the single pass that turns a flow into text, deciding every line
+//!   break, blank line and indent.
+//! - [`mathfmt`] — the atom model the math engine composes formulas from.
+//!
 //! ## Status
 //!
 //! Early development: the crate is being built up milestone by milestone and the public
@@ -77,3 +85,7 @@
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
+
+pub mod flow;
+pub mod layout;
+pub mod mathfmt;
