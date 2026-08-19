@@ -1,0 +1,30 @@
+[package]
+name = "techxt"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Convert LaTeX-like markup to plain (unicode) text"
+readme = "../../README.md"
+license.workspace = true
+repository.workspace = true
+keywords = ["latex", "text", "unicode", "converter", "flm"]
+categories = ["text-processing", "value-formatting"]
+
+[lints]
+workspace = true
+
+# Exactly two runtime dependencies (PLAN.md §2), both no_std + alloc.
+#
+# techy default features are empty (its only feature, `serde`, is opt-in), so nothing
+# has to be turned off here to keep the no_std build honest; the CI `no_std` job
+# builds this crate for `thumbv7em-none-eabihf` and would catch a regression.
+# unicode-width's default `cjk` feature is data only, not std.
+[dependencies]
+techy.workspace = true
+unicode-width.workspace = true
+
+# proptest drives the layout and joiner invariants (PLAN.md §14.2). Tests are the one
+# place where this crate links std (`#![cfg_attr(not(test), no_std)]`).
+[dev-dependencies]
+proptest.workspace = true

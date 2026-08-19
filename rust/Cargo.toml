@@ -1,0 +1,51 @@
+[workspace]
+# A virtual workspace root has no `edition` to infer the resolver from, so pin it
+# explicitly: v1 would unify features across the no_std library and the std-linking
+# CLI, and could drag std into `techxt` through a shared dependency.
+resolver = "2"
+members = ["techxt", "techxt-cli"]
+
+# Shared metadata inherited by member crates (`<field>.workspace = true`).
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+# Matches techy's MSRV: techxt is built on techy and cannot compile on a toolchain
+# older than the parser it embeds. techy pins 1.86 for dyn trait upcasting to
+# `dyn Any` in its diagnostics payloads.
+rust-version = "1.86"
+authors = ["Philippe Faist"]
+license = "MIT"
+repository = "https://github.com/phfaist/techxt"
+
+# Workspace-wide lint policy; members opt in with `[lints] workspace = true`.
+# missing_docs is "deny" from day one (PLAN.md §1.7): an undocumented public item
+# fails the build rather than shipping a blank rustdoc entry.
+# broken_intra_doc_links is "deny" so documentation link rot fails the `cargo doc`
+# build instead of silently producing dead links.
+[workspace.lints.rust]
+missing_docs = "deny"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "warn"
+bare_urls = "warn"
+
+# Dependency versions live here so the members stay in lockstep and a bump is a
+# one-line change. PLAN.md §2 fixes the runtime set: `techxt` may depend on exactly
+# `techy` and `unicode-width`, `techxt-cli` on `techxt` and `clap`.
+[workspace.dependencies]
+# techy is not on crates.io yet, so the dependency is a git revision pinned to the
+# exact commit the plan was written against (PLAN.md §3 describes that API). Switch
+# to a version requirement once techy publishes; until then techxt itself cannot be
+# published either (PLAN.md §16 M8).
+techy = { git = "https://github.com/phfaist/techy", rev = "8fa6e9b3c08e8aaaf3bf30bbe5599265833b2144" }
+# East-Asian-width-aware display width of the rendered text, for the layout engine's
+# column accounting (PLAN.md §7). no_std-capable and dependency-free.
+unicode-width = "0.2"
+clap = { version = "4", features = ["derive"] }
+proptest = "1"
+
+# Profiles apply workspace-wide and are only honored in the workspace root manifest.
+[profile.release]
+lto = true
+codegen-units = 1

@@ -1,0 +1,28 @@
+[package]
+name = "techxt-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Command-line converter from LaTeX-like markup to plain (unicode) text"
+readme = "../../README.md"
+license.workspace = true
+repository.workspace = true
+keywords = ["latex", "text", "unicode", "converter", "cli"]
+categories = ["command-line-utilities", "text-processing"]
+
+[lints]
+workspace = true
+
+# The crate is `techxt-cli` but the installed command is `techxt` (PLAN.md §2): the
+# binary name is what users type, the package name only disambiguates it from the
+# library in the workspace and on crates.io.
+[[bin]]
+name = "techxt"
+path = "src/main.rs"
+
+# The CLI is a std program: it owns file and stream I/O, the sandboxed `\input`
+# resolver and the system clock, none of which the no_std library may touch.
+[dependencies]
+techxt = { path = "../techxt", version = "0.1.0" }
+clap.workspace = true

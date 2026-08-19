@@ -1,0 +1,15 @@
+# Cargo build artifacts (the workspace target dir lives at rust/target).
+target/
+
+# The library and CLI are applications-in-progress rather than published crates, but
+# the workspace lockfile is checked in so CI and contributors build identical trees.
+# (Nothing to ignore here — Cargo.lock is tracked on purpose.)
+
+# Editor / OS noise
+*.swp
+*~
+.DS_Store
+
+# Python bytecode from tools/ (dev-only generation scripts)
+__pycache__/
+*.pyc
