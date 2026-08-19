@@ -57,7 +57,7 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-          key: cargo-${{ runner.os }}-${{ hashFiles('rust/**/Cargo.toml') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
           restore-keys: cargo-${{ runner.os }}-
       # `--all-targets` so tests, examples and benches are linted too, not just the
       # library a consumer compiles.
@@ -79,7 +79,7 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-          key: cargo-${{ runner.os }}-${{ hashFiles('rust/**/Cargo.toml') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
           restore-keys: cargo-${{ runner.os }}-
       # Unit tests, the integration tests under techxt/tests/, and the doctests —
       # every public API example in the docs is executed here (PLAN.md §14.4).
@@ -101,7 +101,7 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-          key: cargo-${{ runner.os }}-${{ hashFiles('rust/**/Cargo.toml') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
           restore-keys: cargo-${{ runner.os }}-
       # `-D warnings` on top of the workspace lint policy (missing_docs and
       # rustdoc::broken_intra_doc_links are already deny in Cargo.toml): it promotes
@@ -127,7 +127,7 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-          key: cargo-msrv-${{ runner.os }}-${{ hashFiles('rust/**/Cargo.toml') }}
+          key: cargo-msrv-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
           restore-keys: cargo-msrv-${{ runner.os }}-
       # `--all-targets`, so the dev-dependencies and the test harness are held to the
       # declared minimum as well: a contributor on the MSRV must be able to run the
@@ -152,7 +152,7 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-          key: cargo-nostd-${{ runner.os }}-${{ hashFiles('rust/**/Cargo.toml') }}
+          key: cargo-nostd-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
           restore-keys: cargo-nostd-${{ runner.os }}-
       # The library is `#![no_std]` outside of `cfg(test)` (PLAN.md §2). This target
       # has no std at all, so any `std::` path or std-linking dependency fails the
