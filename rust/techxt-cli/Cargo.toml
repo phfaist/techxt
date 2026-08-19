@@ -20,6 +20,13 @@ workspace = true
 [[bin]]
 name = "techxt"
 path = "src/main.rs"
+# The binary and the library share the name `techxt`, and rustdoc writes both to
+# `target/doc/techxt/` — a documented cargo bug (rust-lang/cargo#6313) that makes
+# `cargo doc --workspace` warn about the filename collision. The binary has no API to
+# document, so opting it out of rustdoc keeps the doc build warning-free; the CLI's own
+# documentation is its `--help` output and the README. Public items here are still held
+# to `missing_docs` by the ordinary compile.
+doc = false
 
 # The CLI is a std program: it owns file and stream I/O, the sandboxed `\input`
 # resolver and the system clock, none of which the no_std library may touch.

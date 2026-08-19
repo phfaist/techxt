@@ -1,0 +1,162 @@
+# Continuous integration — the gates every push has to clear (PLAN.md §16 M0).
+#
+# The toolchain is set up with the rustup that GitHub's runner images already ship,
+# rather than a third-party setup action: the whole toolchain story is then three
+# obvious shell lines that anyone can reproduce locally, and CI gains no dependency
+# that can disappear or change behavior under it. Only `actions/checkout` and
+# `actions/cache`, both first-party, are used.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# One run per branch: a new push supersedes the run still going for the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+# The cargo workspace is `rust/`, a sibling of the future `python/` and `js/` roots
+# (PLAN.md §2), so every cargo invocation runs from there.
+defaults:
+  run:
+    working-directory: rust
+
+jobs:
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the stable toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup default stable
+      # No cache: rustfmt parses the sources and never builds a dependency.
+      - name: Check the formatting
+        run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the stable toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust/**/Cargo.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+      # `--all-targets` so tests, examples and benches are linted too, not just the
+      # library a consumer compiles.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the stable toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust/**/Cargo.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+      # Unit tests, the integration tests under techxt/tests/, and the doctests —
+      # every public API example in the docs is executed here (PLAN.md §14.4).
+      - name: Test the workspace
+        run: cargo test --workspace
+
+  doc:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the stable toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust/**/Cargo.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+      # `-D warnings` on top of the workspace lint policy (missing_docs and
+      # rustdoc::broken_intra_doc_links are already deny in Cargo.toml): it promotes
+      # the remaining rustdoc warnings — bare URLs, private intra-doc links, invalid
+      # HTML — to build failures too.
+      - name: Build the documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps
+
+  msrv:
+    name: MSRV (1.86)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the declared minimum toolchain
+        run: |
+          rustup toolchain install 1.86 --profile minimal
+          rustup default 1.86
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-msrv-${{ runner.os }}-${{ hashFiles('rust/**/Cargo.toml') }}
+          restore-keys: cargo-msrv-${{ runner.os }}-
+      # `--all-targets`, so the dev-dependencies and the test harness are held to the
+      # declared minimum as well: a contributor on the MSRV must be able to run the
+      # suite. `check` rather than `test` — the gate is that everything *builds*
+      # there; how the tests behave is the stable job's business.
+      - name: Check on the declared minimum toolchain
+        run: cargo check --workspace --all-targets
+
+  no-std:
+    name: no_std (thumbv7em-none-eabihf)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the stable toolchain with the bare-metal target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add thumbv7em-none-eabihf
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-nostd-${{ runner.os }}-${{ hashFiles('rust/**/Cargo.toml') }}
+          restore-keys: cargo-nostd-${{ runner.os }}-
+      # The library is `#![no_std]` outside of `cfg(test)` (PLAN.md §2). This target
+      # has no std at all, so any `std::` path or std-linking dependency fails the
+      # build here; it also supports atomics, which techy's `Arc`-shared objects need.
+      # Only the library: `techxt-cli` is a std program by design.
+      - name: Build the library for a std-less target
+        run: cargo build -p techxt --target thumbv7em-none-eabihf

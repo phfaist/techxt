@@ -1,15 +1,35 @@
-# Cargo build artifacts (the workspace target dir lives at rust/target).
+# Cargo build artifacts (the workspace target dir lives at rust/target; future
+# sibling roots such as python/ and js/ bring their own build directories).
 target/
+**/*.rs.bk
 
 # The library and CLI are applications-in-progress rather than published crates, but
-# the workspace lockfile is checked in so CI and contributors build identical trees.
+# the workspace lockfile is checked in so CI and contributors build identical trees —
+# it also pins what the `techy` git revision resolves to.
 # (Nothing to ignore here — Cargo.lock is tracked on purpose.)
 
 # Editor / OS noise
 *.swp
+*.swo
 *~
+.vscode/
+.idea/
 .DS_Store
+Thumbs.db
 
 # Python bytecode from tools/ (dev-only generation scripts)
 __pycache__/
 *.pyc
+
+# Node dependencies (future js/ bindings)
+node_modules/
+
+# Test coverage and profiling output
+*.profraw
+*.profdata
+lcov.info
+perf.data*
+flamegraph.svg
+
+# Claude config files
+.claude
