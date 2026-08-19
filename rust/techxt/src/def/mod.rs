@@ -20,25 +20,41 @@
 //! 4. the **unknown-construct policy** from [`Options`](crate::Options), which also
 //!    raises a diagnostic.
 //!
-//! # Status: this module is milestone M3's
+//! # Writing definitions
 //!
-//! PLAN.md §5 gives `techxt::def` a much larger public face than what is here:
-//! `MacroDef`, `EnvDef`, `SpecialsDef` and their builders, `Category`, `DefinitionSet`,
-//! and the template parser. Those are the definitions-infrastructure milestone's
-//! deliverable. What this module holds today is exactly the subset the renderer needs in
-//! order to *execute* rules — the rule model itself, the handler trait, the spec types
-//! that carry a rule into the tree — so that M3 fills in the authoring side without
-//! reshaping the execution side.
+//! A definition is authored as one entry — [`MacroDef`], [`EnvDef`] or [`SpecialsDef`] —
+//! grouped into a [`Category`], and categories are stacked into a [`DefinitionSet`]
+//! that a converter is built from. **Later categories shadow earlier ones**; see
+//! [`DefinitionSet`] for why that matters.
+//!
+//! ```
+//! use techxt::def::{Category, DefinitionSet, MacroDef, TextRule};
+//! use techxt::Converter;
+//!
+//! let mut definitions = DefinitionSet::new();
+//! definitions.push(
+//!     Category::new("mine")
+//!         .with_macro(MacroDef::symbol("me", "Philippe"))
+//!         .with_macro(MacroDef::new("shout").arg("m", "text").rule(TextRule::Content)),
+//! );
+//!
+//! let converter = Converter::builder().definitions(definitions).build()?;
+//! assert_eq!(converter.latex_to_text(r"\shout{hi} \me")?.text, "hi Philippe\n");
+//! # Ok::<(), Box<dyn core::error::Error>>(())
+//! ```
 
+mod entry;
 mod rule;
 mod set;
 mod spec;
 mod template;
 
+pub use entry::{EnvDef, MacroDef, SpecialsDef};
 pub use rule::{CallableKind, TextHandler, TextRule};
+pub use set::{Category, DefinitionSet};
 pub use spec::{EnvBodyKind, TechxtEnvironmentBehavior, TechxtMacroSpec, TechxtSpecialsSpec};
 pub use template::{Template, TemplateError};
 
-pub(crate) use set::RuleTable;
+pub(crate) use set::{BuiltDefinitions, RuleTable};
 pub(crate) use spec::embedded_rule;
-pub(crate) use template::{ArgRef, Seg};
+pub(crate) use template::{ArgRef, Seg, TemplateScope};

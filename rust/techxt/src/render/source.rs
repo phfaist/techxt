@@ -150,11 +150,18 @@ fn collect_scoped_children<'t>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::convert::Converter;
+    use crate::convert::{Converter, StdDescentGuardInit};
 
     /// The LaTeX source of the whole document, reassembled from payloads.
+    ///
+    /// The descent guard is configured explicitly (DECISIONS.md D9): techy's default is
+    /// a *stack budget*, so how deep a document may nest depends on the build profile,
+    /// and the deep-nesting test below needs a limit that does not.
     fn round_trip(latex: &str) -> String {
-        let converter = Converter::standard();
+        let converter = Converter::builder()
+            .descent_guard(StdDescentGuardInit::depth_limit(200))
+            .build()
+            .expect("the placeholder definitions build");
         let tree = converter.language().parse(latex).expect("parses").tree;
         latex_source(tree.root())
     }

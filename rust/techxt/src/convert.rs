@@ -33,46 +33,28 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use techy::core::node::NodeTree;
-use techy::core::{FinalizeError, Language, ParsingState, StdDescentGuardInit};
+use techy::core::{FinalizeError, Language};
 use techy::error::{Diagnostics, ParseError, Recovery};
 use techy::latexlike::{ArgumentCodeError, Latexlike, LatexlikeDriver};
 use techy::recompose::TreeRecomposer;
 use techy::source::IntoSourceResolver;
 
-use crate::def::{CallableKind, RuleTable, TemplateError, TextRule};
+use crate::def::{
+    BuiltDefinitions, CallableKind, DefinitionSet, RuleTable, TemplateError, TemplateScope,
+    TextRule,
+};
 use crate::flow::Flow;
 use crate::layout::{render, LayoutOptions};
 use crate::render::{RenderConfig, RenderState, TextRenderer};
 
 pub use crate::mathfmt::{FontStyle, FontStyleKind, MathWrapDelims, MatrixDelims};
 
-/// How deeply the parser may nest before it refuses (PLAN.md §1.7: no document input
-/// may cost the process its stack).
+/// techy's descent guard, re-exported so that embedders configuring
+/// [`ConverterBuilder::descent_guard`] need not name `techy::core` themselves.
 ///
-/// Recursive-descent parsing spends stack per nesting level, and the only thing between
-/// a pathological document and a stack overflow — which is an abort, not a catchable
-/// panic — is techy's descent guard. Its default is a *stack budget*, which is
-/// adaptive but makes a document's fate depend on the build profile and on which
-/// thread it is parsed on; techxt uses a fixed depth instead, so that the same document
-/// behaves the same way everywhere.
-///
-/// The number is chosen against the *unoptimized* build, which is where a frame is
-/// most expensive: measured against this techy revision, a parse descent costs on the
-/// order of 12 KiB of stack in a debug build, so 64 descents fit in about 0.8 MiB and
-/// leave better than a factor of two of headroom on Rust's 2 MiB default thread stack.
-/// A parse costs roughly two descents per syntactic nesting level, so this admits
-/// documents nesting some thirty levels deep — far past anything anyone writes, and
-/// far short of what overflows. Optimized builds are several times cheaper again.
-const PARSE_DESCENT_LIMIT: usize = 64;
-
-/// How deeply the renderer may nest before it gives up (PLAN.md §10.4).
-///
-/// A traversal costs exactly one descent per tree nesting level (the re-entrant region
-/// operations included), so a tree techxt parsed itself can never reach this: it is the
-/// backstop for a tree handed to [`Converter::tree_to_text`] from somewhere else.
-/// Reaching it is the one thing that abandons a conversion, and it is reported as
-/// `techxt.render-aborted`.
-const RENDER_DESCENT_LIMIT: usize = 64;
+/// Despite the name it is pure `alloc` — "Std" is "the standard guard", not the standard
+/// library — and works on a `no_std` target like everything else here.
+pub use techy::core::{StdDescentGuard, StdDescentGuardInit};
 
 /// The result of a conversion (PLAN.md §11.1).
 #[derive(Clone, Debug)]
@@ -97,6 +79,10 @@ pub struct Converter {
 struct Inner {
     language: Language<Latexlike>,
     config: RenderConfig,
+    /// The fold side of the descent guard (DECISIONS.md D9). The parse side lives on
+    /// the `Language`; both come from the same `ConverterBuilder::descent_guard` call,
+    /// because a document that is too deep to parse is too deep to render as well.
+    descent_guard: StdDescentGuardInit,
 }
 
 impl Converter {
@@ -107,8 +93,8 @@ impl Converter {
 
     /// A converter with the shipped definitions and [`Options::default`].
     ///
-    /// **M3/M4 seam:** "the shipped definitions" is currently a hand-built minimal set
-    /// (see [`ConverterBuilder::build`]), not the definitions library PLAN.md §12
+    /// **M4 seam:** "the shipped definitions" is currently a small placeholder set
+    /// (see [`ConverterBuilder::definitions`]), not the definitions library PLAN.md §12
     /// describes.
     ///
     /// ```
@@ -129,8 +115,9 @@ impl Converter {
     /// Parse and convert a document.
     ///
     /// The `Err` case is a parse failure that no recovery policy survives — a document
-    /// nesting past techxt's parse descent limit, or a definition whose
-    /// parsing hook failed. Ordinary malformedness is *not* an error: under the default
+    /// nesting past the [descent guard](ConverterBuilder::descent_guard), or a
+    /// definition whose parsing hook failed. Ordinary malformedness is *not* an error:
+    /// under the default
     /// tolerant recovery an unbalanced brace or an unknown macro produces a diagnostic
     /// and a best-effort tree, and the conversion continues.
     pub fn latex_to_text(&self, latex: &str) -> Result<Conversion, ParseError<Option<String>>> {
@@ -164,7 +151,7 @@ impl Converter {
         renderer.note_document_span(tree.root());
 
         let result = TreeRecomposer::new(&mut renderer)
-            .with_descent_guard_init(StdDescentGuardInit::depth_limit(RENDER_DESCENT_LIMIT))
+            .with_descent_guard_init(self.inner.descent_guard)
             .recompose(tree, RenderState::initial(&self.inner.config.options));
 
         let mut flow = match result {
@@ -254,8 +241,10 @@ fn merge(
 /// ```
 pub struct ConverterBuilder {
     options: Options,
-    overrides: RuleTable,
+    definitions: Option<DefinitionSet>,
+    overrides: Vec<(CallableKind, Box<str>, TextRule)>,
     recovery: Recovery,
+    descent_guard: StdDescentGuardInit,
     source_resolver: Option<Arc<dyn techy::source::SourceResolver<Option<String>>>>,
 }
 
@@ -264,6 +253,7 @@ impl core::fmt::Debug for ConverterBuilder {
         f.debug_struct("ConverterBuilder")
             .field("options", &self.options)
             .field("recovery", &self.recovery)
+            .field("descent_guard", &self.descent_guard)
             .field("has_source_resolver", &self.source_resolver.is_some())
             .finish_non_exhaustive()
     }
@@ -281,10 +271,57 @@ impl ConverterBuilder {
     pub fn new() -> ConverterBuilder {
         ConverterBuilder {
             options: Options::default(),
-            overrides: RuleTable::new(),
+            definitions: None,
+            overrides: Vec::new(),
             recovery: Recovery::Tolerant,
+            descent_guard: StdDescentGuardInit::default(),
             source_resolver: None,
         }
+    }
+
+    /// Use these definitions instead of the shipped ones (PLAN.md §11.2).
+    ///
+    /// Everything the converter knows about macros, environments and specials comes
+    /// from here — both how they parse and how they render. Categories shadow in push
+    /// order; see [`DefinitionSet`].
+    pub fn definitions(mut self, definitions: DefinitionSet) -> ConverterBuilder {
+        self.definitions = Some(definitions);
+        self
+    }
+
+    /// Configure techy's descent guard, which is what keeps a pathologically nested
+    /// document from costing the process its stack (DECISIONS.md D9).
+    ///
+    /// The choice is relayed to **both** sides: the parser, which spends stack per
+    /// syntactic nesting level, and the renderer's fold, which spends it per tree
+    /// nesting level. Reaching the limit is the one thing that abandons a conversion; a
+    /// parse refusal comes back as `Err` from [`Converter::latex_to_text`], and a fold
+    /// refusal as a `techxt.render-aborted` diagnostic with empty output.
+    ///
+    /// The default is techy's own — a fixed 250 KiB stack budget, which warns once at
+    /// half the budget and names this method in its refusal. techxt deliberately does
+    /// not raise it: a bigger fixed budget is unsafe on a small-stack thread, and a
+    /// library cannot measure the real stack. A caller that can measure it should say
+    /// so; a caller that wants a document's fate not to depend on the build profile
+    /// should ask for a depth limit instead:
+    ///
+    /// ```
+    /// use techxt::convert::StdDescentGuardInit;
+    /// use techxt::Converter;
+    ///
+    /// let converter = Converter::builder()
+    ///     .descent_guard(StdDescentGuardInit::depth_limit(24))
+    ///     .build()?;
+    /// assert!(converter.latex_to_text(&"{".repeat(400)).is_err());
+    /// # Ok::<(), Box<dyn core::error::Error>>(())
+    /// ```
+    ///
+    /// Note that the default budget is *tight* in an unoptimized build — on the order
+    /// of ten parse nesting levels — so a test that feeds deeply nested input should
+    /// configure the guard rather than rely on it.
+    pub fn descent_guard(mut self, descent_guard: StdDescentGuardInit) -> ConverterBuilder {
+        self.descent_guard = descent_guard;
+        self
     }
 
     /// Replace the whole options struct.
@@ -296,7 +333,8 @@ impl ConverterBuilder {
     /// Render a macro with `rule` instead of whatever its definition says (PLAN.md
     /// §10.3 step 1). The name carries no escape character.
     pub fn override_macro(mut self, name: impl Into<Box<str>>, rule: TextRule) -> ConverterBuilder {
-        self.overrides.insert(CallableKind::Macro, name, rule);
+        self.overrides
+            .push((CallableKind::Macro, name.into(), rule));
         self
     }
 
@@ -306,7 +344,8 @@ impl ConverterBuilder {
         name: impl Into<Box<str>>,
         rule: TextRule,
     ) -> ConverterBuilder {
-        self.overrides.insert(CallableKind::Environment, name, rule);
+        self.overrides
+            .push((CallableKind::Environment, name.into(), rule));
         self
     }
 
@@ -317,7 +356,8 @@ impl ConverterBuilder {
         name: impl Into<Box<str>>,
         rule: TextRule,
     ) -> ConverterBuilder {
-        self.overrides.insert(CallableKind::Specials, name, rule);
+        self.overrides
+            .push((CallableKind::Specials, name.into(), rule));
         self
     }
 
@@ -336,38 +376,64 @@ impl ConverterBuilder {
 
     /// Choose the parser's recovery policy. The default is [`Recovery::Tolerant`], which
     /// converts a malformed document as best it can and reports what was wrong.
+    ///
+    /// Note that an *unknown macro* is not malformedness under either policy: techxt's
+    /// catch-all provider (see [`Options::unknown_macro`]) resolves every command, so
+    /// even [`Recovery::Strict`] converts a document full of macros techxt has never
+    /// heard of, reporting each as a `techxt.unknown-macro` warning.
     pub fn recovery(mut self, recovery: Recovery) -> ConverterBuilder {
         self.recovery = recovery;
         self
     }
 
-    /// Build the converter, validating the definitions.
-    ///
-    /// **M3/M4 seam:** the definitions are a hand-built minimal set — `\emph`,
-    /// `\textbf`, `\ldots`, `\label`, `\par`, `\verb`, `~`, `center` and `verbatim`,
-    /// plus a few entries that deliberately have no rule so that the unknown-construct
-    /// policies have something to act on. It exists to exercise every dispatch path and
-    /// every rule kind; PLAN.md §12's definitions library replaces it, and
-    /// `ConverterBuilder::definitions(DefinitionSet)` arrives with it.
+    /// Build the converter, validating the definitions (PLAN.md §10.2).
     pub fn build(self) -> Result<Converter, BuildError> {
-        let (package, fallback) = minimal::definitions()?;
+        let ConverterBuilder {
+            options,
+            definitions,
+            overrides: override_list,
+            recovery,
+            descent_guard,
+            source_resolver,
+        } = self;
 
-        let mut driver = LatexlikeDriver::new(self.recovery);
-        if let Some(resolver) = self.source_resolver {
+        let definitions = definitions.unwrap_or_else(placeholder::definitions);
+        let BuiltDefinitions { state, fallback } = definitions.build()?;
+
+        let mut overrides = RuleTable::new();
+        for (kind, name, rule) in override_list {
+            // An override is written against whichever definition it lands on, so its
+            // template cannot be checked against one entry's argument names; what *can*
+            // be checked is its shape, and that `{body}` is only asked of an
+            // environment.
+            if let TextRule::Template(template) = &rule {
+                let scope = TemplateScope::unchecked(kind == CallableKind::Environment);
+                template
+                    .validate(scope)
+                    .map_err(|error| BuildError::Template {
+                        definition: kind.write_construct(&name).into(),
+                        template: template.source().into(),
+                        error,
+                    })?;
+            }
+            overrides.insert(kind, name, rule);
+        }
+
+        let mut driver = LatexlikeDriver::new(recovery);
+        if let Some(resolver) = source_resolver {
             driver = driver.with_source_resolver(resolver);
         }
-        let state = ParsingState::lang_initial_with_packages([package])?;
-        let language = Language::new(driver, state)
-            .with_descent_guard_init(StdDescentGuardInit::depth_limit(PARSE_DESCENT_LIMIT));
+        let language = Language::new(driver, state).with_descent_guard_init(descent_guard);
 
         Ok(Converter {
             inner: Arc::new(Inner {
                 language,
                 config: RenderConfig {
-                    options: self.options,
-                    overrides: self.overrides,
+                    options,
+                    overrides,
                     fallback,
                 },
+                descent_guard,
             }),
         })
     }
@@ -712,7 +778,21 @@ pub enum CounterWrap {
 
 /// What to do with a macro no rule renders (PLAN.md §10.6).
 ///
-/// Whichever it is, a `techxt.unknown-macro` diagnostic is raised.
+/// Whichever it is, a `techxt.unknown-macro` diagnostic is raised — a warning, not an
+/// error: the document converted, one construct in it did not.
+///
+/// # A macro no definition claims at all
+///
+/// techy cannot shape an invocation it has no definition for, so techxt registers a
+/// catch-all provider underneath every definition it has: an unclaimed `\foo` resolves
+/// to a generic spec that takes **no arguments** and carries no rule, which is what
+/// brings it here rather than leaving it to techy's error recovery.
+///
+/// The consequence is deliberate. Since the generic spec takes no arguments, `\foo{x}`
+/// is an unknown macro followed by an ordinary group: whatever this policy decides about
+/// `\foo`, the `x` inside the braces is text and survives. [`RenderArgs`](Self::RenderArgs)
+/// therefore differs from [`Skip`](Self::Skip) only for a macro that *is* defined —
+/// declared with arguments, but with no rule to render them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum UnknownMacroPolicy {
     /// Render nothing at all. The default: an unknown macro is usually formatting, and
@@ -755,37 +835,27 @@ pub enum UnknownSpecialsPolicy {
     Skip,
 }
 
-/// The hand-built definition set that stands in for PLAN.md §12's library.
+/// The placeholder definition set that stands in for PLAN.md §12's library.
 ///
-/// **M3/M4 seam.** This exists so that the renderer core can be built and tested
-/// against something real: every entry here is chosen to exercise a dispatch path or a
-/// rule kind, not to be a useful LaTeX vocabulary. When `techxt::defs` lands, this
-/// module goes away and `ConverterBuilder::build` consumes a `DefinitionSet` instead.
-mod minimal {
-    use alloc::borrow::Cow;
+/// **M4 seam.** This exists so that the pipeline can be built and tested against
+/// something real: every entry is chosen to exercise a dispatch path or a rule kind,
+/// not to be a useful LaTeX vocabulary. When `techxt::defs` lands, this module goes away
+/// and [`Converter::standard`] uses `defs::standard()` instead.
+mod placeholder {
     use alloc::sync::Arc;
-    use alloc::vec::Vec;
 
     use techy::core::node::NodeRef;
-    use techy::core::specs::{ArgumentSpec, Package};
-    use techy::latexlike::{
-        argument_specs_named, CallableType, EnvironmentSpec, Latexlike, MacroSpec, SpecialsSpec,
-    };
+    use techy::latexlike::Latexlike;
 
-    use crate::def::{
-        CallableKind, EnvBodyKind, RuleTable, TechxtEnvironmentBehavior, TechxtMacroSpec,
-        TechxtSpecialsSpec, Template, TextHandler, TextRule,
-    };
+    use crate::def::{Category, DefinitionSet, EnvDef, MacroDef, SpecialsDef, Template, TextRule};
     use crate::flow::{Flow, FlowItem};
-    use crate::render::{RenderCx, RenderError};
-
-    use super::BuildError;
+    use crate::render::{ListKind, RenderCx, RenderError};
 
     /// `\par`: a paragraph break, and nothing else.
     #[derive(Debug)]
     struct ParagraphBreak;
 
-    impl TextHandler for ParagraphBreak {
+    impl crate::def::TextHandler for ParagraphBreak {
         fn render(
             &self,
             _node: NodeRef<'_, Latexlike>,
@@ -804,7 +874,7 @@ mod minimal {
     #[derive(Debug)]
     struct NoBreakSpace;
 
-    impl TextHandler for NoBreakSpace {
+    impl crate::def::TextHandler for NoBreakSpace {
         fn render(
             &self,
             _node: NodeRef<'_, Latexlike>,
@@ -814,131 +884,89 @@ mod minimal {
         }
     }
 
-    /// One mandatory `{…}` argument under this name.
-    fn one(name: &str) -> Result<Vec<Arc<ArgumentSpec<Latexlike>>>, BuildError> {
-        Ok(argument_specs_named([("m", name)])?)
+    /// A template rule written in the source syntax.
+    fn template(source: &str) -> TextRule {
+        TextRule::Template(Template::new(source))
     }
 
-    /// The package the parser uses, and the name-keyed rules the renderer falls back
-    /// on.
-    pub(super) fn definitions() -> Result<(Package<Latexlike>, RuleTable), BuildError> {
-        let mut package = Package::<Latexlike>::new("techxt-minimal");
-        let mut fallback = RuleTable::new();
+    /// The placeholder definitions.
+    pub(super) fn definitions() -> DefinitionSet {
+        let category = Category::new("techxt-placeholder")
+            // --- one entry per rule kind ---------------------------------------
+            .with_macro(
+                MacroDef::new("emph")
+                    .arg("m", "text")
+                    .rule(TextRule::Content),
+            )
+            // The same thing said with a template, so that the template path is
+            // exercised too — by name, and then by 1-based index.
+            .with_macro(
+                MacroDef::new("textbf")
+                    .arg("m", "text")
+                    .rule(template("{text}")),
+            )
+            .with_macro(
+                MacroDef::new("textit")
+                    .arg("m", "text")
+                    .rule(template("{1}")),
+            )
+            // A template that is more than one reference, and the `BracedOnly` argument
+            // code: a URL must never swallow a following expression the way `m` would.
+            .with_macro(
+                MacroDef::new("href")
+                    .arg("BracedOnly", "url")
+                    .arg("m", "text")
+                    .rule(template("{text} <{url}>")),
+            )
+            .with_macro(MacroDef::symbol("ldots", "\u{2026}"))
+            // A label contributes nothing to the text.
+            .with_macro(MacroDef::new("label").arg("m", "key").rule(TextRule::Skip))
+            .with_macro(MacroDef::new("par").rule(TextRule::Handler(Arc::new(ParagraphBreak))))
+            // A verbatim argument: its characters must survive untouched.
+            .with_macro(
+                MacroDef::new("verb")
+                    .arg("v", "text")
+                    .rule(TextRule::Content),
+            )
+            // An optional argument and a conditional, so that both are exercised.
+            .with_macro(
+                MacroDef::new("sect")
+                    .star()
+                    .arg("o", "short")
+                    .arg("m", "title")
+                    .rule(template("{?short:{short}|{title}}")),
+            )
+            .with_macro(MacroDef::symbol("TeX", "TeX"))
+            // Parses, but has no rule anywhere: dispatch falls through to the
+            // unknown-macro policy (PLAN.md §10.6).
+            .with_macro(MacroDef::new("phantom").arg("m", "text"))
+            // `\item`, which the list environments below bring into scope for their
+            // bodies.
+            .with_macro(MacroDef::new("item").arg("o", "label").rule(TextRule::Skip))
+            // --- specials ------------------------------------------------------
+            .with_specials(SpecialsDef::new("~").rule(TextRule::Handler(Arc::new(NoBreakSpace))))
+            // Likewise rule-less, for the unknown-specials policy.
+            .with_specials(SpecialsDef::new("&"))
+            // --- environments --------------------------------------------------
+            // A `{body}` template: the same result as `TextRule::Content` for an
+            // environment, chosen here so that the body segment is exercised.
+            .with_env(EnvDef::new("center").rule(template("{body}")))
+            .with_env(
+                EnvDef::new("verbatim")
+                    .verbatim_body()
+                    .rule(TextRule::Content),
+            )
+            .with_env(EnvDef::new("equation").math_body().rule(TextRule::Content))
+            .with_env(
+                EnvDef::new("itemize")
+                    .list_body(ListKind::Itemize)
+                    .rule(TextRule::Content),
+            )
+            // ... and for an environment, so that the unknown-environment policy has
+            // one too.
+            .with_env(EnvDef::new("unknownenv"));
 
-        // --- macros whose rule rides in the spec (dispatch step 2) ---------------
-
-        let mut macro_entry =
-            |name: &str, arguments: Vec<Arc<ArgumentSpec<Latexlike>>>, rule: TextRule| {
-                fallback.insert(CallableKind::Macro, name, rule.clone());
-                package.insert(
-                    CallableType::Macro,
-                    name,
-                    TechxtMacroSpec::new(arguments, rule),
-                );
-            };
-
-        // `TextRule::Content`: the argument's content, nothing else.
-        macro_entry("emph", one("text")?, TextRule::Content);
-        // `TextRule::Template`: the same thing said with a template, so that the
-        // template path is exercised too. M3's parser turns "{text}" into this.
-        macro_entry(
-            "textbf",
-            one("text")?,
-            TextRule::Template(Template::named_argument("text")),
-        );
-        // The same template written positionally, so that the index form of an
-        // argument reference is exercised as well.
-        macro_entry(
-            "textit",
-            one("text")?,
-            TextRule::Template(Template::positional_argument(1)),
-        );
-        // A template that is more than one reference, and the `BracedOnly` argument
-        // code: a URL must never swallow a following expression the way `m` would.
-        macro_entry(
-            "href",
-            argument_specs_named([("BracedOnly", "url"), ("m", "text")])?,
-            TextRule::Template(Template::link()),
-        );
-        // `TextRule::Literal`.
-        macro_entry(
-            "ldots",
-            Vec::new(),
-            TextRule::Literal(Cow::Borrowed("\u{2026}")),
-        );
-        // `TextRule::Skip`: a label contributes nothing to the text.
-        macro_entry("label", one("key")?, TextRule::Skip);
-        // `TextRule::Handler`.
-        macro_entry(
-            "par",
-            Vec::new(),
-            TextRule::Handler(Arc::new(ParagraphBreak)),
-        );
-        // A verbatim argument: its characters must survive untouched.
-        macro_entry(
-            "verb",
-            argument_specs_named([("v", "text")])?,
-            TextRule::Content,
-        );
-
-        // --- specials ------------------------------------------------------------
-
-        fallback.insert(
-            CallableKind::Specials,
-            "~",
-            TextRule::Handler(Arc::new(NoBreakSpace)),
-        );
-        package.insert_specials(
-            CallableType::Specials,
-            "~",
-            TechxtSpecialsSpec::new(Vec::new(), TextRule::Handler(Arc::new(NoBreakSpace))),
-        );
-
-        // --- environments --------------------------------------------------------
-
-        let mut environment_entry = |name: &str, body: EnvBodyKind, rule: TextRule| {
-            fallback.insert(CallableKind::Environment, name, rule.clone());
-            package.insert(
-                CallableType::Environment,
-                name,
-                TechxtEnvironmentBehavior::new(Vec::new(), body, rule).into_spec(),
-            );
-        };
-
-        // A `{body}` template: the same result as `TextRule::Content` for an
-        // environment, chosen here so that the body segment is exercised.
-        environment_entry(
-            "center",
-            EnvBodyKind::Normal,
-            TextRule::Template(Template::body()),
-        );
-        environment_entry("verbatim", EnvBodyKind::Verbatim, TextRule::Content);
-
-        // --- entries that exist to exercise the dispatch chain's later steps ------
-
-        // Registered with a *plain* techy spec, so the node carries no embedded rule
-        // and dispatch has to reach step 3, the name fallback table. This is the shape
-        // a tree parsed with someone else's definitions has.
-        package.insert(CallableType::Macro, "TeX", MacroSpec::new(Vec::new()));
-        fallback.insert(
-            CallableKind::Macro,
-            "TeX",
-            TextRule::Literal(Cow::Borrowed("TeX")),
-        );
-
-        // Parses, but has no rule anywhere: dispatch falls through to the
-        // unknown-macro policy (PLAN.md §10.6).
-        package.insert(CallableType::Macro, "phantom", MacroSpec::new(one("text")?));
-        // Likewise for specials, so that the unknown-specials policy has a construct.
-        package.insert_specials(CallableType::Specials, "&", SpecialsSpec::new(Vec::new()));
-        // ... and for an environment, so that the unknown-environment policy does too.
-        package.insert(
-            CallableType::Environment,
-            "unknownenv",
-            EnvironmentSpec::<Latexlike>::new(Vec::new()),
-        );
-
-        Ok((package, fallback))
+        DefinitionSet::new().with(category)
     }
 }
 
@@ -954,66 +982,16 @@ mod tests {
         assert_send_sync::<Options>();
     }
 
-    /// A converter whose name fallback table has been tampered with, so that dispatch
-    /// step 2 (the rule embedded in the node's spec) and step 3 (the table) can be told
-    /// apart. Nothing in the public builder can do this, because in a well-formed
-    /// definition set the two always agree.
-    fn converter_with_altered_fallback(alter: impl FnOnce(&mut RuleTable)) -> Converter {
-        let (package, mut fallback) = minimal::definitions().expect("the minimal set builds");
-        alter(&mut fallback);
-        let language = Language::new(
-            LatexlikeDriver::new(Recovery::Tolerant),
-            ParsingState::lang_initial_with_packages([package]).expect("finalizes"),
-        )
-        .with_descent_guard_init(StdDescentGuardInit::depth_limit(PARSE_DESCENT_LIMIT));
-        Converter {
-            inner: Arc::new(Inner {
-                language,
-                config: RenderConfig {
-                    options: Options::default(),
-                    overrides: RuleTable::new(),
-                    fallback,
-                },
-            }),
-        }
-    }
-
+    /// `BuildError::State` is a defensive path: at this techy revision nothing a
+    /// caller can write makes the parsing state refuse to finalize (the seed never
+    /// fails, and the whole-stack replacement techxt applies targets no name and so
+    /// cannot miss). It is still a variant callers may match on, so its reporting is
+    /// pinned here.
     #[test]
-    fn the_embedded_rule_beats_the_name_fallback_table() {
-        let converter = converter_with_altered_fallback(|fallback| {
-            fallback.insert(
-                CallableKind::Macro,
-                "emph",
-                TextRule::Literal(alloc::borrow::Cow::Borrowed("FROM-THE-TABLE")),
-            );
-        });
-        // `\emph` carries a techxt spec, so its embedded `Content` rule wins and the
-        // argument is rendered.
-        assert_eq!(
-            converter.latex_to_text(r"\emph{x}").expect("parses").text,
-            "x\n"
-        );
-        // `\TeX` carries a plain techy spec, so the table is the only source of a rule.
-        assert_eq!(
-            converter.latex_to_text(r"\TeX").expect("parses").text,
-            "TeX\n"
-        );
-    }
-
-    #[test]
-    fn without_any_rule_the_unknown_policy_decides() {
-        let converter = converter_with_altered_fallback(|_| {});
-        // Removing `\TeX` from the table is not possible through the builder, so use
-        // the entry that never had one: the policy renders nothing and warns.
-        let conversion = converter.latex_to_text(r"a\phantom{x}b").expect("parses");
-        assert_eq!(conversion.text, "ab\n");
-        assert_eq!(
-            conversion
-                .diagnostics
-                .with_identifier("techxt.unknown-macro")
-                .count(),
-            1
-        );
+    fn a_state_error_reports_what_techy_said() {
+        let error = BuildError::State(FinalizeError::new("no"));
+        assert!(alloc::format!("{error}").contains("no"));
+        assert!(core::error::Error::source(&error).is_none());
     }
 
     #[test]

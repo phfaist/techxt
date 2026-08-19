@@ -2,6 +2,8 @@
 
 use alloc::string::String;
 
+use techy::core::node::ParsedArgument;
+
 use crate::convert::{UnknownEnvPolicy, UnknownMacroPolicy, UnknownSpecialsPolicy};
 use crate::def::{ArgRef, CallableKind, Seg, Template, TextRule};
 use crate::diag::{HandlerFailed, UnknownEnvironment, UnknownMacro, UnknownSpecials};
@@ -71,7 +73,32 @@ fn render_segments(segments: &[Seg], cx: &mut RenderCx<'_, '_>, flow: &mut Flow)
                 Ok(body) => flow.extend(body),
                 Err(error) => fail(cx, &error),
             },
+            // `{?name:then|else}` (PLAN.md §10.5): which branch runs depends only on
+            // whether the argument was *written*, never on what it rendered to — an
+            // argument that renders as nothing is still present.
+            Seg::IfPresent { arg, then, els } => {
+                let branch = if arg_present(arg, cx) { then } else { els };
+                render_segments(branch, cx, flow);
+            }
         }
+    }
+}
+
+/// Whether the argument a conditional tests was written.
+fn arg_present(reference: &ArgRef, cx: &RenderCx<'_, '_>) -> bool {
+    match reference {
+        ArgRef::Name(name) => cx.arg_provided(name),
+        // Template indices are 1-based; techy counts arguments from zero. An index the
+        // definition does not have reads as absent, which is what the else branch is
+        // for — build-time validation has already refused it for a real definition.
+        ArgRef::Index(index) => index
+            .checked_sub(1)
+            .and_then(|zero_based| {
+                cx.node()
+                    .arguments()
+                    .and_then(|arguments| arguments.get(zero_based))
+            })
+            .is_some_and(ParsedArgument::is_provided),
     }
 }
 

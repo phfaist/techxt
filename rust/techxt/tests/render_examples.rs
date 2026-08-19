@@ -5,7 +5,7 @@
 //! non-empty output with exactly one newline, and a test that trims would stop checking
 //! the very thing PLAN.md §7 guarantees.
 
-use techxt::convert::{MathMode, UnknownEnvPolicy};
+use techxt::convert::{MathMode, StdDescentGuardInit, UnknownEnvPolicy};
 use techxt::diag::{UnknownEnvironment, UnknownMacro};
 use techxt::Converter;
 
@@ -202,31 +202,56 @@ fn source_math_is_reassembled_from_payloads_not_from_the_source_buffer() {
 // ------------------------------------------------------------- robustness
 
 #[test]
-fn an_unknown_macro_becomes_literal_characters_not_a_callable() {
-    // Worth pinning down because it is surprising: techy cannot shape an invocation it
-    // has no definition for, so under tolerant recovery `\foo` is *characters*, with
-    // techy's own error diagnostic. techxt's unknown-macro policy therefore never sees
-    // it — that policy is for a macro that parses but has no text rule.
+fn an_unknown_macro_is_a_warning_and_the_policy_decides() {
+    // techy cannot shape an invocation it has no definition for, so techxt registers a
+    // catch-all provider that answers any unclaimed command with a generic,
+    // argument-less spec. `\foo` therefore parses as a macro, techxt's unknown-macro
+    // policy applies to it, and the report is a warning rather than a parse error.
+    //
+    // The catch-all takes no arguments, which is the deliberate consequence: `{x}` is
+    // an ordinary group after the macro, so its content survives under the default
+    // `Skip` policy while `\foo` itself renders as nothing.
     let conversion = Converter::standard()
         .latex_to_text(r"\foo{x} bar")
         .expect("tolerant recovery keeps going");
-    assert_eq!(conversion.text, "\\foox bar\n");
+    assert_eq!(conversion.text, "x bar\n");
     assert_eq!(
         conversion.diagnostics.conditions::<UnknownMacro>().count(),
-        0
+        1
     );
-    assert!(conversion.diagnostics.has_errors());
+    assert!(!conversion.diagnostics.has_errors());
 }
 
 #[test]
 fn deeply_nested_input_is_refused_rather_than_overflowing_the_stack() {
     // Recursive-descent parsing spends stack per nesting level; the descent guard is
-    // what keeps a pathological document from aborting the process. Two thousand open
-    // braces is far past the limit, so this must come back as an ordinary `Err`.
+    // what keeps a pathological document from aborting the process. The limit is
+    // configured explicitly here (DECISIONS.md D9) because the library default is a
+    // *stack budget*, whose reach depends on the build profile; a depth limit is the
+    // deterministic mode and the one techy's documentation recommends for tests.
+    let converter = Converter::builder()
+        .descent_guard(StdDescentGuardInit::depth_limit(24))
+        .build()
+        .expect("the placeholder definitions build");
     let pathological = "{".repeat(2000);
-    let refused = Converter::standard().latex_to_text(&pathological);
-    let error = refused.expect_err("the descent guard refuses");
+    let error = converter
+        .latex_to_text(&pathological)
+        .expect_err("the descent guard refuses");
     assert_eq!(error.identifier(), "core.constructs.descent-limit-exceeded");
+
+    // ... and a document just inside the limit still converts.
+    assert_eq!(
+        converter
+            .latex_to_text(&alloc_nested("deep", 8))
+            .expect("inside the limit")
+            .text,
+        "deep\n"
+    );
+}
+
+/// `depth` nested groups around `text`.
+fn alloc_nested(text: &str, depth: usize) -> String {
+    format!("{}{text}{}", "{".repeat(depth), "}".repeat(depth))
 }
 
 #[test]

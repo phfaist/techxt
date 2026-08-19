@@ -23,13 +23,15 @@ use core::any::Any;
 
 use techy::core::constructs::{ConstructParser, EnvironmentBody};
 use techy::core::node::NodeRef;
-use techy::core::specs::{ArgumentSpec, CallableSpec};
+use techy::core::specs::{ArgumentSpec, CallableSpec, ScopeOp, SpecsProvider};
 use techy::core::ParsingStateDelta;
 use techy::error::ParseError;
 use techy::latexlike::{
     EnvironmentBehavior, EnvironmentInvocation, EnvironmentSpec, Latexlike, Mode, VerbatimBehavior,
 };
 use techy::serialize::SerializableObject;
+
+use crate::render::ListKind;
 
 use super::TextRule;
 
@@ -41,18 +43,30 @@ use super::TextRule;
 #[derive(Debug)]
 pub struct TechxtMacroSpec {
     arguments: Vec<Arc<ArgumentSpec<Latexlike>>>,
-    rule: TextRule,
+    rule: Option<TextRule>,
 }
 
 impl TechxtMacroSpec {
     /// A macro spec with these argument specs and this text rule.
-    pub fn new(arguments: Vec<Arc<ArgumentSpec<Latexlike>>>, rule: TextRule) -> TechxtMacroSpec {
-        TechxtMacroSpec { arguments, rule }
+    ///
+    /// The rule is optional — pass `None` for a definition that says how the macro
+    /// *parses* but not how it renders. Such a macro falls through to the name fallback
+    /// table and then to
+    /// [`Options::unknown_macro`](crate::Options::unknown_macro), which is exactly what
+    /// a parse-only entry should do.
+    pub fn new(
+        arguments: Vec<Arc<ArgumentSpec<Latexlike>>>,
+        rule: impl Into<Option<TextRule>>,
+    ) -> TechxtMacroSpec {
+        TechxtMacroSpec {
+            arguments,
+            rule: rule.into(),
+        }
     }
 
-    /// The text rule this macro renders through.
-    pub fn rule(&self) -> &TextRule {
-        &self.rule
+    /// The text rule this macro renders through, if it has one.
+    pub fn rule(&self) -> Option<&TextRule> {
+        self.rule.as_ref()
     }
 }
 
@@ -75,18 +89,26 @@ impl CallableSpec<Latexlike> for TechxtMacroSpec {
 #[derive(Debug)]
 pub struct TechxtSpecialsSpec {
     arguments: Vec<Arc<ArgumentSpec<Latexlike>>>,
-    rule: TextRule,
+    rule: Option<TextRule>,
 }
 
 impl TechxtSpecialsSpec {
     /// A specials spec with these argument specs and this text rule.
-    pub fn new(arguments: Vec<Arc<ArgumentSpec<Latexlike>>>, rule: TextRule) -> TechxtSpecialsSpec {
-        TechxtSpecialsSpec { arguments, rule }
+    ///
+    /// As for [`TechxtMacroSpec::new`], the rule is optional.
+    pub fn new(
+        arguments: Vec<Arc<ArgumentSpec<Latexlike>>>,
+        rule: impl Into<Option<TextRule>>,
+    ) -> TechxtSpecialsSpec {
+        TechxtSpecialsSpec {
+            arguments,
+            rule: rule.into(),
+        }
     }
 
-    /// The text rule this specials renders through.
-    pub fn rule(&self) -> &TextRule {
-        &self.rule
+    /// The text rule this specials renders through, if it has one.
+    pub fn rule(&self) -> Option<&TextRule> {
+        self.rule.as_ref()
     }
 }
 
@@ -103,10 +125,6 @@ impl CallableSpec<Latexlike> for TechxtSpecialsSpec {
 /// Recording this in the definition is what keeps the renderer from having to guess:
 /// PLAN.md §9.1's rule "characters in a verbatim body are emitted verbatim" is answered
 /// by asking the environment, not by inspecting the text.
-///
-/// **M3/M6 seam:** list environments gain a `List(ListKind)` variant, whose body delta
-/// pushes the package defining `\item` (PLAN.md §9.4). The enum is `#[non_exhaustive]`
-/// so that is an additive change.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EnvBodyKind {
@@ -116,6 +134,11 @@ pub enum EnvBodyKind {
     Math,
     /// A raw body: one characters node, no markup (`verbatim`).
     Verbatim,
+    /// A list body (`itemize`, `enumerate`, `description`): parsed in the enclosing
+    /// mode, but with the provider defining `\item` pushed for its extent (PLAN.md
+    /// §9.4). Attach that provider with
+    /// [`with_body_provider`](TechxtEnvironmentBehavior::with_body_provider).
+    List(ListKind),
 }
 
 /// An environment definition as techy sees it: its arguments, what its body is, and the
@@ -140,7 +163,8 @@ pub struct TechxtEnvironmentBehavior {
     arguments: Vec<Arc<ArgumentSpec<Latexlike>>>,
     body: EnvBodyKind,
     body_behavior: BodyBehavior,
-    rule: TextRule,
+    body_provider: Option<Arc<dyn SpecsProvider<Latexlike>>>,
+    rule: Option<TextRule>,
 }
 
 /// Which body parser an environment uses.
@@ -162,10 +186,13 @@ impl EnvironmentBehavior<Latexlike> for StandardBody {}
 
 impl TechxtEnvironmentBehavior {
     /// An environment behaviour with these argument specs, body kind and text rule.
+    ///
+    /// As for [`TechxtMacroSpec::new`], the rule is optional: an environment may
+    /// declare only how it parses.
     pub fn new(
         arguments: Vec<Arc<ArgumentSpec<Latexlike>>>,
         body: EnvBodyKind,
-        rule: TextRule,
+        rule: impl Into<Option<TextRule>>,
     ) -> TechxtEnvironmentBehavior {
         let body_behavior = match body {
             // The verbatim body parser needs the argument specs too: it is the
@@ -180,13 +207,28 @@ impl TechxtEnvironmentBehavior {
             arguments,
             body,
             body_behavior,
-            rule,
+            body_provider: None,
+            rule: rule.into(),
         }
     }
 
-    /// The text rule this environment renders through.
-    pub fn rule(&self) -> &TextRule {
-        &self.rule
+    /// Push `provider` onto the scope stack for the extent of this environment's body.
+    ///
+    /// This is how a list environment brings `\item` into scope (PLAN.md §9.4): one
+    /// shared package, pushed by every list environment's body delta, so that `\item`
+    /// is defined exactly where it means something. Scope reversion is structural —
+    /// nothing has to pop it when the body ends.
+    pub fn with_body_provider(
+        mut self,
+        provider: Arc<dyn SpecsProvider<Latexlike>>,
+    ) -> TechxtEnvironmentBehavior {
+        self.body_provider = Some(provider);
+        self
+    }
+
+    /// The text rule this environment renders through, if it has one.
+    pub fn rule(&self) -> Option<&TextRule> {
+        self.rule.as_ref()
     }
 
     /// What this environment's body is, syntactically.
@@ -225,12 +267,19 @@ impl EnvironmentBehavior<Latexlike> for TechxtEnvironmentBehavior {
         &self,
         _invocation: EnvironmentInvocation<'_, Latexlike>,
     ) -> Result<Option<ParsingStateDelta<Latexlike>>, ParseError<Option<String>>> {
-        match self.body {
+        let mut delta = ParsingStateDelta::new();
+        let mut anything = false;
+        if self.body == EnvBodyKind::Math {
             // Entering math is a mode change; *leaving* it is an event, never
             // `.mode(Mode::Text)` — see `techxt::render`'s notes on `\text{…}`.
-            EnvBodyKind::Math => Ok(Some(ParsingStateDelta::new().mode(Mode::Math))),
-            EnvBodyKind::Normal | EnvBodyKind::Verbatim => Ok(None),
+            delta = delta.mode(Mode::Math);
+            anything = true;
         }
+        if let Some(provider) = &self.body_provider {
+            delta = delta.scope_op(ScopeOp::Push(Arc::clone(provider)));
+            anything = true;
+        }
+        Ok(anything.then_some(delta))
     }
 
     fn make_body_parser<'p>(
@@ -250,10 +299,10 @@ pub(crate) fn embedded_rule(node: NodeRef<'_, Latexlike>) -> Option<&TextRule> {
     let spec = node.spec()?;
     let object = &**spec as &dyn Any;
     if let Some(macro_spec) = object.downcast_ref::<TechxtMacroSpec>() {
-        return Some(&macro_spec.rule);
+        return macro_spec.rule.as_ref();
     }
     if let Some(specials_spec) = object.downcast_ref::<TechxtSpecialsSpec>() {
-        return Some(&specials_spec.rule);
+        return specials_spec.rule.as_ref();
     }
-    TechxtEnvironmentBehavior::of(node).map(TechxtEnvironmentBehavior::rule)
+    TechxtEnvironmentBehavior::of(node).and_then(TechxtEnvironmentBehavior::rule)
 }

@@ -90,8 +90,9 @@
 //!   [`Options`], [`Conversion`].
 //! - [`render`] — the renderer that folds a [`techy`] node tree into a flow, its
 //!   downward state, and the context a rule's handler works through.
-//! - [`def`] — what techxt knows about a construct: its text rule, and the spec types
-//!   that carry that rule into the parsed tree.
+//! - [`def`] — what techxt knows about a construct: the entry builders a definitions
+//!   library is written with, the template mini-language, the rule model, and the spec
+//!   types that carry a rule into the parsed tree.
 //! - [`flow`] — the typed token sequence handlers produce: words, breakable spaces,
 //!   vertical separation requests, blocks, verbatim runs.
 //! - [`layout`] — the single pass that turns a flow into text, deciding every line
