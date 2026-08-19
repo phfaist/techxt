@@ -87,7 +87,9 @@ fn hline_draws_a_rule_across_the_whole_table() {
 #[test]
 fn cline_and_the_booktabs_rules_are_drawn_like_an_hline() {
     assert_eq!(
-        text(r"\begin{tabular}{lr} \toprule a & 10 \\ \cline{1-2} bb & 3 \\ \bottomrule \end{tabular}"),
+        text(
+            r"\begin{tabular}{lr} \toprule a & 10 \\ \cline{1-2} bb & 3 \\ \bottomrule \end{tabular}"
+        ),
         "------\na   10\n------\nbb   3\n------\n"
     );
 }

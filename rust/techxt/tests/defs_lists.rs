@@ -108,10 +108,15 @@ fn the_marker_style_is_configurable() {
         style: CounterStyle::UpperRoman,
         wrap: CounterWrap::Parens,
     }];
-    let converter = Converter::builder().list_style(style).build().expect("builds");
+    let converter = Converter::builder()
+        .list_style(style)
+        .build()
+        .expect("builds");
     assert_eq!(
         converter
-            .latex_to_text(r"\begin{itemize}\item a\end{itemize}\begin{enumerate}\item b\end{enumerate}")
+            .latex_to_text(
+                r"\begin{itemize}\item a\end{itemize}\begin{enumerate}\item b\end{enumerate}"
+            )
             .expect("parses")
             .text,
         "  - a\n  (I) b\n"
@@ -196,7 +201,10 @@ fn the_enumitem_option_list_is_accepted_and_reported_as_ignored() {
 fn a_list_without_options_reports_nothing() {
     let converted = convert(r"\begin{itemize}\item a\end{itemize}");
     assert_eq!(
-        converted.diagnostics.conditions::<UnsupportedIgnored>().count(),
+        converted
+            .diagnostics
+            .conditions::<UnsupportedIgnored>()
+            .count(),
         0
     );
 }
@@ -205,10 +213,7 @@ fn a_list_without_options_reports_nothing() {
 
 #[test]
 fn trivlist_and_list_behave_like_an_itemize() {
-    assert_eq!(
-        text(r"\begin{trivlist}\item a\end{trivlist}"),
-        "  • a\n"
-    );
+    assert_eq!(text(r"\begin{trivlist}\item a\end{trivlist}"), "  • a\n");
     // `list`'s two mandatory arguments are consumed, not rendered.
     assert_eq!(
         text(r"\begin{list}{$\bullet$}{\setlength{\itemsep}{0pt}}\item a\end{list}"),

@@ -427,10 +427,16 @@ mod tests {
         assert_eq!(parse_alignments("p{3cm}r"), [Align::Left, Align::Right]);
         assert_eq!(parse_alignments("Xl"), [Align::Left, Align::Left]);
         // Inserted material and cell decorations take no column at all.
-        assert_eq!(parse_alignments("@{}l>{\\bfseries}c<{}"), [Align::Left, Align::Center]);
+        assert_eq!(
+            parse_alignments("@{}l>{\\bfseries}c<{}"),
+            [Align::Left, Align::Center]
+        );
         assert_eq!(parse_alignments("!{\\vrule}r"), [Align::Right]);
         // Nested braces inside a skipped group.
-        assert_eq!(parse_alignments(">{\\raggedright{a}}lr"), [Align::Left, Align::Right]);
+        assert_eq!(
+            parse_alignments(">{\\raggedright{a}}lr"),
+            [Align::Left, Align::Right]
+        );
         assert_eq!(parse_alignments(""), []);
     }
 

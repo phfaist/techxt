@@ -6,7 +6,10 @@
 use techxt::Converter;
 
 fn text(latex: &str) -> String {
-    Converter::standard().latex_to_text(latex).expect("parses").text
+    Converter::standard()
+        .latex_to_text(latex)
+        .expect("parses")
+        .text
 }
 
 fn wrapped(width: usize, latex: &str) -> String {
@@ -47,7 +50,10 @@ fn a_starred_verb_renders_its_run_and_not_its_star() {
 fn verb_is_one_unbreakable_word() {
     // Even at a width narrower than the run, it is never split — and the words around
     // it wrap around it instead.
-    assert_eq!(wrapped(8, r"aaa \verb|bbbbbbbbbb| ccc"), "aaa\nbbbbbbbbbb\nccc\n");
+    assert_eq!(
+        wrapped(8, r"aaa \verb|bbbbbbbbbb| ccc"),
+        "aaa\nbbbbbbbbbb\nccc\n"
+    );
 }
 
 #[test]
@@ -104,7 +110,9 @@ fn lstlisting_accepts_and_drops_its_options() {
 fn a_verbatim_block_keeps_the_indent_of_the_list_it_is_written_in() {
     // Only the continuation indent — the bullet stays available for the item's text.
     assert_eq!(
-        text("\\begin{itemize}\\item text\n\\begin{verbatim}\n  raw\n\\end{verbatim}\\end{itemize}"),
+        text(
+            "\\begin{itemize}\\item text\n\\begin{verbatim}\n  raw\n\\end{verbatim}\\end{itemize}"
+        ),
         "  • text\n\n      raw\n"
     );
 }
