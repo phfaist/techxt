@@ -8,17 +8,20 @@ is an idea source and a porting reference, **not** a compatibility target. Where
 pylatexenc has quirks, defects, or structural weaknesses, techxt deliberately deviates
 and improves.
 
-This document is self-contained: an implementing agent needs no other context beyond
-read access to the `techy` and `pylatexenc` repositories for looking up specific code
-being referenced. All design decisions below were made interactively with the project
-owner and are settled; do not re-litigate them. Where this plan says "(settled)",
-implement as stated. Where it says "(implementer's choice)", use judgement.
+**This document is normative.** All design decisions were settled interactively with
+the project owner; implement as specified and do not re-litigate. Only *mechanical*
+details are left to the implementer: private helper structure, exact lifetime
+parameters, file-internal organization, incidental naming of non-public items, and
+faithful porting of data tables. Public type/module names, enum variants, defaults,
+semantics, and rendering behaviors given below are binding (fields/enums marked
+`#[non_exhaustive]` may gain variants later, but v1 ships exactly what is listed).
+An implementing agent needs no context beyond this file plus read access to the
+`techy` and `pylatexenc` repositories for looking up referenced code:
 
-Reference checkouts used while writing this plan:
 - techy @ `https://github.com/phfaist/techy` (main; workspace version 0.1.0)
 - pylatexenc @ `https://github.com/phfaist/pylatexenc` (main; version 3.0beta2)
 
-Line numbers cited below are from those checkouts and may drift; prefer symbol names.
+Line numbers cited below may drift; prefer symbol names.
 
 ---
 
@@ -35,27 +38,27 @@ Line numbers cited below are from those checkouts and may drift; prefer symbol n
    crashes). In techxt, one definition entry carries both the parsing argument
    structure and the text rule; parse and render cannot disagree.
 3. **Nothing silent.** Unknown constructs, skipped content, and handler problems
-   produce structured diagnostics with source positions. Policies are configurable;
-   silence is not the default.
-4. **LaTeX-correct whitespace semantics, no compatibility knobs.** (settled — see §8)
+   produce structured diagnostics with source positions.
+4. **LaTeX-correct whitespace semantics, no compatibility knobs.**
 5. **Reusable, immutable converter.** All per-document state lives in a per-run
-   structure. The converter is `Send + Sync` and converts many documents concurrently.
+   structure. The converter is `Clone + Send + Sync` and converts many documents
+   concurrently.
 6. **Payload-only reading.** techxt must work on trees that have been transformed
    (`techy::transform`) and no longer map 1:1 to source bytes. Handlers read node
    *payloads* only. Resolving a node's own `TextContent::Spanned` against the node's
    own source is permitted (treat it as optimized payload data). Never use
    `NodeRef::span_content()` / `NodeSlice::source_text()` or any inter-node span
-   arithmetic to obtain content. To re-emit a subtree as LaTeX source (math verbatim
-   mode, "keep source" policies), use techy's payload-based
-   `techy::latexlike::SourceRecomposer` — never raw spans. Node *spans* may be used
-   for diagnostic positions only.
+   arithmetic to obtain content. To re-emit a subtree as LaTeX source (math Source
+   mode, keep-source policies), use techy's payload-based
+   `techy::latexlike::SourceRecomposer`. Node *spans* may be used for diagnostic
+   positions only.
 7. **techy-grade engineering from day one**: `missing_docs = deny`, denied broken doc
    links, clippy clean, rustfmt, no_std proof in CI, MSRV pinned. No panics on
    document input (contract violations only).
 
 ---
 
-## 2. Repository and workspace layout (settled)
+## 2. Repository and workspace layout
 
 ```
 techxt/                        # repo root (language-neutral)
@@ -63,40 +66,37 @@ techxt/                        # repo root (language-neutral)
   PLAN.md                      # this file
   rust/                        # Cargo workspace root
     Cargo.toml                 # [workspace] resolver = "2", members = ["techxt", "techxt-cli"]
-    techxt/                    # the library crate: no_std + alloc
-      Cargo.toml
-      src/...
-    techxt-cli/                # the binary crate (std); installed command is `techxt`
-      Cargo.toml               # [[bin]] name = "techxt"
-      src/main.rs
-  tools/                       # dev-only scripts (symbol-table generation, §11.4)
+    techxt/                    # library crate: no_std + alloc
+    techxt-cli/                # binary crate (std); [[bin]] name = "techxt"
+  tools/                       # dev-only scripts (symbol-table generation, §12.4)
   # later, sibling root folders that do not talk to rust/'s build system:
   # python/  (maturin extension)   js/  (wasm/Node)
 ```
 
 - Workspace config mirrors techy's: `resolver = "2"`, shared `[workspace.package]`
-  (version `0.1.0`, edition `2021`, `rust-version = "1.86"`, license `MIT`,
-  author Philippe Faist, repository URL), `[workspace.lints.rust] missing_docs = "deny"`,
+  (version `0.1.0`, edition `2021`, `rust-version = "1.86"`, license `MIT`, author
+  Philippe Faist, repository URL), `[workspace.lints.rust] missing_docs = "deny"`,
   `[workspace.lints.rustdoc] broken_intra_doc_links = "deny"`,
   `private_intra_doc_links = "warn"`, `bare_urls = "warn"`; release profile
   `lto = true`, `codegen-units = 1`. Edition/MSRV may be bumped (e.g. edition 2024)
-  if it brings significant code-clarity benefit; matching techy is the default.
+  only if it brings significant code-clarity benefit; matching techy is the default.
 - `techxt` lib: `#![cfg_attr(not(test), no_std)]` + `extern crate alloc`.
-  Dependencies: `techy` (git dependency pinned to a specific rev of
-  `https://github.com/phfaist/techy`, switched to a crates.io version once techy is
-  published) and `unicode-width` (settled). Nothing else in the runtime tree.
-- `techxt-cli`: depends on `techxt`, `clap` (derive feature) (settled), and std.
-- **No cargo features** (settled). The definitions library is organized as Rust
-  modules the user references explicitly; unreferenced modules are removed by
-  dead-code elimination. Do not add a `serde` feature or others in v1.
+  Runtime dependencies: exactly `techy` (git dependency pinned to a specific rev of
+  `https://github.com/phfaist/techy`; switch to a crates.io version once techy
+  publishes) and `unicode-width`. Dev-dependency: `proptest`.
+- `techxt-cli`: depends on `techxt`, `clap` (derive), std.
+- **No cargo features.** The definitions library is organized as Rust modules the
+  user references explicitly; unreferenced modules are removed by dead-code
+  elimination. No `serde` feature in v1.
 
 ---
 
 ## 3. What techy provides (API contract techxt builds on)
 
-techxt uses the `techy::latexlike` preset. Key facts (verify against the techy docs;
-narrative guides live in techy's `docs/` folder — `ai-guide.md`, `ai-guide-trees.md`,
-`ai-guide-definitions.md`, `ai-guide-pylatexenc.md` are the fastest reads):
+techxt uses the `techy::latexlike` preset, **concretely**: all techxt types are
+non-generic over the language (`Latexlike`) and over the tree annotation (`A = ()`).
+(Settled API decision — see §11.1. Generalization over `LatexlikeLang` is future
+work.) techy facts to rely on (narrative guides: techy `docs/ai-guide*.md`):
 
 **Parsing.**
 ```rust
@@ -107,35 +107,35 @@ let language: Language<Latexlike> = Language::new(
 let result = language.parse(input)?;               // ParseResult { tree, diagnostics, .. }
 ```
 `Language` is `Send + Sync`, built once, parses many documents. Tolerant parses return
-a whole-input tree plus diagnostics (`result.diagnostics.has_errors()`); an
-unresolvable `\foo` becomes a literal `Chars` node `"\foo "` plus an error diagnostic.
-`LatexlikeDriver::with_source_resolver(...)` enables `\input` resolution at *parse*
-time (resolved content appears as an `Attached` slot on the `\input` node);
-`techy::source::SourceResolver` is the trait, `check_include_chain` guards cycles.
-Keep the driver's default `ParagraphBreakStyle::Chars` (paragraph breaks arrive as
-whitespace-only `Chars` nodes containing a blank line).
+a whole-input tree plus diagnostics; an unresolvable `\foo` becomes a literal `Chars`
+node `"\foo "` plus an error diagnostic. `LatexlikeDriver::with_source_resolver(...)`
+enables `\input` at *parse* time (resolved content appears as an `Attached` slot on
+the `\input` node); `techy::source::SourceResolver` is the trait,
+`check_include_chain` guards cycles. Keep the driver's default
+`ParagraphBreakStyle::Chars` (paragraph breaks arrive as whitespace-only `Chars`
+nodes containing a blank line).
 
 **Node model** (`techy::core::node`). Five kinds:
 `Chars { content }`, `Group(GroupData { group_type, open, close })`,
-`Callable(CallableData { callable_type, name, spec, arguments, slots, invocation_syntax })`,
-`Comment(CommentData { start, content, post_space })`, `List`.
-There is no Math/Macro/Environment/Verbatim node kind: math is
+`Callable(CallableData { callable_type, name, spec, arguments, slots,
+invocation_syntax })`, `Comment(CommentData)`, `List`.
+No Math/Macro/Environment/Verbatim node kinds: math is
 `GroupType::Math(MathGroupForm::{Inline,Display})`; macros/environments/specials are
 `Callable` distinguished by `callable_type`; `\verb` is `GroupType::Verbatim` with one
 raw `Chars` child; a `verbatim` environment is an environment whose body list holds
 one raw `Chars` node. Latexlike sugar on `NodeRef`: `is_math_group()`, `math_form()`,
 `macro_name()`, `environment_name()`, `specials_name()`, `post_space()`.
-Arguments are accessed semantically: `argument_content_nodes(i)`,
-`argument_content_nodes_named(name)` (absent optional → `Ok(None)`; wrong name →
-`Err`), providedness via `ParsedArgument::is_provided()`. Environment bodies via
-`body()` / slots via `slot_content_nodes_named("attached")` etc. Every node records
-its parsing state: `node.parsing_state().mode()` is `techy::latexlike::Mode::{Text,Math}`.
+Arguments: `argument_content_nodes_named(name)` (absent optional → `Ok(None)`; wrong
+name → `Err`), providedness via `ParsedArgument::is_provided()` (a `*` star argument's
+providedness *is* the star test). Environment body via `body()`; `\input` content via
+`slot_content_nodes_named("attached")`. Every node records its parsing state:
+`node.parsing_state().mode()` is `techy::latexlike::Mode::{Text,Math}`.
 
-**Recompose** (`techy::recompose`) — techxt's engine (settled):
+**Recompose** (`techy::recompose`) — techxt's engine:
 ```rust
 pub trait Recomposer<L: Lang, A> {
     type State;                 // downward-threaded context
-    type Piece: ComposePiece;   // techxt: the Flow type (§6)
+    type Piece: ComposePiece;   // techxt: Flow (§6)
     type Error;
     fn recompose_node(&mut self, node: NodeRef<'_, L, A>, state: &Self::State,
                       cx: &mut RecomposeContext<'_, L, A>)
@@ -143,356 +143,620 @@ pub trait Recomposer<L: Lang, A> {
 }
 ```
 Instructions: `Recompose::Emit(piece)` or `Recompose::Concat(ConcatPieces::children()
-.wrap(head, tail).join(sep).with_state(derived).include_attached().include_hidden())`.
+.wrap(head, tail).join(sep).with_state(derived).include_attached())`.
 Re-entrant region ops on `RecomposeContext` (always pass `self` back):
-`recompose_argument_content_named(node, name, state, self)`,
-`recompose_argument_content(node, i, ...)`, `recompose_body(node, ...)`,
-`recompose_slot_content_named(node, "attached", ...)`. Absent argument → empty piece.
-Driver: `TreeRecomposer::new(&mut recomposer).recompose(&tree, initial_state)`.
-Fold order is document order (enter order; eager region ops preserve this) — sectioning
-counters and footnote collection in `&mut self` rely on this.
+`recompose_argument_content_named`, `recompose_argument_content`, `recompose_body`,
+`recompose_slot_content_named`. Absent argument → empty piece. Driver:
+`TreeRecomposer::new(&mut r).recompose(&tree, initial_state)`. Fold order is document
+order (enter order; eager region ops preserve it) — counters and footnote collection
+in `&mut self` rely on this.
 **Wrapping contract**: consumers extend techxt by wrapping its recomposer with their
-own `Recomposer` that overrides some nodes and delegates the rest — a wrap-intended
-recomposer returns instructions and never descends explicitly. techxt's recomposer
-must be usable as such an inner recomposer (public, documented).
+own `Recomposer` that overrides some nodes and delegates the rest; techxt's
+`TextRenderer` must be usable as such an inner recomposer (public, documented).
 **Role rule**: `Concat` skips `Attached`/`Hidden` slots by default — the `\input`
-handler must explicitly render the attached slot.
+handler renders the attached slot explicitly.
 
 **Definitions** (`techy::core::specs`, `techy::latexlike`). techy ships **no**
-standard LaTeX definitions (only `\begin`/`\end` in `builtin_package()`); techxt owns
-the whole definitions database. Building blocks:
-`Package::new(name)` / `Package::insert(callable_type, name, spec)` /
-`insert_specials(...)` / mode-restricted variants; pylatexenc-style argspec codes via
-`techy::latexlike::argument_specs_from_str::<Latexlike>("*[{")` and named arguments
-via `argument_specs_named([("s","star"),("o","toctitle"),("m","title")])` (codes:
-`m/{`, `o/[`, `s/*`, `t<c>`, `r<c1><c2>`, `d<c1><c2>`, `v`, `e{...}`, plus word codes
-`AnyDelimited`, `BracedOnly`). Spec types: `MacroSpec::new(args)`,
-`EnvironmentSpec::new(args)` (+ `.with_body_delta(...)` — how `equation` enters
-`Mode::Math` and how list bodies inject an `\item` package), `SpecialsSpec`,
-`VerbatimBehavior` for verbatim-bodied environments,
-`ArgumentSpec::with_state_delta(...)` (how `\text{...}` leaves math). `CallableSpec`
-has an `Any` supertrait → **downcastable**: `(&**node.spec().unwrap() as &dyn Any)
-.downcast_ref::<TechxtMacroSpec>()` is the sanctioned identity mechanism techxt's
-dispatch uses (§9). Register names **without** the escape char (`"emph"`, not `"\\emph"`).
+standard LaTeX definitions (only `\begin`/`\end`); techxt owns the whole database.
+Building blocks: `Package::new/insert/insert_specials` (+ `insert_in_modes` /
+`insert_specials_in_modes` for mode-restricted entries like `^`/`_` and ligatures);
+argspec codes via `techy::latexlike::argument_specs_from_str` /
+`argument_specs_named` (codes `m/{`, `o/[`, `s/*`, `t<c>`, `r<c1><c2>`, `d<c1><c2>`,
+`v`, `e{...}`, word codes `AnyDelimited`, `BracedOnly`); spec types
+`MacroSpec::new(args)`, `EnvironmentSpec::new(args)` + `.with_body_delta(...)` (how
+`equation` enters `Mode::Math`, how list bodies inject an `\item` package),
+`SpecialsSpec`, `VerbatimBehavior` (verbatim-bodied environments),
+`ArgumentSpec::with_state_delta` (how `\text{...}` leaves math). `CallableSpec` has an
+`Any` supertrait → downcastable; that is the sanctioned identity mechanism techxt's
+dispatch uses (§10.3). Register names **without** the escape char (`"emph"`).
 
-**Diagnostics** (`techy::error`). techxt defines its own condition types deriving
-`techy::error::DiagnosticInfo` (re-exported derive) and returns
-`techy::error::Diagnostics<Option<String>>` from conversions. Use `Diagnostic::warning
-(condition, span)` with the node's `SourceSpan` (spans are fine for *positions*).
-
-**Extract** (`techy::extract`): `content_as_chars(nodes)` for plain-text arguments
-(`\label{...}`, URLs); errors on callables. Group-protected splitting helpers exist
-but techxt's cell/item splitting works at the flow level instead (§10.4, §10.6).
+**Diagnostics** (`techy::error`). techxt defines its own condition types with the
+re-exported `DiagnosticInfo` derive and returns
+`techy::error::Diagnostics<Option<String>>`. Use the node's `SourceSpan` for
+positions.
 
 ---
 
 ## 4. What to take from pylatexenc v3 (and what to fix)
 
-Porting references in the pylatexenc checkout (`pylatexenc/latex2text/__init__.py`
-≈3700 lines, `pylatexenc/latex2text/_defaultspecs.py` ≈2000 lines):
+Porting references: `pylatexenc/latex2text/__init__.py` (spec classes, math engine
+lines ≈1067–1954, list machinery ≈416–682), `pylatexenc/latex2text/_defaultspecs.py`,
+`pylatexenc/latexwalker/_defaultspecs.py`, `pylatexenc/test/test_2_latex2text.py`.
 
 **Adopt (redesigned into techxt's architecture):**
-- The fancy math engine, as the default mode: atom classes, plain-string
-  segmentation, join rules, unary-minus reclassification, script handling and
-  sub/superscript unicode tables, wrappable pieces, `math_expression_in` delimiters,
-  `\sqrt` → `√`/`∛`/`∜`. techxt's mode *set* is redesigned, not ported: exactly
-  `Fancy | Plain | Source` (§10.5), not v3's five modes. (§10.5)
-- Unicode font alphabets (`fmt_math_text_style`, offsets + exception tables) with
-  separate text/math font-style state. (§10.5)
-- List rendering: per-depth markers `• – * ·` and `1. (a) i. A.`, *same-kind* depth
-  counting (an `itemize` inside an `enumerate` is a first-level itemize), explicit
-  `\item[label]` does not advance the counter, hanging indents. (§10.4)
-- The accent tables (`unicode_accents_list`) and combining-char approach — but apply
-  the combining char to the **first base character only**, not every character
-  (fixes v3's `\hat` stamping the hat onto whole rendered arguments).
-- The symbol tables (Greek, operators, relations, arrows, the large auto-generated
-  set) — via a generation script, §11.4.
-- `\href`/`\url` with verbatim-parsed URL arguments (v3's parse-side fix).
-- The *inventory* of its test suite (`test/test_2_latex2text.py`) as a coverage
-  checklist — with techxt's own expected outputs.
+- The fancy math engine as the default mode: atom classes, plain-string segmentation,
+  join rules, unary-minus reclassification, script handling, sub/superscript unicode
+  tables, wrappable pieces, `math_expression_in` delimiters, `\sqrt` → `√`/`∛`/`∜`.
+  techxt's mode *set* is redesigned: exactly `Fancy | Plain | Source` (§9.5).
+- Unicode font alphabets with **separate math and text style stacks** (§9.5).
+- List rendering: per-depth markers, same-kind depth counting, `\item[label]` doesn't
+  advance the counter, hanging indents (§9.4).
+- Accent tables (`unicode_accents_list`) — but apply the combining char to the
+  **first base character only** (fixes v3 stamping accents onto whole arguments).
+- The symbol tables via a generation script (§12.4).
+- `\href`/`\url` with verbatim-parsed URL arguments.
+- The *inventory* of `test_2_latex2text.py` as a coverage checklist with techxt's own
+  expected outputs.
 
-**Fix / deliberately deviate (all settled):**
-- One unified definitions database instead of two (§9).
-- Named argument access everywhere; no positional `%(2)s` crashes.
-- Diagnostics for unknown constructs instead of silence (§12).
-- Whole-paragraph layout instead of per-chars-node `textwrap`; verbatim content is
-  never wrapped, styled, or whitespace-normalized (§7).
-- A real paragraph/block model with one normalization policy instead of accidental
-  `'\n%s\n'` spacing (§7).
-- Verbatim renders its content (v3 renders `\verb` as nothing and mangles
-  `{verbatim}`).
-- Immutable, reusable converter; per-run state (v3 mutates the converter).
-- `\input` is parse-time (techy resolver) with cycle guard; no unguarded recursion.
-- Display width via `unicode-width`, not `len()`.
-- Sectioning: numbered + underlined by default, no uppercasing (§10.3).
-- Footnotes collected with `[n]` markers by default (§10.7).
-- Basic aligned `tabular` tables (§10.6).
-- `\today` is an option supplied by the embedder (no_std has no clock); CLI passes the
-  current date; default when unset: placeholder `<today>` (v3 freezes the date at
-  Python-import time).
-- Dropped entirely: `strict_latex_spaces` (all four knobs and presets),
-  `keep_braced_groups`, pylatexenc-v1 compat shims, the personal categories
-  (`latex-ethuebung`, `nonstandard-qit`), `%`-style replacement strings, callable
-  introspection by parameter name.
+**Fix / deliberately deviate (all settled):** one unified definitions database; named
+argument access everywhere; diagnostics for unknown constructs; whole-paragraph
+layout (verbatim never wrapped/styled/normalized); a real block model with one
+normalization policy; verbatim renders its content; immutable reusable converter;
+parse-time `\input` with cycle guard; display width via `unicode-width`; numbered +
+underlined sectioning without uppercasing; collected footnotes; basic aligned
+tables; `\today` supplied by the embedder. **Dropped entirely:**
+`strict_latex_spaces` (all knobs/presets), `keep_braced_groups`, v1/v2 compat shims,
+`latex-ethuebung` + `nonstandard-qit` categories, `%`-style replacement strings,
+callable introspection by parameter name, v3's `text`/`with-delimiters`/`remove`
+math modes.
 
 ---
 
-## 5. Architecture overview
+## 5. Architecture and module map (normative)
 
 ```
-                       (techxt-owned definitions: parse specs + text rules)
-                                        │
  input &str ──► techy Language::parse ──► NodeTree + parse Diagnostics
-                                        │
+                                              │
         NodeTree (possibly user-transformed) ──► TextRenderer (impl techy Recomposer)
-                                        │            │ downward RenderState
-                                        │            │ &mut RunState (counters, footnotes, diags)
-                                        ▼
-                                   Flow (typed token sequence)
-                                        │
-                                   layout engine (wrap, indent, blocks, normalize)
-                                        ▼
-                              String  +  Diagnostics
+                                              │     downward RenderState
+                                              │     &mut per-run state (counters, footnotes, diags)
+                                              ▼
+                                         Flow (typed token sequence)
+                                              │
+                                         layout engine
+                                              ▼
+                                    String + Diagnostics
 ```
 
-All three layers are public, documented API (settled): the convenience layer
-(string → string), the tree layer (convert an existing `NodeTree`/`NodeSlice`), and
-the flow/layout layer (flow tokens, layout engine, the `TextRenderer` recomposer).
-Evolve public enums/structs with `#[non_exhaustive]`.
+All three layers are public, documented API: convenience (string → string), tree
+(convert an existing `NodeTree`), and flow/layout (flow tokens, layout engine,
+`TextRenderer`). Public enums/structs that may grow are `#[non_exhaustive]`.
 
-Proposed module map for `rust/techxt/src/` (implementer may refine; keep one
-canonical public path per item, techy-style):
+Module map for `rust/techxt/src/` (public paths are binding; file layout inside a
+module is mechanical):
 
 ```
-lib.rs          — crate docs, re-exports of the main entry points
-convert.rs      — Converter, ConverterBuilder, Options, Conversion  (§13)
-flow/           — Flow, FlowItem, BlockKind, math-atom items        (§6)
-layout/         — LayoutOptions, layout engine                       (§7)
-render/         — TextRenderer (Recomposer impl), RenderState, RunState, RenderCx (§8, §10)
-def/            — Definition model: DefinitionSet, Category, MacroDef/EnvDef/SpecialsDef,
-                  TechxtMacroSpec/TechxtEnvironmentSpec/TechxtSpecialsSpec,
-                  TextRule, Template (+ parser/validator), TextHandler   (§9)
-mathfmt/        — the fancy math engine: atom classes, segmentation, joiner,
-                  sub/superscript + font-alphabet tables              (§10.5)
-defs/           — the default definitions library, one module per category (§11)
-diag.rs         — techxt DiagnosticInfo condition types               (§12)
+lib.rs         — crate docs; re-export Converter, ConverterBuilder, Options, Conversion
+convert.rs     — techxt::convert: Converter, ConverterBuilder, BuildError, Options + option enums, Conversion
+flow.rs        — techxt::flow: Flow, FlowItem, BlockKind
+layout.rs      — techxt::layout: LayoutOptions, render, render_to, render_inline
+render/        — techxt::render: TextRenderer, RenderState (+ MathCtx, ListCtx, FloatKind),
+                 RenderCx, RenderError, RenderFinish
+def/           — techxt::def: MacroDef, EnvDef, SpecialsDef, Category, DefinitionSet,
+                 CallableKind, TextRule, Template, TemplateError, TextHandler,
+                 TechxtMacroSpec, TechxtEnvironmentSpec, TechxtSpecialsSpec
+mathfmt/       — techxt::mathfmt: Atom, AtomClass, MathBox, join_atoms, segment_plain,
+                 script/alphabet tables
+defs/          — techxt::defs: one module per category (§12.1) + defs::standard()
+diag.rs        — techxt::diag: condition types (§10.6)
 ```
 
 ---
 
 ## 6. The flow model (`techxt::flow`)
 
-The `Recomposer::Piece` type. Requirements (settled): simple; minimal overhead when
-no wrapping is requested; expressive enough for wrapping, indented blocks, verbatim,
-tables, and math atoms.
-
 ```rust
-/// The piece monoid. Newtype over Vec so ComposePiece::append is an O(amortized) extend.
+/// The recomposer's piece monoid. Newtype over Vec: append = extend (amortized O(1) per item).
+#[derive(Clone, Debug, Default)]
 pub struct Flow(Vec<FlowItem>);
-impl techy::recompose::ComposePiece for Flow { /* empty(); append = extend */ }
 
 #[non_exhaustive]
+#[derive(Clone, Debug)]
 pub enum FlowItem {
-    /// A run of non-whitespace text. ADJACENT Text items are glued (no break between
-    /// them) — `\textbf{bold}text` must never wrap between "bold" and "text".
+    /// Non-whitespace text. ADJACENT Text items are glued: no break may occur
+    /// between them (`\textbf{bold}text` never wraps between "bold" and "text").
     Text(Box<str>),
     /// One collapsible inter-word space; the only place wrapping may break.
     Glue,
-    /// Forced line break (e.g. `\\`, table row end after layout).
+    /// Forced line break.
     HardBreak,
-    /// Paragraph separator. Layout normalizes any run of these (and block
-    /// boundaries) to at most one blank line.
+    /// Paragraph separator. Layout normalizes runs of these (and block boundaries)
+    /// to at most one blank line.
     ParagraphBreak,
     /// Preformatted block: emitted line-by-line with the current continuation
-    /// indent, NEVER wrapped, styled, or whitespace-normalized.
+    /// indent; NEVER wrapped, styled, or whitespace-normalized.
     Verbatim(Box<str>),
-    /// Inline preformatted fragment (`\verb`): unbreakable, un-normalized.
+    /// Inline preformatted fragment (`\verb`): an unbreakable word, raw contents.
     InlineVerbatim(Box<str>),
-    /// Open a block context. Blocks imply paragraph-level separation from
-    /// surrounding content (layout inserts/normalizes the blank lines).
+    /// Open a block context; implies paragraph-level separation from surroundings.
     BlockStart(BlockKind),
     BlockEnd,
-    /// Math atom — exists ONLY transiently inside math subtrees; the math-group
-    /// handler resolves atoms via the joiner (§10.5) into plain items above.
-    /// Layout never sees this variant (debug_assert in layout).
-    MathAtom(mathfmt::Atom),
+    /// Table/matrix markers, consumed by the enclosing table/matrix handler BEFORE
+    /// layout. Layout must not see them in correct operation; release-mode fallback
+    /// if it does: CellSep → Glue, RowSep → HardBreak, RuleMark → HardBreak
+    /// (plus debug_assert!(false) in debug builds).
+    CellSep,
+    RowSep,
+    RuleMark,
+    /// Math atom — exists only transiently inside math subtrees; resolved by the
+    /// math-group handler (§9.5). Layout fallback: emit the atom's flattened text.
+    MathAtom(crate::mathfmt::Atom),
 }
 
 #[non_exhaustive]
+#[derive(Clone, Debug)]
 pub enum BlockKind {
-    /// Indented block with a hanging indent: first-line prefix + continuation prefix.
-    /// Used for list items ("  • " / "    "), display math ("    "/"    "),
-    /// footnote entries, quote-like environments.
+    /// Hanging-indent block: first-line prefix + continuation prefix. Used for
+    /// display math, quotes, footnote entries, placeholder blocks.
     Indent { first: Box<str>, cont: Box<str> },
-    /// A list-item block. A new Item at the same nesting level implicitly closes
-    /// the previous one (auto-close in layout), so `\item` handlers need no lookahead.
+    /// A list-item block. A new Item at the same nesting depth implicitly closes
+    /// the previous one (auto-close in layout), so `\item` needs no lookahead.
     Item { first: Box<str>, cont: Box<str> },
-    /// Table cell/row separators, consumed by the table handler before layout (§10.6).
-    CellSep,
-    RowSep,
 }
 ```
 
-Construction helpers: `Flow::text(&str)`, `Flow::word(&str)` (text + implies nothing),
-`Flow::glue()`, plus a `flow!`-style builder if useful. A helper
-`flow::from_plain_text(&str)` converts an arbitrary string (e.g. a `Literal` rule's
-replacement, template literal segments) into Text/Glue/ParagraphBreak items by
-splitting on whitespace (a blank line → ParagraphBreak). Chars nodes go through the
-same helper.
+API (complete): `Flow::new()`, `push(FlowItem)`, `extend(Flow)`,
+`text(&str) -> Flow` (one `Text` item, no splitting),
+`from_plain_text(&str) -> Flow` (split on whitespace: words → `Text`, whitespace runs
+→ `Glue`, whitespace runs containing ≥ 2 newlines → `ParagraphBreak`),
+`glue() -> Flow`, `items(&self) -> &[FlowItem]`, `into_items(self) -> Vec<FlowItem>`,
+`is_empty()`. Implement `techy ComposePiece` for `Flow`. No construction macro.
 
-Width measurement: a single internal function `display_width(&str) -> usize` using
-`unicode_width::UnicodeWidthStr` — the only place width is computed (used by layout,
-tables, matrices, heading underlines).
+Display width: one internal function `display_width(&str) -> usize` via
+`unicode_width::UnicodeWidthStr` — the only place width is computed (layout, tables,
+matrices, underlines, maketitle rule).
 
 ---
 
 ## 7. The layout engine (`techxt::layout`)
 
-One pass over a `Flow`, producing `String` (or writing into `core::fmt::Write`).
-
 ```rust
 #[non_exhaustive]
+#[derive(Clone, Debug, Default)]
 pub struct LayoutOptions {
     /// None (default) = no wrapping: glue renders as a single space.
     pub wrap_width: Option<usize>,
 }
 pub fn render(flow: &Flow, opts: &LayoutOptions) -> String;
-pub fn render_to(flow: &Flow, opts: &LayoutOptions, out: &mut dyn core::fmt::Write) -> fmt::Result;
+pub fn render_to(flow: &Flow, opts: &LayoutOptions, out: &mut dyn core::fmt::Write)
+    -> core::fmt::Result;
+/// Single-line rendering for table/matrix cells, heading width measurement,
+/// maketitle lines: Glue/HardBreak/ParagraphBreak → one space, block prefixes
+/// ignored, verbatim contents inserted raw with internal newlines → space,
+/// result trimmed.
+pub fn render_inline(flow: &Flow) -> String;
 ```
 
-State: indent stack (per open block: first/cont prefixes), current column
-(display width of current line), pending glue flag, pending vertical-space request.
-Rules (all settled):
+Algorithm (single pass; state: indent stack of `(first, cont)` prefixes, current
+column, pending-glue flag, pending-vertical-separation flag):
 
-1. **Words**: adjacent `Text` items concatenate into one unbreakable word. A word is
-   emitted whole; if `wrap_width` is set and `current_col + 1 + width(word)` exceeds
-   it, break at the pending glue first (emit newline + continuation indent). A word
-   wider than the remaining width on an empty line overflows (never split words).
-2. **Glue** collapses: any number of consecutive Glue items = one potential break
-   point / one space. Glue at line start/end is dropped (no trailing spaces, ever).
-3. **Vertical spacing is normalized in one place**: `ParagraphBreak`, `BlockStart`,
-   `BlockEnd` all *request* separation; consecutive requests merge (max, not sum).
-   Result: at most one blank line between any two content lines; no leading/trailing
-   blank lines in the output; output ends with exactly one `\n` if nonempty.
-4. **Blocks**: `BlockStart(Indent|Item)` pushes prefixes; first content line of the
-   block gets `first`, subsequent lines get `cont` (both count toward the column for
-   wrapping). `Item` auto-closes a previous open `Item` at the same depth.
-5. **Verbatim**: emit each line raw, prefixed by the current continuation indent
-   only; never wrapped or trimmed; surrounding separation as a block.
-   `InlineVerbatim` behaves as an unbreakable word whose interior is emitted raw.
-6. **No-wrap fast path**: with `wrap_width = None` the same single pass runs without
-   the width checks — glue → one space. Keep the code shared; do not fork the engine.
+1. **Words**: adjacent `Text` items concatenate into one unbreakable word. Emitting a
+   word: if pending glue and `wrap_width` is set and
+   `col + 1 + display_width(word) > wrap_width`, emit newline + continuation indent
+   instead of the space; otherwise emit the space (if pending glue) then the word.
+   A word wider than the available width on a fresh line overflows (never split).
+2. **Glue** collapses: consecutive `Glue` = one potential break/space. Glue at line
+   start/end is dropped — no trailing spaces, ever.
+3. **Vertical separation** is normalized here and only here: `ParagraphBreak`,
+   `BlockStart`, `BlockEnd` all *request* separation; consecutive requests merge
+   (never sum). Result: at most one blank line between content lines; no
+   leading/trailing blank lines; output ends with exactly one `\n` if nonempty.
+4. **Blocks**: `BlockStart` pushes `(first, cont)`; the first content line of the
+   block is prefixed with all enclosing `cont`s + this block's `first`; subsequent
+   lines use `cont`. Prefix widths count toward the wrap column. `Item` auto-closes
+   a previous open `Item` at the same depth.
+5. **Verbatim**: each line emitted raw, prefixed by the current continuation indent
+   only; never wrapped or trimmed; block-level separation before and after.
+   `InlineVerbatim` behaves as an unbreakable word emitted raw.
+6. **No-wrap path**: same single pass with the width checks skipped (glue → one
+   space). Shared code; do not fork the engine.
 
-proptest invariants (§15): no line exceeds `wrap_width` unless it contains a single
-oversized word or verbatim content; no trailing whitespace on any line; never two
-consecutive blank lines; verbatim payload substrings appear byte-identical in output;
-layout is deterministic.
+proptest invariants (§14): no line exceeds `wrap_width` unless it contains one
+oversized word or verbatim; no trailing whitespace on any line; never two consecutive
+blank lines; `Verbatim` payloads appear byte-identical; deterministic output.
 
 ---
 
 ## 8. Render state
 
-Two channels (matching techy's state discipline):
+**Downward state** (`Recomposer::State`, `Clone`, derived via
+`ConcatPieces::with_state` or region-op parameters, auto-restored):
 
-**Downward state** (`Recomposer::State`, cloned per derived scope, auto-restored):
 ```rust
 #[non_exhaustive]
+#[derive(Clone, Debug)]
 pub struct RenderState {
-    pub math: Option<MathCtx>,          // None = text mode; Some { form: Inline|Display }
-    pub text_font: FontStyle,           // None-equivalent = upright; see §10.5
-    pub math_font: FontStyle,           // default Italic
-    pub in_table: bool,                 // & and \\ emit CellSep/RowSep when set
-    pub list: Option<ListCtx>,          // marker kind + same-kind depth for the innermost list
+    pub math: Option<MathCtx>,          // None = text mode
+    pub text_font: FontStyle,           // default FontStyle::Default (upright)
+    pub math_font: FontStyle,           // default FontStyle::Style(Italic)
+    pub table: Option<TableCtx>,        // & → CellSep, \\ → RowSep when Some
+    pub list: Option<ListCtx>,          // innermost list: kind + same-kind depth + total depth
+    pub float: Option<FloatKind>,       // Figure | Table — for \caption prefix
 }
+#[derive(Clone, Debug)]
+pub struct MathCtx { pub display: bool, pub matrix: bool }
+#[derive(Clone, Debug)]
+pub struct ListCtx { pub kind: ListKind, pub same_kind_depth: usize, pub depth: usize }
+#[derive(Clone, Copy, Debug)] pub enum ListKind { Itemize, Enumerate, Description }
+#[derive(Clone, Copy, Debug)] pub enum FloatKind { Figure, Table }
+#[derive(Clone, Copy, Debug)] pub struct TableCtx;   // marker; fields may come later
 ```
-Derived with `ConcatPieces::with_state(...)` (containers) or passed to re-entrant
-region ops (handlers). Math mode may *also* be read from `node.parsing_state().mode()`
-(techy tracks it), but the downward state is authoritative for rendering because
-options (`math_mode`) affect it.
 
-**Per-run state** (fields of the `TextRenderer` instance, which is constructed fresh
-per conversion; the public `Converter` stays immutable):
-```rust
-struct RunState {
-    diagnostics: techy::error::Diagnostics<Option<String>>,
-    heading_counters: [u32; 7],         // part..subparagraph
-    list_counter_stack: Vec<u32>,       // pushed/popped by list-env handlers around recompose_body
-    footnotes: Vec<Flow>,               // collected notes; markers are 1-based
-    doc_title: Option<Flow>, doc_author: Option<Flow>, doc_date: Option<Flow>,
-}
-```
-Fold order is document order, so counters in `&mut self` are correct. List counters
-live here (not in downward state) because increments must survive across siblings;
-the env handler brackets `cx.recompose_body(...)` with push/pop.
+Initial state: all `None`, fonts as defaulted from `Options`. Math mode is entered by
+the math-group / math-environment handlers (`math: Some(MathCtx { .. })`), never
+inferred from `node.parsing_state()` (options control rendering); parsing state is
+still what makes `^`/`_` parse only in math.
+
+**Per-run state** (fields of `TextRenderer`; one `TextRenderer` per conversion — the
+public `Converter` stays immutable):
+diagnostics collector, `heading_counters: [u32; 7]`, `chapter_seen: bool`,
+`list_counter_stack: Vec<u32>` (pushed/popped by list-env handlers around
+`recompose_body`), `footnotes: Vec<Flow>`, `doc_title/author/date: Option<Flow>`.
+Fold order is document order, so `&mut self` counters are correct.
 
 ---
 
-## 9. The definitions model (`techxt::def`)
+## 9. Conversion semantics (normative behavior)
 
-### 9.1 Definition entries
+### 9.1 Node-kind dispatch (`TextRenderer::recompose_node`)
 
-One entry carries name, parsing arguments, parse-side state deltas, and the text rule:
+- `Chars`:
+  - In a verbatim context (parent group has `GroupType::Verbatim`, or the enclosing
+    environment's techxt spec is flagged verbatim-body): `InlineVerbatim` (from
+    `\verb`) or `Verbatim` (environment body), contents untouched.
+  - In math (per `RenderState::math`, modes Fancy/Plain): strip all whitespace; in
+    Fancy, segment into `MathAtom`s (§9.5); in Plain, emit as `Text` (after font
+    mapping), no atoms.
+  - Otherwise: `flow::from_plain_text`, with the active text font applied to letters
+    (§9.5) before emission. A whitespace-only run containing a blank line →
+    `ParagraphBreak` (this is how techy's paragraph-break Chars nodes render).
+- `Comment`: nothing at all (not even its trailing newline — LaTeX-correct). With
+  `Options::keep_comments = true`: block-separated own line `%<comment text>`.
+- `Group`: math group → §9.5. Verbatim group → `InlineVerbatim` of its raw child.
+  Any other group → transparent `Concat(children)` (no braces in output).
+- `List` → `Concat(children)`.
+- `Callable` → rule dispatch (§10.3) then rule execution (§10.4).
+
+Fixed whitespace policy (no options): macro post-space is invocation syntax, never
+emitted; source whitespace collapses to glue; paragraph breaks normalize to one blank
+line; math ignores source whitespace; verbatim preserves everything.
+
+### 9.2 Sectioning (defs::sectioning)
+
+All seven commands parse as `s o m` named `("star","toctitle","title")`; `toctitle`
+is accepted and ignored. Levels: 0 part, 1 chapter, 2 section, 3 subsection,
+4 subsubsection, 5 paragraph, 6 subparagraph.
+
+Numbering (when the style says numbered): incrementing level L sets
+`counters[L] += 1` and zeroes all deeper counters. `part` has its own counter
+rendered as uppercase Roman and resets nothing. The dotted number for levels 1–4
+joins `counters[first..=L]` with `.`, where `first = 1` if any `\chapter` has
+occurred in this run, else `2`. Starred forms neither increment nor display a number.
+Levels 5–6 are never numbered.
+
+Rendering by `Options::heading_style` (default `NumberedUnderlined`); no uppercasing
+anywhere:
+
+| level | NumberedUnderlined | Underlined | Prefix | Plain |
+|---|---|---|---|---|
+| part | `Part II: Title` underlined `=` | `Title` underlined `=` | `Part: Title` | `Title` |
+| chapter | `3 Title` underlined `=` | `Title` underlined `=` | `Chapter: Title` | `Title` |
+| section | `3.1 Title` underlined `-` | underlined `-` | `§ Title` | `Title` |
+| subsection | `3.1.2 Title` underlined `~` | underlined `~` | `§.§ Title` | `Title` |
+| subsubsection | `3.1.2.1 Title` plain line | plain line | `§.§.§ Title` | `Title` |
+| paragraph / subparagraph | unnumbered plain line | plain line | plain line | `Title` |
+
+Underline = the underline char repeated to `display_width` of the heading line
+(measure via `layout::render_inline`). Headings are block-separated (blank line
+before and after, normalized by layout).
+
+### 9.3 Escapes, spacing, ligatures, accents (defs::base, defs::accents)
+
+`\{ \} \$ \& \# \_ \%` → literal char; `\~{}`-family via accents. `\,` `\;` `\:`
+`\ ` (control space) and escaped newline → one glue; `\!` → nothing; `\quad` →
+`Text("  ")`, `\qquad` → `Text("    ")`. `~` → `Text("\u{00A0}")` (unbreakable by
+construction). Ligature specials (text mode only): `` ` `` `'` → ‘ ’, ``` `` ``` `''`
+→ “ ”, `--` → –, `---` → —, `` !` `` → ¡, `` ?` `` → ¿. `\\`: see §9.7.
+`\par` → `ParagraphBreak`. Accents: combining char appended to the **first base
+character** of the rendered argument (rest unchanged); dotless ı/ȷ → i/j first;
+compose the (base, combining) pair to its NFC form via a generated static table
+(§12.4); empty argument → the standalone spacing form if the table has one, else the
+combining char after a space.
+
+### 9.4 Lists (defs::lists)
+
+Environments `itemize`, `enumerate`, `description`, `list`, `trivlist` (+ accept and
+ignore the `enumitem` optional argument, with an `unsupported-ignored` diagnostic if
+provided). Env handler: derive `ListCtx { kind, same_kind_depth = 1 + count of
+enclosing lists of the same kind, depth = 1 + enclosing depth }`; push `0` onto the
+run counter stack; `cx.recompose_body(...)`; pop; if `depth == 1`, wrap the result in
+`BlockStart(Indent { first: "  ", cont: "  " })`/`BlockEnd`; else emit as-is.
+
+`\item` (parse spec `o` named `label`; defined via the list environments' body delta
+package, plus a top-level fallback definition): handler reads `ListCtx` + counter
+stack and emits `BlockStart(Item { first, cont })` — auto-closed by the next
+item/blockend. Marker selection by `same_kind_depth` d (1-based, cycling through the
+configured arrays):
+- itemize (default `["•", "–", "*", "·"]`): `first = marker + " "`.
+- enumerate (default formats `1.` `(a)` `i.` `A.` — arabic/dot, lower-alpha/parens,
+  lower-roman/dot, upper-alpha/dot): increment top-of-stack counter, format,
+  `first = formatted + " "`.
+- description: `first = render_inline(label) + "  "` (label absent → `"  "`).
+- Explicit `\item[label]` in any list kind uses the label verbatim and does **not**
+  advance the counter.
+`cont` = spaces of `display_width(first)`. A stray `\item` outside any list: warning
+diagnostic `techxt.stray-item` + rendered as `first = "- "`.
 
 ```rust
-pub struct MacroDef { /* name, args: Vec<ArgSpec-ish>, rule: TextRule, modes, after_effect… */ }
-pub struct EnvDef   { /* name, args, body_delta (math/verbatim/item-package), rule */ }
-pub struct SpecialsDef { /* trigger chars, args, rule, modes */ }
+#[non_exhaustive]
+#[derive(Clone, Debug)]
+pub struct ListStyle {
+    pub itemize_markers: Vec<Box<str>>,          // default as above; cycles
+    pub enumerate_formats: Vec<EnumFormat>,      // default as above; cycles
+}
+#[derive(Clone, Copy, Debug)]
+pub struct EnumFormat { pub style: CounterStyle, pub wrap: CounterWrap }
+#[derive(Clone, Copy, Debug)]
+pub enum CounterStyle { Arabic, LowerAlpha, UpperAlpha, LowerRoman, UpperRoman }
+#[derive(Clone, Copy, Debug)]
+pub enum CounterWrap { Dot, Parens }             // "1." vs "(a)"
 ```
-Builder-style constructors, e.g.:
+
+### 9.5 Math (`techxt::mathfmt` + defs::mathcore/mathenvs/subsuperscripts)
+
+`MathMode` (exactly three): **`Fancy`** (default), **`Plain`** (same database-driven
+conversion — unicode symbols, scripts with unicode-or-fallback incl.
+`math_expression_in` wrapping, font alphabets — source whitespace ignored, but no
+atom joiner: outputs concatenate directly), **`Source`** (re-emit the math subtree as
+LaTeX via `SourceRecomposer`: inline → `InlineVerbatim`, display → `Verbatim` block).
+Display = `math_form() == Display` or a math environment; display output in
+Fancy/Plain is wrapped in `BlockStart(Indent { first: "    ", cont: "    " })`.
+
+**Fonts (full model, separate stacks):** `text_font` and `math_font` in
+`RenderState`, derived independently by style macros; nesting composes and restores
+automatically. Three-valued:
 ```rust
-MacroDef::new("frac")
-    .args([("m", "num"), ("m", "den")])          // pylatexenc-style codes + REQUIRED names
-    .rule(TextRule::template("{num}/{den}"))      // parsed & validated here
-MacroDef::symbol("alpha", "α")                    // shorthand: zero args + Literal
-EnvDef::new("equation").math_body().rule(TextRule::handler(EquationHandler))
+#[derive(Clone, Copy, Debug)]
+pub enum FontStyle { Disabled, Default, Style(FontStyleKind) }
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug)]
+pub enum FontStyleKind { Bold, Italic, BoldItalic, Script, BoldScript, Fraktur,
+    BoldFraktur, DoubleStruck, SansSerif, SansSerifBold, SansSerifItalic,
+    SansSerifBoldItalic, Monospace }
 ```
-Every argument in techxt's own database gets a **name** (settled: named access
-everywhere). Registration converts each entry into a techxt spec object:
+`Disabled` disables alphabet mapping and stays disabled through style macros.
+`Default` = upright in text, and in math means "use `Options::math_font`". Mapping
+applies to ASCII letters only, at chars leaves, via the offsets + exception tables
+ported from v3 (`_fmt_math_style_offsets`, `_fmt_math_style_exceptions`). `\emph`
+toggles italic relative to the enclosing text style; `\text{}`/`\mbox{}` switch mode
+only; math font macros in text mode set the text style.
+
+**Fancy engine** (port from v3, `latex2text/__init__.py` ≈1067–1954):
+```rust
+#[derive(Clone, Debug)]
+pub struct Atom { pub body: AtomBody, pub cls: (AtomClass, AtomClass),
+                  pub script: Option<ScriptInfo> }
+#[derive(Clone, Debug)]
+pub enum AtomBody { Str(Box<str>),
+    Wrappable { inner: Box<str>, prefix: Box<str> },   // decides wrapping at join time
+    Block(MathBox) }                                   // matrices
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AtomClass { Ord, Op, Bin, Rel, Open, Close, Punct, OpenEnd, Text, Script, Block }
+#[derive(Clone, Debug)]
+pub struct MathBox { pub lines: Vec<Box<str>>, pub baseline: usize }
+pub fn segment_plain(s: &str, upright_letters_are_op: bool) -> Vec<Atom>;
+pub fn join_atoms(atoms: Vec<Atom>, display: bool) -> MathBox;
+```
+Port faithfully: segmentation (`_segment_plain_str` — ≥2 upright latin letters → one
+`Op`; digit runs with one decimal point → one `Ord`; the explicit bin/rel/open/close/
+punct/op char tables; everything else per-char `Ord`; `|` and `/` unclassified);
+the joiner (`_join_math_pieces` — realize against neighbors, drop empties,
+unary-minus reclassification, script class propagation, the seven spacing rules of
+`_math_needs_space`, no doubled spaces, scripts attach spaceless with retroactive
+space before a `^`-notation fallback's base, superscript-then-subscript swapped so
+the subscript binds first); wrappables (`needs_wrapping`: second script on the same
+base, contains a space, or open-ended contents; wrapped in `Options::
+math_expression_in` delimiters — `Parens` default, `Braces`, `Custom(open, close)`,
+`None`). Rule outputs (Literal/Template strings) produced inside math are run through
+`segment_plain`, exactly as v3 segments `simplify_repl` output.
+
+Sub/superscripts: `^`/`_` registered as specials with one expression argument, math
+mode only (text mode: literal chars — mode-restricted registration). Renderer ladder:
+(1) unicode script chars (port `_fmt_superscript_chars`/`_fmt_subscript_chars` and
+the math-alphabet inverse normalization); (2) retry with joiner-inserted spaces
+stripped; (3) fallback `^(…)`/`_(…)` wrappable with `script_latex_notation` behavior.
+`\frac` → wrappable `num/den`; `\sqrt` (arg `o` named `index`, `m` named `radicand`)
+→ `√`, index `3` → `∛`, `4` → `∜`, other index rendered before the radical;
+`\operatorname` + operator-name macros → `Op` literals.
+
+**Math environments** (`equation(*)`, `align(*)`, `gather(*)`, `multline(*)`,
+`eqnarray(*)`, `split`, `dmath(*)`; `subequations` renders its body): math body via
+techy body delta; rendered as display math. Inside them `\\` → `HardBreak` (new
+display line), `&` → nothing (the joiner spaces relations).
+
+**Matrices** (`matrix/pmatrix/bmatrix/Bmatrix/vmatrix/Vmatrix/smallmatrix` +
+`array` with its colspec argument ignored): body folded with `MathCtx.matrix = true`
+(there `&` → `CellSep`, `\\` → `RowSep`); split at separators into rows × cells; each
+cell joined via the math pipeline and rendered single-line; columns right-justified
+to per-column width (`display_width`); cells joined by two spaces.
+- **Inline math** → single-line `Str` atom: `[ <row>; <row> ]` with the env's plain
+  delimiter pair (`matrix` has none: `<row>; <row>`), atom class `(Open→…→Close)` /
+  `Block` semantics as in v3.
+- **Display math** → `Block(MathBox)`: one line per row; delimiters per
+  `Options::matrix_delimiters` — **`Unicode` (default)**: multi-row pieces
+  (parens `⎛⎜⎝`/`⎞⎟⎠`, brackets `⎡⎢⎣`/`⎤⎥⎦`, braces `⎧⎨⎩`/`⎫⎬⎭`, vert `│`,
+  double-vert `‖`; one-row matrices use the plain chars); **`Ascii`**: the plain
+  delimiter char repeated on every row. `MathBox.baseline = (rows - 1) / 2`.
+- Multi-row boxes compose with surrounding display content by a **2D baseline
+  join**: pad every piece to the common height, align baselines, concatenate
+  row-wise; joiner spacing applies on the baseline row, other rows get spaces of the
+  same width. Only matrices produce multi-row boxes in v1.
+- Empty matrix → `[ ]` (no panic).
+
+**Flow boundary:** the math-group / math-env handler collects the folded atoms, runs
+`join_atoms`, and converts the result: inline single-line → `Text`/`Glue` split at
+the joiner's spaces (long formulas may wrap there); display → the box's lines emitted
+as `Verbatim` lines inside the display indent block (wrap never touches them).
+`MathAtom` items never escape to layout.
+
+### 9.6 Tables (defs::tables)
+
+`tabular`/`tabular*`/`tabularx` (leading width args parsed and ignored; colspec arg
+`m` named `colspec`): handler sets `table: Some(TableCtx)` for the body fold; splits
+the resulting flow at `CellSep`/`RowSep`/`RuleMark` into rows/cells/rules; renders
+cells via `layout::render_inline`; alignment letters parsed from the colspec's plain
+text — `l`/`c`/`r` honored (`c`: centered by padding, left-biased on odd), `p{…}`/
+`X` → `l`, `|`/`@{…}`/`!{…}`/`>{…}`/`<{…}` ignored; missing/extra letters default
+`l`. Columns padded to per-column width, joined by two spaces; `\hline`/`RuleMark`
+→ one line of `-` repeated to the full table width; rows are `HardBreak`-separated
+lines inside a block. `\multicolumn{n}{a}{content}`: render `content` in its cell,
+ignore the span, one `unsupported-ignored` diagnostic per table. `\cline{range}`:
+treated as `\hline`.
+
+### 9.7 Context-dependent specials (`&`, `\\`, `\hline`)
+
+| context | `&` | `\\` |
+|---|---|---|
+| table body (`table.is_some()`) | `CellSep` | `RowSep` |
+| math, `matrix == true` | `CellSep` | `RowSep` |
+| math, non-matrix (align etc.) | nothing | `HardBreak` (display) / `Glue` (inline) |
+| text, no table | `Glue` + warning `techxt.misplaced-alignment` | `HardBreak` |
+
+`\\` parse spec: star (`s` named `star`) plus, **iff** techy's optional-group parser
+supports refusing pre-space (check `techy::core::constructs::
+OptionalGroupArgumentParser` for such a knob), an optional `[len]` argument parsed
+with that knob and ignored; if techy has no such knob, `\\` takes the star only
+(documented limitation — this mirrors why v3 needed `optional_arg_no_space`).
+`\hline`: `RuleMark` in table context; elsewhere skip + `unsupported-ignored`.
+
+### 9.8 Everything else (defaults; all in the defs library)
+
+- **Footnotes** (`FootnoteStyle`, default `Collected`): `\footnote` (args `o` named
+  `mark`, `m` named `note`) emits `Text("[n]")` directly adjacent to preceding
+  content (no glue before), n = 1-based collection index; note flow is collected.
+  After the root fold, if any notes: `ParagraphBreak`, a line `---`, then each note
+  as `Item { first: "[n] ", cont: spaces }`. `Inline` variant: `[` note `]` at the
+  call site. `Skip`: nothing.
+- **Refs/citations**: `\ref`/`\autoref`/`\cref`/`\vref`/`\pageref` → `<ref>`;
+  `\Cref` → `<Ref>`; `\eqref` → `(<ref>)`; `\cite`/`\citet`/`\citep` + natbib
+  variants → `<cit.>`; `\label` → nothing (arg parsed, discarded).
+- **Links**: `\url` (verbatim arg `url`) → `<url>`; `\href{url}{text}` (url arg
+  verbatim-parsed) → `text <url>`.
+- **Graphics**: `\includegraphics` (`o`,`m`) → placeholder block
+  `< g r a p h i c s >` as `Indent { first: "    ", cont: "    " }` (spaced-out
+  letters, per v3's search-index rationale).
+- **Titling**: `\title`/`\author`/`\date` store rendered flow in run state (arg
+  content rendered at definition site); `\maketitle` emits, block-separated:
+  title line, `    ` + author line, `    ` + date line, then `=` repeated to the max
+  `display_width` of the three lines. Missing title/author → `<no title>` /
+  `<no author>`; missing date → `\today` resolution. `\today` → `Options::today`
+  string if set, else `<today>`.
+- **`\input`/`\include`** (`m` named `filename`, chars-parsed): render the
+  `attached` slot; slot absent → nothing + `techxt.input-not-resolved` (note
+  severity).
+- **Verbatim** (`verbatim(*)`, `lstlisting` with its `o` options arg ignored,
+  `alltt`): `VerbatimBehavior` parse-side; body → `Verbatim` block. `\verb` →
+  `InlineVerbatim`.
+- **Blocks**: `center`/`flushleft`/`flushright` → body as its own block, no indent
+  (no centering simulation); `quote`/`quotation`/`verse` →
+  `Indent { first: "    ", cont: "    " }`; `abstract` → line `Abstract` (plain,
+  block-separated) then body in a 4-space indent block; `figure(*)`/`table(*)` →
+  body rendered, `float` state set to `Figure`/`Table`; `\caption` → own paragraph
+  `Figure: <content>` / `Table: <content>` / `Caption: <content>` (by `float`
+  state); theorem environments (`theorem`, `proposition`, `lemma`, `corollary`,
+  `definition`, `conjecture`, `remark`, `example`, `proof` and short aliases `thm`,
+  `prop`, `lem`, `cor`, `defn`, `rem`; all with `o` named `note`) → own paragraph
+  starting `Theorem. ` or `Theorem (note). ` (capitalized full word from a fixed
+  alias table; `proof` ends with an appended ` □`), body inline after the label.
+- **Misc**: `\texorpdfstring{tex}{pdf}` → first argument; `\phantom`/`\hspace` →
+  nothing; `\vspace` → `ParagraphBreak`; `\mbox`/`\text` → argument in text mode;
+  `\ensuremath` → argument in math mode; over/under decorations (`\overline`,
+  `\underline`, `\widehat`, arrow/brace/bracket variants — the v3 list) → argument
+  unchanged; `\smallskip`/`\medskip`/`\bigskip` → `ParagraphBreak`;
+  `\noindent`/`\centering`/`\raggedright`/`\raggedleft` → nothing.
+- **Preamble** (parse + discard so arguments never leak): `\documentclass`,
+  `\usepackage`, `\newcommand`/`\renewcommand`/`\providecommand`/`\def`-lite
+  (`\newcommand` parse spec `s m o o m`), `\newenvironment`(+`s`),
+  `\(re)newtheorem`, `\setlength`, `\addtolength`, `\pagestyle`, `\thispagestyle`,
+  `\hypersetup`, `\graphicspath`, `\bibliographystyle`, `\bibliography` →
+  arguments consumed, rule `Skip` (no diagnostic — they are *known*).
+
+---
+
+## 10. Definitions model (`techxt::def`)
+
+### 10.1 Entries and builders
 
 ```rust
-pub struct TechxtMacroSpec       { args: Vec<Arc<ArgumentSpec<Latexlike>>>, rule: TextRule, .. }
-pub struct TechxtEnvironmentSpec { .. }   // wraps EnvironmentSpec behavior incl. VerbatimBehavior
-pub struct TechxtSpecialsSpec    { .. }
+pub struct MacroDef { .. }     // + EnvDef, SpecialsDef
+impl MacroDef {
+    pub fn new(name: impl Into<Box<str>>) -> Self;
+    pub fn symbol(name: impl Into<Box<str>>, replacement: impl Into<Box<str>>) -> Self; // 0 args + Literal
+    pub fn arg(self, code: &str, name: &str) -> Self;   // pylatexenc code + REQUIRED name
+    pub fn star(self) -> Self;                          // = .arg("s", "star")
+    pub fn rule(self, rule: TextRule) -> Self;
+    pub fn text_mode_only(self) -> Self / pub fn math_mode_only(self) -> Self;
+}
+impl EnvDef {
+    pub fn new(name) / arg(code, name) / rule(rule);
+    pub fn math_body(self) -> Self;                     // body delta → Mode::Math
+    pub fn verbatim_body(self) -> Self;                 // VerbatimBehavior
+    pub fn list_body(self, kind: ListKind) -> Self;     // body delta injects the \item package
+}
+impl SpecialsDef { pub fn new(chars) / arg(code, name) / rule(rule) / text_mode_only / math_mode_only; }
 ```
-each implementing `techy CallableSpec<Latexlike>` (delegate parsing to the standard
-argument machinery; `Any` supertrait makes the embedded rule reachable by downcast).
-These types are public (all-layers-public decision) but most users never touch them.
+Every argument in techxt's own database is named. `Category::new(name)` +
+`add_macro/add_env/add_specials` (and `with_*` chaining variants);
+`DefinitionSet::new()` + `push(Category)`.
 
-### 9.2 Categories and sets
+### 10.2 Building
+
+`DefinitionSet` builds (at `ConverterBuilder::build()` time): one techy `Package` per
+category pushed in list order — techy resolution is innermost-first, so **later
+categories shadow earlier ones** (document prominently; this inverts pylatexenc);
+the parsing state (`ParsingState::lang_initial_with_packages`); and the name-keyed
+fallback rule table. All validation happens here and surfaces as `BuildError`
+(`#[non_exhaustive]`): `Template(TemplateError)` (with definition name + offending
+template), `ArgCode(...)` (techy `ArgumentCodeError` passthrough),
+`DuplicateCategory(name)`, `State(...)` (techy `FinalizeError`). Spec objects:
 
 ```rust
-pub struct Category { name: &'static str, macros: Vec<MacroDef>, envs: …, specials: … }
-pub struct DefinitionSet { categories: Vec<Category> }   // ordered; later = higher priority? NO:
+pub struct TechxtMacroSpec { /* args, rule: TextRule, .. */ }   // + Environment, Specials
 ```
-Priority model: a `DefinitionSet` builds **one techy `Package` per category**, pushed
-onto the scope stack in order — techy's innermost-first resolution means categories
-added *later* shadow earlier ones (document this clearly; it inverts pylatexenc's
-first-category-wins). `DefinitionSet::to_parsing_state()` produces the
-`ParsingState` for `Language::new`. Users extend by `set.push(category)` or by
-registering into their own category.
+implementing techy `CallableSpec<Latexlike>` (delegate argument parsing to techy's
+standard machinery; the `Any` supertrait exposes the embedded rule to dispatch).
+`TechxtEnvironmentSpec` records body kind (normal / math / verbatim / list(kind)) so
+render-side detection (§9.1, §9.4) never guesses.
 
-### 9.3 Text-rule dispatch at render time (settled — hybrid)
+### 10.3 Rule dispatch (per callable node, in order)
 
-For each `Callable` node, in order:
-1. **Override map**: `Converter`-level `HashMap<(CallableKind, Box<str>), TextRule>`
-   set via `ConverterBuilder::override_macro("section", rule)` etc. — cheap per-name
-   render overrides without touching parsing and without writing a wrapping recomposer.
-2. **Embedded rule**: downcast `node.spec()` to a techxt spec type; use its rule.
-3. **Name fallback table**: `(kind, name) → TextRule`, auto-populated from the same
-   `DefinitionSet` at converter build time — covers trees parsed with plain-techy
-   (foreign) specs.
-4. **Unknown policy** (§12).
+1. **Override map** — `ConverterBuilder::override_macro/environment/specials(name,
+   TextRule)`, keyed `(CallableKind, name)` where
+   `pub enum CallableKind { Macro, Environment, Specials }`.
+2. **Embedded rule** — downcast `node.spec()` to a techxt spec type.
+3. **Name fallback table** — from the `DefinitionSet` (covers foreign/plain-techy
+   trees).
+4. **Unknown policy** (§10.5).
 
-### 9.4 `TextRule`
+### 10.4 `TextRule` and execution
 
 ```rust
 #[non_exhaustive]
 pub enum TextRule {
-    Literal(Cow<'static, str>),   // run through flow::from_plain_text (and math segmentation in math)
-    Template(Template),           // compiled, validated (§9.5)
-    Skip,                         // emit nothing (the explicit pylatexenc discard=True)
-    Content,                      // macros: render provided arguments' content in order;
-                                  // environments: render body; specials: emit trigger chars
+    Literal(Cow<'static, str>),
+    Template(Template),
+    Skip,
+    Content,
     Handler(Arc<dyn TextHandler>),
 }
 pub trait TextHandler: Send + Sync + core::fmt::Debug {
@@ -500,428 +764,312 @@ pub trait TextHandler: Send + Sync + core::fmt::Debug {
         -> Result<Flow, RenderError>;
 }
 ```
-`RenderCx` (borrowing the `TextRenderer` + techy `RecomposeContext`) offers:
-`arg(name) -> Result<Option<Flow>, …>` (render argument content by name),
-`arg_provided(name) -> bool`, `arg_plain_text(name)` (via `extract::content_as_chars`
-for URLs/labels), `body() -> Flow`, `attached() -> Option<Flow>`, `state() ->
-&RenderState`, `with_state(new, f)` for derived-state sub-renders, `options()`,
-`run_mut()` (footnotes/counters/title), `warn(condition, span)`,
-`source_of(node) -> String` (payload-based, via techy's `SourceRecomposer`), and
-flow construction helpers. Rules producing plain strings in math mode are segmented
-into atoms by the math engine (§10.5), exactly as v3 segments `simplify_repl` output.
+Execution semantics: `Literal` → `flow::from_plain_text` (segmented into math atoms
+when in Fancy math). `Template` → substitute (below), same text treatment.
+`Skip` → empty. `Content` → macros: provided arguments' content rendered in
+declaration order, concatenated with nothing inserted; environments: the body;
+specials: the trigger characters as text. `Handler` → call; on `Err`, emit
+`techxt.handler-failed` (error severity) and render nothing (conversion continues).
 
-### 9.5 Template mini-language (settled, incl. one conditional form)
+`RenderCx` public methods (complete):
+`arg(name) -> Result<Option<Flow>, RenderError>`, `arg_at(index) -> ...`,
+`arg_provided(name) -> bool`, `arg_text(name) -> Result<Option<String>, RenderError>`
+(= `render_inline` of the arg's flow), `arg_with_state(name, RenderState)`,
+`body()`, `body_with_state(RenderState)`, `attached() -> Result<Option<Flow>, _>`,
+`state() -> &RenderState`, `options() -> &Options`,
+`source_of(node) -> Result<String, RenderError>` (via `SourceRecomposer`),
+`diag(Diagnostic<Option<String>>)`, `set_doc_title/author/date(Flow)`,
+`doc_title/author/date() -> Option<&Flow>`, `push_footnote(Flow) -> usize`.
+Crate-internal handlers may use additional `pub(crate)` accessors (heading counters,
+list counter stack) — mechanical.
 
-Compact strings parsed **at registration** into typed segments; every reference
-validated against the entry's argument names (unknown name, out-of-range index,
-`{body}` on a macro, nested conditional → `Err` at registration, never at render).
+`RenderError` (`#[non_exhaustive]`): `Region { detail }` (wraps techy
+`RecomposeError` variants from region ops), `Handler { construct, detail }`.
+`TextRenderer`'s `Recomposer::Error = core::convert::Infallible`: all rule/handler
+errors are converted to diagnostics inside `recompose_node` (render nothing,
+continue). The only fold abort is techy's descent limit; conversions map it to a
+`techxt.render-aborted` error diagnostic with empty text output.
 
-Syntax:
-- `{name}` — converted content of the named argument (absent optional → empty).
-- `{1}` — 1-based index (allowed, discouraged; techxt's own DB uses names only).
-- `{body}` — environment body (environments only).
-- `{?name:then|else}` — IfPresent conditional: if argument `name` was provided,
-  render the `then` segment sequence, else `else`. `|else` may be omitted. Branches
-  may contain `{...}` references but not nested conditionals. Literal `|` inside a
-  branch is not supported (use a Handler).
-- `{{` and `}}` — literal braces.
+### 10.5 Template mini-language
 
-Typed form:
-```rust
-pub struct Template(Vec<Seg>);
-enum Seg { Str(Box<str>), Arg(ArgRef), Body,
-           IfPresent { arg: ArgRef, then: Vec<Seg>, els: Vec<Seg> } }
+Parsed and validated at build time against the entry's argument names. Grammar:
+
 ```
-
----
-
-## 10. Conversion semantics
-
-### 10.1 Node-kind dispatch (the `TextRenderer::recompose_node` skeleton)
-
-- `Chars`: whitespace-only run containing a blank line → `ParagraphBreak`; otherwise
-  `flow::from_plain_text` (words + glue). In math mode: strip all whitespace and
-  segment into math atoms (§10.5). Apply the active font style (§10.5) to letter
-  mapping at this leaf level. In a verbatim parsing context (raw `Chars` under a
-  verbatim group/env — detectable via the parent group type / env spec), emit
-  `Verbatim`/`InlineVerbatim` instead, untouched.
-- `Comment`: default `Skip` (contributes nothing, including its trailing newline —
-  LaTeX-correct). With `Options::keep_comments`, emit the comment text as its own
-  hard line (`% …` + HardBreak).
-- `Group`: math group → math handling (§10.5). Verbatim group (`\verb`) →
-  `InlineVerbatim` of its raw child. Other groups → transparent
-  `Concat(children)` (no braces in output; `keep_braced_groups` is deliberately gone).
-- `List` → `Concat(children)`.
-- `Callable` → rule dispatch (§9.3), executing the rule (§9.4).
-
-Whitespace/paragraph policy is **fixed** (settled, no knobs): macro post-space is
-invocation syntax and never emitted; source whitespace runs collapse to glue;
-paragraph breaks normalize to one blank line; math ignores source whitespace;
-verbatim preserves everything.
-
-### 10.2 Escapes, spacing macros, ligatures, accents (in `defs::base`, `defs::accents`)
-
-Port the v3 inventories: `\{ \} \$ \& \# \_ \% \~`, `\,`/`\;`/`\:`/`\ ` → space,
-`\!` → nothing, `\quad`/`\qquad`, `\\` → `HardBreak` (parse spec `*[` with
-no-pre-space optional, as in pylatexenc), ligature specials (`` ` `` `''` `--` `---`
-`!`` ` `?`` ` → unicode), `~` → no-break: render as `Text("\u{00A0}")` or as glue that
-never breaks — use NBSP text (simplest; unbreakable by construction). Accent macros:
-combining char appended to the **first base char** of the rendered argument, dotless
-ı/ȷ mapped to i/j, then NFC-normalize *that pair only* via a small built-in
-composition table (no unicode-normalization dependency; a table of the ~200
-accent+base→composed pairs occurring in the accents set is generated with the symbols
-script, §11.4).
-
-### 10.3 Sectioning (`defs::sectioning`) — settled defaults
-
-Parse spec `s o m` named `("star","toctitle","title")` for all seven levels. Handler:
-increment heading counters (unless starred), reset deeper counters, render as a block:
-number (`2.3`) + title line, underlined (`=` part/chapter, `-` section, `~`
-subsection) with underline length = display width of the heading line; deeper levels
-(subsubsection and below) render as an indented plain heading line. No uppercasing.
-`HeadingStyle` option: `NumberedUnderlined` (default) | `Underlined` | `Prefix`
-(§/§.§ style) | `Plain`.
-
-### 10.4 Lists (`defs::lists`) — settled design
-
-- `itemize`/`enumerate`/`description`/`list`/`trivlist` (+ `enumitem` arg accepted
-  and ignored in v1). Env handler: derive downward `ListCtx { kind, same_kind_depth }`,
-  push `0` onto `run.list_counter_stack`, `cx.recompose_body(...)`, pop, wrap the
-  result between `BlockStart(Indent…)`/`BlockEnd` (outermost list only gets the
-  2-space indent, per v3).
-- `\item` (defined inside list bodies via the env's body delta, techy-style; plus a
-  global fallback def): handler reads `ListCtx` + counter stack; emits
-  `BlockStart(Item { first: marker_prefix, cont: aligned_spaces })`. Markers by
-  same-kind depth: itemize `• – * ·` (cycle), enumerate `1.` `(a)` `i.` `A.`
-  (arabic/alph/roman/Alph formatters), description: the rendered `\item[label]`
-  followed by two spaces. Explicit `[label]` replaces the marker and does **not**
-  advance the counter. Item blocks auto-close at the next `Item`/`BlockEnd` (§6).
-  A stray `\item` outside any list: warn + render as a dashed item.
-- `ListStyle` option to customize marker sets (implementer: simple struct of arrays).
-
-### 10.5 Math (`techxt::mathfmt` + `defs::math*`) — settled: full fancy engine in v1
-
-`MathMode` option (settled — exactly three modes, at least initially; v3's
-`text`/`with-delimiters`/`remove` are deliberately not ported):
-- **`Fancy` (default)** — the full engine below.
-- **`Plain`** — content is converted through the same definitions database (unicode
-  symbols, sub/superscripts with unicode-or-`^(…)` fallback incl. the
-  `math_expression_in` wrapping, font alphabets), and source whitespace is ignored
-  exactly as in Fancy — but the atom-class joiner is **not** active: rule outputs
-  concatenate directly with no inserted spacing (`$a + b$` → `a+b`,
-  `$\sin(x + y)$` → `sin(x+y)`). Note this is *not* v3's `text` mode (which kept
-  source whitespace).
-- **`Source`** — re-emit the math subtree as LaTeX via the payload-based
-  `SourceRecomposer`: inline math stays inline, display math becomes a verbatim block.
-
-Display detection: `math_form() == Display` or math environment. Display output is an
-indented block (4 spaces) in `Fancy`/`Plain`.
-
-Fancy engine — port from v3 (`pylatexenc/latex2text/__init__.py`, lines ≈1067–1954):
-- `Atom { text: Box<str>, cls: (AtomClass, AtomClass), flags }` with
-  `AtomClass = Ord|Op|Bin|Rel|Open|Close|Punct|OpenEnd|Text|Script|Block` (v3's set).
-- Plain-string segmentation `_segment_plain_str`: ≥2 upright latin letters → one `Op`
-  atom (only when letters are upright, i.e. font mapping left them ASCII); digit runs
-  with decimal point → one `Ord`; explicit character tables for bin/rel/open/close/
-  punct/op chars (port v3's tables verbatim; `|` and `/` deliberately unclassified).
-- The joiner `_join_math_pieces`: realize against neighbors; drop empty pieces;
-  unary-minus reclassification; script class propagation; the seven spacing rules of
-  `_math_needs_space` (space around bin/rel and openend, around op/text except at
-  delimiters, after punct, between adjacent digits); no double spaces; scripts attach
-  with no space, retroactive space before the base of a `^`-notation fallback script;
-  superscript-then-subscript pairs swapped so the subscript binds first.
-- Wrappable atoms (v3 `_MathWrappablePiece`): carry unwrapped/wrapped renderings and
-  decide at join time (`needs_wrapping`: another script on the same base, contains a
-  space, contents open-ended). `math_expression_in` option: `Parens` (default, per
-  v3) | `Braces` | custom `(open, close)` | `None`.
-- Sub/superscripts: `^`/`_` as specials taking one expression argument **in math mode
-  only** (text mode: literal chars — parse-side handled by mode-restricted
-  registration, techy `insert_specials_in_modes`). Renderer: try unicode script
-  chars (port `_fmt_superscript_chars`/`_fmt_subscript_chars` tables + the
-  math-italic→ASCII normalization inverse table), retry with joiner-inserted spaces
-  stripped, else fall back to `^(…)` wrappable. 
-- Font alphabets (settled: **full model with separate math and text style stacks**):
-  port `_fmt_math_style_offsets` + `_fmt_math_style_exceptions` (13 styles +
-  reserved-codepoint exceptions). `RenderState` carries two independent style
-  contexts, `text_font` and `math_font`; each style macro derives the appropriate one
-  via downward state, so nesting composes and restores automatically
-  (`\textit{a $\mathbf{x + \text{[b]}}$ c}` restores the outer italic after the
-  math group and after `\text{}`). Three-valued semantics per stack: a style /
-  upright-default / disabled (a disabled stack stays disabled through style macros).
-  Applied at chars leaves. `\emph` toggles relative to the enclosing text style;
-  `\text{}`/`\mbox{}` switch mode only, never style; math font macros used in text
-  mode set the text style (v3 behavior).
-- `\frac` → wrappable `{num}/{den}` handler; `\sqrt` handler (`√`, `∛`, `∜`, symbolic
-  degree prefixed); `\operatorname`, operator-name macros as `Op` literals.
-- Math environments (`equation(*)`, `align(*)`, `gather(*)`, `multline(*)`,
-  `eqnarray(*)`, `split`, `subequations`, `dmath(*)`): math body via techy body delta;
-  render via the math pipeline as display blocks; `&` in math context → alignment
-  glue (two spaces), `\\` → HardBreak within the display block.
-- Matrices (`matrix/pmatrix/bmatrix/vmatrix/Vmatrix/smallmatrix` + `array`): block
-  atoms — split body flow at CellSep/RowSep (the `&`/`\\` rules emit these when the
-  math-matrix context is set), render cells, measure with `display_width`,
-  right-justify. Presentation is **context-dependent (settled)**:
-  - **Inline math** → single-line form: cells joined `' '`, rows joined `'; '`,
-    wrapped in the env's delimiters (`[ 1 2; 3 4 ]`).
-  - **Display math** → true multi-line layout: one output line per matrix row,
-    columns right-justified and joined with two spaces. Delimiters per
-    `Options::matrix_delimiters` (settled: **`Unicode` is the default**, `Ascii`
-    disables the bracket art): `Unicode` draws multi-row bracket pieces — parens
-    `⎛⎜⎝`/`⎞⎟⎠`, brackets `⎡⎢⎣`/`⎤⎥⎦`, vert `│`, double-vert `‖`; a one-row matrix
-    uses the plain single characters. `Ascii` repeats the plain delimiter character
-    (`(`,`[`,`|`,…) on every row.
-  - Multi-row pieces compose with surrounding display content via a simple **2D
-    baseline join**: every math piece is a rectangle of lines with a baseline
-    (single-line pieces: height 1; matrices: the middle row). Joining pads pieces to
-    the common height, aligns baselines, and concatenates row-wise; the joiner's
-    spacing rules apply on the baseline row (so `A = ⎛…⎞` aligns `A =` with the
-    matrix's middle row). Only matrices produce multi-row pieces in v1.
-  - Empty matrix → `[ ]` (no panic — v3 crashes on `max()` of empty).
-
-### 10.6 Tables (`defs::tables`) — settled: basic aligned tables in v1
-
-`tabular`/`tabular*`/`tabularx` (extra width args parsed and ignored): env handler
-sets `in_table` downward state; `&` → `BlockKind::CellSep`, `\\` → `RowSep`, `\hline`
-→ a marker the handler turns into a dashed rule; handler folds body, splits flow at
-separators into rows×cells, lays each cell out (single-line, no wrap), pads to column
-widths (`display_width`), aligns per column-spec letters `l`/`c`/`r` (parse the
-colspec argument's plain text; ignore `|`, `@{…}`, `!{…}`, `p{…}`→`l`), joins with
-two spaces, emits rows as HardBreak-separated lines inside a block. `\multicolumn`:
-render content into its cell, ignore the span (accepted, warned once). Out of scope
-(document as such): row/column spans, width-budgeted cell wrapping, booktabs styling.
-
-### 10.7 Footnotes, refs, links, graphics, misc (settled defaults)
-
-- `\footnote` (arg names `("o","mark")`, `("m","note")`): default `FootnoteStyle::
-  Collected` — emit `[n]` marker (n = `run.footnotes.len()+1`), push rendered note;
-  after the root fold, if footnotes were collected, append `--- ` rule block + one
-  `Item`-style block per `[n] note`. Also `Inline` and `Skip` variants.
-- `\ref/\autoref/\cref` → `<ref>`, `\Cref` → `<Ref>`, `\eqref` → `(<ref>)`,
-  `\cite/\citet/\citep` + natbib set → `<cit.>`; `\label` → `Skip`. (Label/ref
-  resolution is future work, §17.)
-- `\url` (verbatim arg named `url`) → `<url>`; `\href{url}{text}` → `text <url>`.
-- `\includegraphics` → placeholder block `< g r a p h i c s >` (keep v3's spaced-out
-  letters rationale: avoids polluting search indexes with the word "graphics").
-- `\title/\author/\date` store rendered flow in run state; `\maketitle` renders
-  title/author/date lines + `=` rule sized by display width; missing pieces render
-  placeholders (`<no title>` …); `\today` → `Options::today` string or `<today>`.
-- `\input`/`\include` (arg `("m","filename")` with chars-name parsing): render the
-  `attached` slot via `cx.recompose_slot_content_named("attached", …)`; if the slot
-  is absent (no resolver configured), emit nothing + info diagnostic.
-- `verbatim`/`verbatim*`/`lstlisting` environments: `VerbatimBehavior` parse-side;
-  render body raw as `Verbatim` block (lstlisting options arg parsed & ignored).
-  `\verb` → `InlineVerbatim`.
-- `center`/`flushleft`/`flushright`/`quote`/`quotation` → simple indent blocks
-  (centering not simulated in v1); `figure`/`table`(+`*`) → render body;
-  `\caption` → render its content on its own line prefixed `Figure: `/`Table: `?
-  — v1: render content as own paragraph (implementer's choice on prefix); `abstract`
-  → indented block; theorem envs (`theorem`,`lemma`,… + short aliases, optional
-  title arg) → block starting `Theorem (title). ` style.
-- `\texorpdfstring` → second argument; `\phantom`/`\hspace` → nothing; `\vspace` →
-  ParagraphBreak; `\mbox`/`\text`/`\textrm…` per font-style rules.
-
----
-
-## 11. The default definitions library (`techxt::defs`)
-
-### 11.1 Organization (settled: Rust modules, no cargo features)
-
-One module per category; each exposes `pub fn category() -> Category`. A convenience
-`defs::standard() -> DefinitionSet` assembles the standard set (everything below
-except `natbib` extras? — no: include everything listed; users wanting less assemble
-manually). Dead-code elimination trims whatever a user never references; the
-`standard()` function is the only item referencing all categories.
-
-Module list (target contents; counts are pylatexenc-order-of-magnitude):
-`base` (escapes, spacing, ligatures, quotes/dashes, `\\`, misc text macros),
-`accents`, `fontstyles` (`\textbf`… `\mathbb`… `\emph`, `\operatorname`),
-`sectioning`, `lists`, `paragraphs` (`\par` → ParagraphBreak — v3 forgot it),
-`mathcore` (Greek, operators, common symbols, `\frac`, `\sqrt`, brakets, arrows,
-dots, delimiters), `mathenvs` (equation family + matrices), `subsuperscripts`,
-`verbatim`, `tables`, `theorems`, `refs`, `links`, `graphics`, `titling`
-(`\title`/`\maketitle`/`\today`), `preamble` (`\documentclass`, `\usepackage`,
-`\newcommand` & friends — parse specs so arguments are consumed, rule `Skip`),
-`inputs` (`\input`/`\include`), `natbib`, `symbols_extra` (the ~1000-entry
-auto-generated long tail).
-
-### 11.2 Parse-side inventory
-
-Port the union of pylatexenc v3's `latexwalker/_defaultspecs.py` (≈200 macros,
-43 environments, 8 specials + `\n\n`+`^`+`_`) — with named arguments added to every
-entry techxt renders, and including entries v3's l2t forgot (so nothing renders as
-"unknown" out of the box for standard LaTeX).
-
-### 11.3 Render-side inventory
-
-Port v3's `latex2text/_defaultspecs.py` categories minus the dropped ones
-(`latex-ethuebung`, `nonstandard-qit`), restructured per §11.1, with the fixes from
-§4. Every v3 `simplify_repl` string maps to a `Literal` or named-`Template`; v3
-callables map to handlers listed in §10.
-
-### 11.4 Symbol-table generation (`tools/gen_symbols.py`)
-
-A checked-in Python script (dev-only, not part of the build) reads pylatexenc's
-tables (`latex2text/_defaultspecs.py` symbol lists, the Greek/accent builders, the
-sub/superscript and font-alphabet tables) from a pylatexenc checkout and emits
-checked-in Rust source (`defs/symbols_extra.rs` static tables, `mathfmt` tables,
-`accents` composition pairs). Deduplicate (v3 has ~295 shadowed duplicates; last
-wins), sort, and emit `static SYMBOLS: &[(&str, &str)]`. The generated files carry a
-`// GENERATED by tools/gen_symbols.py — do not edit` header and are committed.
-
----
-
-## 12. Unknown constructs and diagnostics (settled)
-
-`techxt::diag` defines conditions with `techy::error::DiagnosticInfo` derive:
-`UnknownMacro { name }`, `UnknownEnvironment { name }`, `UnknownSpecials { chars }`,
-`HandlerFailed { name, detail }`, `UnsupportedFeatureIgnored { what }` (multicolumn,
-enumitem options…), `InputNotResolved { name }`. Severity: warning (conversion
-continues). Positions: the node's `SourceSpan`.
-
-Policies (each an `Options` field):
-```rust
-pub enum UnknownMacroPolicy    { Skip /*default*/, RenderArgs, KeepSource, Placeholder }
-pub enum UnknownEnvPolicy      { RenderBody /*default*/, Skip, KeepSource }
-pub enum UnknownSpecialsPolicy { EmitChars /*default*/, Skip }
+template   := ( literal | escape | ref | cond )*
+escape     := "{{" | "}}"                      # literal brace
+ref        := "{" name "}" | "{" integer "}"   # named arg | 1-based index | "{body}" (envs only)
+cond       := "{?" name ":" branch ( "|" branch )? "}"
+branch     := ( literal | escape | ref )*      # no nested conditionals, no "|" literal
 ```
-Every unknown hit emits its diagnostic regardless of policy. `KeepSource` uses the
-payload-based `SourceRecomposer`. Parse-level diagnostics (from techy, when techxt
-drives parsing) are merged into the returned `Diagnostics` ahead of render ones.
+Validation errors (`TemplateError`, `#[non_exhaustive]`): unknown argument name,
+index 0 or out of range, `{body}` on a macro/specials, nested conditional,
+unterminated construct. Absent optional argument renders as empty (use `{?}` to
+branch). Typed form: `Template(Vec<Seg>)`,
+`enum Seg { Str, Arg(ArgRef), Body, IfPresent { arg: ArgRef, then: Vec<Seg>, els: Vec<Seg> } }`,
+`enum ArgRef { Name(Box<str>), Index(usize) }`.
+
+### 10.6 Unknown constructs & diagnostics
+
+Policies in `Options` (defaults first):
+```rust
+pub enum UnknownMacroPolicy    { Skip, RenderArgs, KeepSource, Placeholder } // Placeholder → "<name>"
+pub enum UnknownEnvPolicy      { RenderBody, Skip, KeepSource }
+pub enum UnknownSpecialsPolicy { EmitChars, Skip }
+```
+Every unknown hit emits its diagnostic regardless of policy; `KeepSource` uses
+`SourceRecomposer` (inline → `InlineVerbatim`). Condition types in `techxt::diag`
+(identifier / fields / severity):
+
+| identifier | fields | severity |
+|---|---|---|
+| `techxt.unknown-macro` | name | warning |
+| `techxt.unknown-environment` | name | warning |
+| `techxt.unknown-specials` | chars | warning |
+| `techxt.handler-failed` | construct, detail | error |
+| `techxt.unsupported-ignored` | construct, what | warning |
+| `techxt.misplaced-alignment` | — | warning |
+| `techxt.stray-item` | — | warning |
+| `techxt.input-not-resolved` | target | note |
+| `techxt.render-aborted` | detail | error |
+
+Parse-level techy diagnostics (when techxt drives parsing) are merged ahead of render
+diagnostics in the returned collection.
 
 ---
 
-## 13. Public API (`techxt::convert`)
+## 11. Public API (`techxt::convert`)
+
+### 11.1 Converter
 
 ```rust
-pub struct Converter { /* Arc<Language<Latexlike>>, rule tables, Options */ }  // Send + Sync
-pub struct ConverterBuilder { … }
-
+#[derive(Clone)]                        // internals Arc-shared; Send + Sync
+pub struct Converter { .. }
 impl Converter {
     pub fn builder() -> ConverterBuilder;
-    pub fn standard() -> Converter;                       // defs::standard() + default Options
-    pub fn latex_to_text(&self, latex: &str) -> Result<Conversion, techy ParseError>;
-    pub fn tree_to_text(&self, tree: &NodeTree<Latexlike>) -> Conversion;
-    pub fn nodes_to_text(&self, nodes: NodeSlice<'_, Latexlike>) -> Conversion;
-    pub fn tree_to_flow(&self, tree: &NodeTree<Latexlike>) -> (Flow, Diagnostics<…>);
-    pub fn language(&self) -> &Language<Latexlike>;        // parse separately / reuse
+    pub fn standard() -> Converter;     // defs::standard() + Options::default()
+    pub fn latex_to_text(&self, latex: &str)
+        -> Result<Conversion, techy ParseError<Option<String>>>;   // Err only under Strict
+    pub fn tree_to_text(&self, tree: &NodeTree<Latexlike>) -> Conversion;   // infallible
+    pub fn tree_to_flow(&self, tree: &NodeTree<Latexlike>)
+        -> (Flow, Diagnostics<Option<String>>);
+    pub fn language(&self) -> &Language<Latexlike>;
+    pub fn options(&self) -> &Options;
+    pub fn renderer(&self) -> TextRenderer<'_>;   // for wrapping consumers (§3)
 }
 pub struct Conversion { pub text: String, pub diagnostics: Diagnostics<Option<String>> }
 ```
-`ConverterBuilder`: `definitions(DefinitionSet)`, `options(Options)` (or per-field
-setters), `override_macro/environment/specials(name, TextRule)`,
-`source_resolver(...)` (forwards to the driver), `recovery(Recovery)` (default
-Tolerant; Strict makes `latex_to_text` return `Err` on first parse error).
+Settled API constraints: annotation fixed to `A = ()` — callers with annotated trees
+use techy's cheap zero-copy `tree.annotate(|_| ())`; language fixed to `Latexlike`;
+**no `NodeSlice` entry point in v1** (techy's driver folds whole trees; if a subtree
+entry exists in techy at implementation time it may be added as
+`node_to_text(NodeRef)`, otherwise omit). `tree_to_text`/`tree_to_flow` are
+infallible (§10.4). For wrapping consumers: drive `TreeRecomposer` over
+`Converter::renderer()` yourself, then call
+`TextRenderer::finish(self) -> RenderFinish { pub trailing: Flow, pub diagnostics:
+Diagnostics<Option<String>> }` and append `trailing` (the footnote block) before
+layout.
+
+### 11.2 Builder
+
+`ConverterBuilder`: `definitions(DefinitionSet)` (default `defs::standard()`),
+`options(Options)` plus per-field setters mirroring every `Options` field,
+`override_macro/environment/specials(name, TextRule)`,
+`source_resolver(impl techy IntoSourceResolver)`, `recovery(Recovery)` (default
+`Tolerant`), `build() -> Result<Converter, BuildError>`.
+
+### 11.3 Options (complete, with defaults)
 
 ```rust
 #[non_exhaustive]
+#[derive(Clone, Debug)]
 pub struct Options {
-    pub math_mode: MathMode,                  // Fancy   (variants: Fancy | Plain | Source)
-    pub math_expression_in: MathWrapDelims,   // Parens
-    pub matrix_delimiters: MatrixDelims,      // Unicode (variants: Unicode | Ascii)
+    pub math_mode: MathMode,                  // Fancy       {Fancy, Plain, Source}
+    pub math_expression_in: MathWrapDelims,   // Parens      {Parens, Braces, Custom(Box<str>, Box<str>), None}
+    pub matrix_delimiters: MatrixDelims,      // Unicode     {Unicode, Ascii}
     pub wrap_width: Option<usize>,            // None
     pub keep_comments: bool,                  // false
-    pub heading_style: HeadingStyle,          // NumberedUnderlined
-    pub footnote_style: FootnoteStyle,        // Collected
-    pub list_style: ListStyle,                // v3 markers
-    pub text_font: FontStyle, pub math_font: FontStyle,   // Upright-default / Italic
-    pub unknown_macro: UnknownMacroPolicy, pub unknown_env: UnknownEnvPolicy,
-    pub unknown_specials: UnknownSpecialsPolicy,
+    pub heading_style: HeadingStyle,          // NumberedUnderlined {.., Underlined, Prefix, Plain}
+    pub footnote_style: FootnoteStyle,        // Collected   {Collected, Inline, Skip}
+    pub list_style: ListStyle,                // §9.4 defaults
+    pub text_font: FontStyle,                 // Default
+    pub math_font: FontStyle,                 // Style(Italic)
+    pub unknown_macro: UnknownMacroPolicy,    // Skip
+    pub unknown_env: UnknownEnvPolicy,        // RenderBody
+    pub unknown_specials: UnknownSpecialsPolicy, // EmitChars
     pub today: Option<Box<str>>,              // None → "<today>"
 }
+impl Default for Options { .. }
 ```
-Internally, each conversion constructs a fresh `TextRenderer` (borrowing the
-converter's tables) and runs `TreeRecomposer`. The `TextRenderer` itself is public
-(flow layer) so consumers can wrap it per techy's wrapping contract.
 
 ---
 
-## 14. CLI (`techxt-cli`, command `techxt`) — clap derive (settled)
+## 12. The default definitions library (`techxt::defs`)
+
+### 12.1 Modules (one `pub fn category() -> Category` each)
+
+`base` (escapes, spacing, ligature specials, `~`, `\\`, `\par`, misc §9.8 text
+macros), `accents`, `fontstyles` (`\textbf`… `\mathbb`… `\emph`, `\operatorname`),
+`sectioning`, `lists`, `mathcore` (Greek, operators, symbols, `\frac`, `\sqrt`,
+brakets, arrows, dots, delimiters), `mathenvs`, `subsuperscripts`, `verbatim`,
+`tables`, `theorems`, `refs`, `links`, `graphics`, `titling`, `preamble`, `inputs`,
+`natbib`, `symbols_extra` (the ~1000-entry auto-generated long tail).
+
+`defs::standard() -> DefinitionSet` pushes **all** of them, in this exact order
+(later shadows earlier): `symbols_extra`, `base`, `accents`, `fontstyles`,
+`mathcore`, `mathenvs`, `subsuperscripts`, `sectioning`, `lists`, `verbatim`,
+`tables`, `theorems`, `refs`, `links`, `graphics`, `titling`, `preamble`, `inputs`,
+`natbib`. Curated entries thus shadow generated ones. Users wanting less assemble
+their own `DefinitionSet` from the modules; dead-code elimination trims the rest.
+
+### 12.2 Parse-side inventory
+
+The union of pylatexenc v3's `latexwalker/_defaultspecs.py` (≈200 macros, 43
+environments, specials) with named arguments added everywhere, plus every entry §9
+requires. Nothing standard should hit the unknown policy out of the box.
+
+### 12.3 Render-side inventory
+
+Everything in §9 plus the mechanical port of v3's `latex2text/_defaultspecs.py`
+symbol/replacement entries (minus dropped categories). Every v3 `simplify_repl`
+string becomes a `Literal` or named `Template`; every v3 callable maps to a §9
+handler.
+
+### 12.4 Symbol-table generation (`tools/gen_symbols.py`)
+
+A checked-in Python script (dev-only) reads pylatexenc's tables (symbol lists, Greek
+and accent builders, sub/superscript tables, font-alphabet offset/exception tables,
+and the accent-composition pairs needed by §9.3) from a pylatexenc checkout and
+emits checked-in Rust statics (`defs/symbols_extra.rs`, `mathfmt` tables,
+`defs/accents` data). Deduplicate (last wins), sort by name, header comment
+`// GENERATED by tools/gen_symbols.py — do not edit`.
+
+---
+
+## 13. CLI (`techxt-cli`, command `techxt`, clap derive)
 
 ```
-techxt [OPTIONS] [FILE]        # FILE or stdin → stdout (or --output FILE)
+techxt [OPTIONS] [FILE]        # FILE or stdin → stdout (or -o FILE)
   -o, --output <FILE>
-      --math-mode <fancy|plain|source>
-      --math-wrap <parens|braces|none>
-      --matrix-delims <unicode|ascii>
-  -w, --wrap <COLS>
+      --math-mode <fancy|plain|source>          # default fancy
+      --math-wrap <parens|braces|none>          # default parens
+      --matrix-delims <unicode|ascii>           # default unicode
+  -w, --wrap <COLS>                             # default off
       --keep-comments
       --heading-style <numbered-underlined|underlined|prefix|plain>
       --footnote-style <collected|inline|skip>
       --unknown-macro <skip|render-args|keep-source|placeholder>
-      --input-dir <DIR>        # enables \input via a sandboxed fs resolver:
-                               # realpath containment (dir + separator prefix),
-                               # .tex/.latex extension fallback, include-cycle guard
-      --strict                 # Recovery::Strict (default tolerant)
-  -q / -v                      # diagnostics: -q none; default warnings+; -v notes too
+      --input-dir <DIR>       # sandboxed fs resolver: realpath containment
+                              # (dir + separator prefix), .tex/.latex fallback,
+                              # include-cycle guard via techy check_include_chain
+      --strict                # Recovery::Strict
+  -q / -v                     # -q: no diagnostics; default: warning+; -v: notes too
 ```
-Diagnostics print to stderr via techy's `render_all()` (line/col formatting included).
-Exit code: 0 clean, 1 diagnostics-with-errors (tolerant), 2 hard parse/IO error.
-Sets `Options::today` from the system clock (`%B %-d, %Y`-style English formatting is
-fine, hand-rolled — no chrono dependency; implementer's choice on exact formatting).
+Diagnostics → stderr via techy `Diagnostics::render_all()`. Exit codes: 0 clean,
+1 conversion completed but diagnostics contain errors, 2 hard parse (strict) or I/O
+error. `Options::today` set from the system clock formatted as English
+`"August 19, 2026"` (hand-rolled month-name table; no chrono).
 
 ---
 
-## 15. Testing (settled strategy)
+## 14. Testing
 
-1. **Inline expected-string tests** (`assert_eq!(convert(input), expected)`) as the
-   main body — unit tests per module + integration tests per feature area under
-   `rust/techxt/tests/`.
-2. **proptest** (dev-dependency, as in techy): layout invariants (§7), math joiner
-   stability (joining is invariant under re-chunking of adjacent plain text; no
-   double spaces; empty pieces drop), template parser round-trips, no-panic fuzzing
-   of `Converter::standard().latex_to_text` over arbitrary strings (tolerant mode
-   must never panic).
-3. **Coverage checklist ported from pylatexenc** — recreate the *cases* of
-   `pylatexenc/test/test_2_latex2text.py` (accents incl. `\"{o}`/`{\"o}`/`\L`
-   combinations, `$a$$b$`, all math modes on the same sample, nested lists, spacing
-   around bare macros, sub/superscripts incl. `∑ᵢ₌₁ⁿ` and fallbacks, matrices incl.
-   the empty matrix, maketitle, `\input` sandboxing incl. the `dir-evil` sibling
-   case, verbatim edge cases) with techxt's own expected outputs.
-4. **Doctests** on all public API examples (enforced by `missing_docs` culture).
-5. CLI smoke tests (run the binary on fixture files; assert stdout/stderr/exit code).
+1. **Inline expected-string tests** as the main body (unit + integration under
+   `rust/techxt/tests/`), starting from the normative examples in §15.
+2. **proptest**: layout invariants (§7), joiner stability (invariant under
+   re-chunking of adjacent plain text, no doubled spaces, empties drop), template
+   parser round-trips, and no-panic fuzzing of
+   `Converter::standard().latex_to_text` over arbitrary strings (tolerant mode must
+   never panic).
+3. **Coverage checklist from pylatexenc** `test/test_2_latex2text.py` — its *cases*
+   (accents incl. `\"{o}`/`{\"o}`/`\L` combinations, `$a$$b$`, math modes on one
+   sample, nested lists, spacing around bare macros, sub/superscripts incl. the
+   `∑ᵢ₌₁ⁿ` retry, matrices incl. empty, maketitle, `\input` sandboxing incl. the
+   `dir-evil` sibling case, verbatim edge cases) with techxt's own expected outputs.
+4. **Doctests** on all public API examples.
+5. CLI smoke tests (fixture files; assert stdout/stderr/exit code).
 
 ---
 
-## 16. Milestones (implement in order; each ends green under the full CI)
+## 15. Normative acceptance examples
 
-- **M0 — scaffolding.** Repo layout §2, workspace, lint config, CI (GitHub Actions):
-  `cargo fmt --check`, `clippy -D warnings` (all targets), `cargo test` (workspace),
-  `cargo doc` with denied warnings, MSRV job (1.86), **no_std proof job**: build the
-  lib crate for a std-less target (e.g. `--target thumbv7em-none-eabihf`; if techy's
-  `Arc` needs atomics, this target has them). Empty lib compiles no_std; CLI prints
-  version.
-- **M1 — flow + layout.** §6, §7 complete with proptest invariants. No techy
-  dependency needed by the tests (construct flows by hand).
-- **M2 — renderer core.** `TextRenderer` over techy trees: chars/comment/group/list,
-  paragraph breaks, downward state plumbing, run state, diagnostics channel, unknown
-  policies, `Conversion` plumbing, tree/flow/convenience entry points with a
-  hand-built 5-entry definition set. End-to-end: plain paragraphs, groups, comments.
-- **M3 — definitions infrastructure.** §9 complete: def builders, techxt spec types,
-  template parser/validator (with full error cases tested), dispatch chain,
-  `DefinitionSet` → packages + parsing state + fallback table, override map.
-- **M4 — base library.** `defs::{base, accents, fontstyles, sectioning, paragraphs,
-  refs, links, graphics, titling, preamble, inputs}` + generation script §11.4 for
-  accents/symbols data. Headings with counters/underlines; `\href`; maketitle.
-- **M5 — math engine.** §10.5 complete (atoms, segmentation, joiner, scripts,
-  wrappables, dual-stack font alphabets, `\frac`/`\sqrt`, math envs, matrices incl.
-  display multi-line layout + the 2D baseline join + both delimiter styles, all
-  three modes Fancy/Plain/Source). This is the largest milestone; port
-  systematically from v3 with tests at each step.
-- **M6 — blocks.** Lists §10.4, verbatim §10.7, tables §10.6, footnotes, theorems,
-  quote/center blocks, `\input` rendering incl. resolver-configured integration test.
-- **M7 — CLI.** §14 + smoke tests + `defs::standard()` audit (run the CLI over a
-  realistic sample paper; eyeball + freeze as integration expectations).
+Default options unless noted. Expected strings are exact (trailing `\n` shown as ⏎
+only where load-bearing). These are behavior law; encode them as tests early.
+
+| # | input | output |
+|---|---|---|
+| 1 | `Hello  {brave}\n world.` | `Hello brave world.` |
+| 2 | `one\n\n\n\ntwo` | `one\n\ntwo` |
+| 3 | `\emph{sic}` | `𝑠𝑖𝑐` |
+| 4 | `\textbf{bold}text` | `𝐛𝐨𝐥𝐝text` (one unbreakable word) |
+| 5 | `Sk\l odowska` | `Skłodowska` |
+| 6 | `\'{e}t\'e` | `été` |
+| 7 | `\c c` | `ç` |
+| 8 | `` ``Hi,'' -- ok`` | `“Hi,” – ok` |
+| 9 | `A% note\nB` | `AB` ; with `keep_comments`: `A` ⏎ `% note` ⏎ `B` |
+| 10 | `$x^2 + y_i$` | `𝑥² + 𝑦ᵢ` |
+| 11 | `$\frac{4\pi c}{2}\sin(x+y)$` | `(4π𝑐)/2 sin(𝑥 + 𝑦)` |
+| 12 | `$\sum_{i=1}^n x_i$` | `∑ᵢ₌₁ⁿ 𝑥ᵢ` |
+| 13 | `$a + b$` with `math_mode=Plain` | `𝑎+𝑏` (fonts still apply; no joiner spacing) |
+| 14 | `$a + b$` with `math_mode=Source` | `$a + b$` |
+| 15 | `\[ E = mc^2 \]` | `    𝐸 = 𝑚𝑐²` (4-space display block) |
+| 16 | `\section{Intro}\nText.` | `1 Intro` ⏎ `-------` ⏎ blank ⏎ `Text.` |
+| 17 | `\subsection*{Notes}` | `Notes` ⏎ `~~~~~` (no number, not counted) |
+| 18 | `Fact\footnote{Proof sketch.} holds.` | `Fact[1] holds.` ⏎ blank ⏎ `---` ⏎ `[1] Proof sketch.` |
+| 19 | `\verb|x_1|` | `x_1` |
+| 20 | `\href{https://ex.org/a_b}{link}` | `link <https://ex.org/a_b>` |
+| 21 | `\begin{tabular}{lr} a & 10 \\ bb & 3 \end{tabular}` | `a   10` ⏎ `bb   3` |
+| 22 | `\begin{itemize}\item one \begin{enumerate}\item x\item y\end{enumerate}\item two\end{itemize}` | `  • one` ⏎ `    1. x` ⏎ `    2. y` ⏎ `  • two` |
+| 23 | display `\begin{pmatrix} 1 & 2 \\ 30 & 4 \end{pmatrix}` | `    ⎛  1  2 ⎞` ⏎ `    ⎝ 30  4 ⎠` ; with `matrix_delimiters=Ascii`: `    (  1  2 )` ⏎ `    ( 30  4 )` |
+| 24 | `\begin{verbatim}\n  keep   this\n\n    exactly\n\end{verbatim}` | body byte-identical, blank-line separated from surroundings, never wrapped |
+| 25 | `aaa bbb \textbf{ccc ddd} eee` with `wrap_width=12` | `aaa bbb 𝐜𝐜𝐜` ⏎ `𝐝𝐝𝐝 eee` (wraps across the macro boundary) |
+| 26 | `\begin{myenv}inner\end{myenv}` (unknown env, tolerant defaults) | `inner` + warning `techxt.unknown-environment` |
+
+Example 22's markers assume `same_kind_depth = 1` for the inner enumerate (different
+kind ⇒ first-level numbering) — that is the intended semantics.
+
+---
+
+## 16. Milestones (in order; each ends green under full CI)
+
+- **M0 — scaffolding.** §2 layout, workspace, lints, CI (GitHub Actions):
+  `cargo fmt --check`; `clippy -D warnings` (all targets); `cargo test` (workspace);
+  `cargo doc` with denied warnings; MSRV job (1.86); **no_std proof job** building
+  the lib for a std-less atomics-capable target (e.g. `thumbv7em-none-eabihf`).
+  Empty lib compiles no_std; CLI prints version.
+- **M1 — flow + layout.** §6–§7 complete, incl. `render_inline`, with the proptest
+  invariants. Tests construct flows by hand (no techy needed).
+- **M2 — renderer core.** `TextRenderer` over techy trees: §9.1 dispatch,
+  paragraph breaks, state plumbing (§8), diagnostics channel, unknown policies,
+  `Conversion` plumbing, all §11 entry points with a hand-built 5-entry definition
+  set. Examples 1–2, 26 pass.
+- **M3 — definitions infrastructure.** §10 complete: builders, techxt spec types,
+  template parser/validator with all error cases tested, dispatch chain, set
+  building + `BuildError`, override map.
+- **M4 — base library.** `defs::{base, accents, fontstyles, sectioning, refs,
+  links, graphics, titling, preamble, inputs}` + generation script (§12.4) for
+  accents/alphabet data. Examples 3–9, 16–17, 20 pass.
+- **M5 — math engine.** §9.5 complete: atoms, segmentation, joiner, scripts,
+  wrappables, dual-stack fonts, `\frac`/`\sqrt`, math envs, matrices incl. display
+  multi-line + 2D baseline join + both delimiter styles, all three modes.
+  Examples 10–15, 23 pass.
+- **M6 — blocks.** Lists (§9.4), verbatim, tables (§9.6), footnotes, theorems,
+  quote/center/abstract/captions, `\input` end-to-end with a resolver. Examples
+  18–19, 21–22, 24 pass.
+- **M7 — CLI.** §13 + smoke tests; run the CLI over a realistic sample paper and
+  freeze the result as an integration expectation. Example 25 passes (wrap flag).
 - **M8 — polish & release prep.** `symbols_extra` + `natbib` long tail, crate-level
-  narrative docs (techy-style guide: quick start, extending with custom definitions,
-  writing a handler, wrapping the recomposer, layout invariants), README(s),
-  CHANGELOG, version 0.1.0. Do not publish to crates.io until techy is published
-  (git dependency blocks publishing) — leave a note in the README.
+  narrative docs (quick start; extending with custom definitions; writing a
+  handler; wrapping the recomposer; layout guarantees), READMEs, CHANGELOG, version
+  0.1.0. Do not publish to crates.io while the techy git dependency remains (note
+  in README).
 
-## 17. Deliberate omissions / future work (documented, not implemented in v1)
+## 17. Deliberate omissions / future work (documented, not implemented)
 
 Label/`\ref` resolution (two-pass); `\newcommand` expansion; multicolumn/multirow
-spans and width-budgeted table cells; centering simulation; SourceLike whitespace
-mode; pylatexenc-compat output mode; localization of generated words ("Theorem",
-"Hint"); streaming (incremental) layout; serde support; Python (`python/`, maturin)
-and JS/wasm (`js/`) sibling bindings — the module-based defs organization (§11.1)
-was chosen with wasm dead-code elimination in mind.
+spans and width-budgeted table cells; centering simulation; source-mirroring
+whitespace mode; pylatexenc-compat mode; theorem/figure numbering; localization of
+generated words ("Theorem", "Abstract"); streaming incremental layout; serde;
+`NodeSlice`/subtree conversion entry (pending techy support); generalization over
+`LatexlikeLang` and tree annotations; Python (`python/`, maturin) and JS/wasm
+(`js/`) sibling bindings — the module-based defs organization was chosen with wasm
+dead-code elimination in mind.
