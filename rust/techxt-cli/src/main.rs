@@ -10,10 +10,12 @@
 
 use clap::Parser;
 
+// Both `about` and `version` are given without a value, which makes clap take them from
+// `CARGO_PKG_DESCRIPTION` and `CARGO_PKG_VERSION`: the help banner and the reported
+// version have a single source, the manifest, and cannot drift from it. Note that clap
+// otherwise derives the help text from the doc comments here, so implementation notes
+// belong in ordinary comments like this one rather than in a `///` comment.
 /// Convert LaTeX-like markup to plain (unicode) text.
-///
-/// `version` makes clap serve `--version` from the crate version, so the number can
-/// only come from `Cargo.toml` and cannot drift.
 #[derive(Debug, Parser)]
 #[command(name = "techxt", version, about)]
 struct Cli {}
