@@ -24,6 +24,14 @@
 //! and matrix handlers that give them their table meanings live in
 //! [`defs::tables`](super::tables) and [`defs::mathenvs`](super::mathenvs).
 //!
+//! # Footnotes are collected, not inlined
+//!
+//! `\footnote` renders as a marker at the call site and puts its text at the end of
+//! the document (PLAN.md §9.8). The renderer owns the collection — the numbering has to
+//! be in document order across the whole run, which no single construct can see — so
+//! the definition here does one thing: hand the note over and emit the number it was
+//! given.
+//!
 //! # A curated minimum of text symbols
 //!
 //! The classic text symbols — `\l`, `\ss`, `\ldots`, `\S` and friends — are here rather
@@ -42,6 +50,7 @@ use techy::core::token::GroupRule;
 use techy::core::ParsingStateDelta;
 use techy::latexlike::{Event, GroupType, Latexlike, Mode};
 
+use crate::convert::FootnoteStyle;
 use crate::def::{Category, MacroDef, SpecialsDef, TextHandler, TextRule};
 use crate::diag::{MisplacedAlignment, UnsupportedIgnored};
 use crate::flow::{Flow, FlowItem};
@@ -57,6 +66,7 @@ pub fn category() -> Category {
     spacing(&mut category);
     breaks(&mut category);
     ligatures(&mut category);
+    footnotes(&mut category);
     misc(&mut category);
     text_symbols(&mut category);
     category
@@ -163,6 +173,22 @@ fn ligatures(category: &mut Category) {
                 .rule(TextRule::Literal(Cow::Borrowed(replacement))),
         );
     }
+}
+
+// ----------------------------------------------------------------------- footnotes
+
+/// `\footnote` (PLAN.md §9.8).
+///
+/// The optional argument is LaTeX's own way of overriding the mark; techxt numbers its
+/// notes itself, in document order, so it is parsed and dropped rather than used — a
+/// hand-written mark would collide with the numbers of the notes around it.
+fn footnotes(category: &mut Category) {
+    category.add_macro(
+        MacroDef::new("footnote")
+            .arg("o", "mark")
+            .arg("m", "note")
+            .rule(handler(Footnote)),
+    );
 }
 
 // ---------------------------------------------------------------------------- misc
@@ -468,6 +494,42 @@ impl TextHandler for HorizontalRule {
             ));
         }
         Ok(flow)
+    }
+}
+
+/// `\footnote{…}` (PLAN.md §9.8).
+///
+/// Three [styles](crate::convert::FootnoteStyle), and the default collects: the marker
+/// goes where the note was written and the text goes after the document, which is what
+/// a footnote *is*. The marker is emitted as a text item and nothing precedes it, so it
+/// glues to the word it annotates — `Fact[1] holds.`, never `Fact [1] holds.`
+#[derive(Debug)]
+struct Footnote;
+
+impl TextHandler for Footnote {
+    fn render(
+        &self,
+        _node: NodeRef<'_, Latexlike>,
+        cx: &mut RenderCx<'_, '_>,
+    ) -> Result<Flow, RenderError> {
+        match cx.options().footnote_style {
+            FootnoteStyle::Collected => {
+                let note = cx.arg("note")?.unwrap_or_default();
+                // The number is the collection index, assigned as the note is folded —
+                // which is document order, because the fold is.
+                let number = cx.push_footnote(note);
+                Ok(Flow::text(&alloc::format!("[{number}]")))
+            }
+            FootnoteStyle::Inline => {
+                let mut flow = Flow::text("[");
+                flow.extend(cx.arg("note")?.unwrap_or_default());
+                flow.extend(Flow::text("]"));
+                Ok(flow)
+            }
+            // Nothing is emitted and nothing is collected: the note is not rendered at
+            // all, so a footnote's own side effects do not happen either.
+            FootnoteStyle::Skip => Ok(Flow::new()),
+        }
     }
 }
 

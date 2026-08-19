@@ -88,15 +88,10 @@ impl core::error::Error for RenderError {}
 /// heading numbers must keep counting across siblings, footnotes are collected in
 /// document order and emitted at the end, and `\title` may be set anywhere and used
 /// somewhere else entirely.
-// The sectioning and list counters are written by the handlers that PLAN.md §9.2 and
-// §9.4 put in the definitions library, which is milestone M4/M6 work. They are declared
-// here because PLAN.md §8 puts them in the run state, and because their *lifetime rules*
-// (document order, one push per open list) are what the renderer core guarantees — so
-// they are allowed to be unread until the handlers that read them exist.
-#[allow(
-    dead_code,
-    reason = "the list counter stack is written by the M6 list handlers"
-)]
+// The sectioning and list counters live here rather than in the downward state because
+// PLAN.md §8 puts them here, and because their *lifetime rules* — document order for the
+// counters, one push per open list — are what the renderer core guarantees to the
+// handlers in the definitions library that read them.
 #[derive(Debug, Default)]
 pub(crate) struct RunState {
     pub(crate) diagnostics: Diagnostics<Option<String>>,
@@ -393,7 +388,10 @@ impl<'a, 't> RenderCx<'a, 't> {
     }
 
     /// The enumerate counters, one per open list environment.
-    #[allow(dead_code, reason = "used by the M6 list handlers")]
+    ///
+    /// A list environment pushes one for the extent of its body and pops it afterwards,
+    /// so the top of the stack is always the innermost list's counter and `\item` can
+    /// count without knowing how deeply it is nested.
     pub(crate) fn list_counter_stack_mut(&mut self) -> &mut Vec<u32> {
         &mut self.renderer.run_mut().list_counter_stack
     }
