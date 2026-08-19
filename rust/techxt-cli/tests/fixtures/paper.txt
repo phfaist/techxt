@@ -1,5 +1,5 @@
 On the Slow Convergence of Impatient Methods
-    A. Researcher B. Coauthor
+    A. Researcher and B. Coauthor
     March 3, 2025
 ============================================
 

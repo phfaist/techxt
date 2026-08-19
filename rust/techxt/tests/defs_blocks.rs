@@ -204,3 +204,18 @@ fn a_caption_inside_a_table_float_knows_it_is_a_table() {
         "Table: Counts.\n"
     );
 }
+
+// ------------------------------------------------------ boxes that hold blocks
+
+#[test]
+fn a_minipage_is_a_block_of_its_own() {
+    assert_eq!(
+        text("before\n\n\\begin{minipage}[t]{4cm}\ninside\n\\end{minipage}\n\nafter"),
+        "before\n\ninside\n\nafter\n"
+    );
+    // A title page is the same shape, and `spacing` and `multicols` only change how
+    // their body is set.
+    assert_eq!(text(r"\begin{titlepage}Title\end{titlepage}"), "Title\n");
+    assert_eq!(text(r"\begin{spacing}{1.5}wide\end{spacing}"), "wide\n");
+    assert_eq!(text(r"\begin{multicols}{2}columns\end{multicols}"), "columns\n");
+}

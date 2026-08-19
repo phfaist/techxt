@@ -49,12 +49,55 @@ use crate::render::{RenderConfig, RenderState, TextRenderer};
 
 pub use crate::mathfmt::{FontStyle, FontStyleKind, MathWrapDelims, MatrixDelims};
 
+// --------------------------------------------------------------- techy, re-exported
+//
+// Every techy type that appears in techxt's own public API is re-exported here, so
+// that using techxt takes one dependency and not two (PLAN.md §2). They are techy's
+// types, not aliases: a `SourceResolver` implemented against `techxt::convert` is the
+// very trait techy's parser calls, and a `Diagnostics` returned by a conversion is the
+// one techy built. Naming `techy` directly keeps working and is exactly equivalent —
+// this is a convenience and a semver statement, not an abstraction layer.
+
 /// techy's descent guard, re-exported so that embedders configuring
 /// [`ConverterBuilder::descent_guard`] need not name `techy::core` themselves.
 ///
 /// Despite the name it is pure `alloc` — "Std" is "the standard guard", not the standard
 /// library — and works on a `no_std` target like everything else here.
 pub use techy::core::{StdDescentGuard, StdDescentGuardInit};
+
+/// The parse tree and its nodes: what [`Converter::tree_to_text`] converts, and what a
+/// [`TextHandler`](crate::def::TextHandler) is handed.
+pub use techy::core::node::{NodeRef, NodeSlice, NodeTree};
+
+/// The techy pieces a definition of your own is built from: an argument spec for
+/// [`MacroDef::arg_spec`](crate::def::MacroDef::arg_spec), a callable spec for
+/// [`MacroDef::spec`](crate::def::MacroDef::spec), and the language every techxt type
+/// is concrete over (PLAN.md §11.1).
+pub use techy::core::specs::{ArgumentSpec, CallableSpec, EnvironmentSpec};
+/// See [`ArgumentSpec`].
+pub use techy::latexlike::Latexlike;
+
+/// The diagnostics channel: the collection a [`Conversion`] carries, the severity to
+/// filter it by, and the parse error [`Converter::latex_to_text`] can fail with.
+///
+/// [`Recovery`] is what [`ConverterBuilder::recovery`] takes.
+pub use techy::error::{Diagnostics, ParseError, Recovery, Severity};
+
+/// Source resolution for `\input` (PLAN.md §9.8): the trait
+/// [`ConverterBuilder::source_resolver`] accepts, what an implementation answers with,
+/// and the cycle guard a resolver should run.
+pub use techy::source::{
+    check_include_chain, MapResolver, ResolveError, ResolvedContent, Source, SourceResolver,
+    SourceSpan,
+};
+
+/// The fold itself: the recomposer trait [`TextRenderer`](crate::render::TextRenderer)
+/// implements, and the driver that runs it over a tree — what a consumer wrapping
+/// techxt's recomposer names (see [`Converter::renderer`]).
+pub use techy::recompose::{RecomposeError, Recomposer, TreeRecomposer};
+
+/// The parsing language a [`Converter`] holds, as returned by [`Converter::language`].
+pub use techy::core::Language;
 
 /// The result of a conversion (PLAN.md §11.1).
 #[derive(Clone, Debug)]

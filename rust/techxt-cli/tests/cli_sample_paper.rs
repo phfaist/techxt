@@ -49,6 +49,7 @@ fn the_sample_paper_converts_to_its_frozen_expectation() {
     for expected_fragment in [
         "On the Slow Convergence of Impatient Methods", // \maketitle
         "March 3, 2025",                                // \date, not \today
+        "A. Researcher and B. Coauthor",                // two authors, separated by \and
         "Abstract",                                     // the abstract environment
         "1 Introduction",                               // a numbered section
         "2.1 The impatient stopping rule",              // a numbered subsection
@@ -82,50 +83,31 @@ fn the_sample_paper_converts_to_its_frozen_expectation() {
 }
 
 #[test]
-fn the_sample_paper_reports_the_two_constructs_the_definitions_do_not_cover() {
-    // Frozen deliberately, and worth stating plainly: this exit code is **1**, and the
-    // reason is a gap in `techxt::defs`, not in the CLI.
-    //
-    //  * `document` is not in the definition set, so techy raises its own
-    //    `latexlike.environments.unknown-environment` at *error* severity before techxt
-    //    adds the `techxt.unknown-environment` warning PLAN.md §15 example #26 describes.
-    //    An error in the diagnostics is exit code 1 by PLAN.md §13 — so today *every*
-    //    complete LaTeX file (anything with `\begin{document}`) exits 1, however clean it
-    //    is. The body is rendered correctly regardless, which is why the text above is
-    //    the whole paper.
-    //  * `\and`, the standard separator between `\author` names, has no definition
-    //    either, and is reported as an unknown macro (a warning) and skipped.
-    //
-    // When the definitions gain the two entries, this expectation becomes an empty
-    // standard error and exit code 0, and the frozen text should not move at all.
+fn the_sample_paper_converts_without_a_single_diagnostic() {
+    // Frozen deliberately, and worth stating plainly: a complete, ordinary LaTeX file
+    // converts **silently** and exits 0. Everything this paper uses — `document`
+    // included, and `\and` between its two authors — is in `techxt::defs`, so nothing
+    // reaches the unknown policy (PLAN.md §12.2) and nothing reaches techy's own
+    // unknown-environment error. This is the property that makes the exit code worth
+    // reading: a non-zero one means the document really did have something wrong with
+    // it, not that techxt has a gap.
     let output = Command::new(env!("CARGO_BIN_EXE_techxt"))
         .arg("--wrap")
         .arg("78")
+        .arg("-v") // notes as well as warnings: everything techxt has to say.
         .arg(fixture("paper.tex"))
         .output()
         .expect("the binary cargo built for this test runs");
 
     let report = String::from_utf8(output.stderr).expect("the report is UTF-8");
-    assert_eq!(
-        report,
-        "error: unknown environment ‘document’\n  \
-           at: @ (line 9, col 8)\n\
-         Open blocks:\n  \
-           @ (line 9, col 1): macro ‘\\begin’\n\
-         \n\
-         warning: no text rule for the macro ‘\\and’\n  \
-           at: @ (line 6, col 23)\n\
-         \n\
-         warning: no text rule for the environment ‘document’\n  \
-           at: @ (line 9, col 1)\n",
-    );
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(report, "", "a clean paper reported something");
+    assert_eq!(output.status.code(), Some(0));
 }
 
 #[test]
 fn quiet_converts_the_same_paper_without_a_word() {
-    // The same run under `-q`: identical text, nothing on standard error, and the exit
-    // code unchanged — the report is silenced, the outcome is not.
+    // The same run under `-q`: identical text, nothing on standard error, and the same
+    // exit code — the report is silenced, the outcome is not.
     let output = Command::new(env!("CARGO_BIN_EXE_techxt"))
         .arg("--wrap")
         .arg("78")
@@ -141,5 +123,5 @@ fn quiet_converts_the_same_paper_without_a_word() {
         expected
     );
     assert_eq!(output.stderr, b"");
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(0));
 }

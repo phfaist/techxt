@@ -424,3 +424,80 @@ fn every_stub_category_is_present_and_empty() {
     empty(techxt::defs::symbols_extra::category());
     empty(techxt::defs::natbib::category());
 }
+
+// ------------------------------------------------------------------ document
+
+#[test]
+fn a_complete_latex_file_converts_silently() {
+    // PLAN.md §12.2: nothing standard reaches the unknown policy out of the box. The
+    // `document` environment is what makes that true of a *file* rather than of a
+    // fragment — without it techy has no definition to resolve `\begin{document}`
+    // against and reports an error, and every complete document is a failed
+    // conversion however clean it is.
+    let converted = Converter::standard()
+        .latex_to_text(
+            "\\documentclass[11pt]{article}\n\
+             \\usepackage{amsmath}\n\
+             \\begin{document}\n\
+             Hello, reader.\n\
+             \\end{document}\n",
+        )
+        .expect("parses");
+    assert_eq!(converted.text, "Hello, reader.\n");
+    assert!(
+        converted.diagnostics.is_empty(),
+        "{:?}",
+        converted.diagnostics
+    );
+}
+
+#[test]
+fn and_separates_two_authors() {
+    assert_eq!(
+        text(r"\title{T}\author{A. One \and B. Two}\date{1970}\maketitle"),
+        "T\n    A. One and B. Two\n    1970\n=====================\n"
+    );
+}
+
+#[test]
+fn the_bibliography_keeps_its_entries_apart() {
+    assert_eq!(
+        text(
+            "\\begin{thebibliography}{9}\n\
+             \\bibitem{a} A. Author, Title, 1999.\n\
+             \\bibitem{b} B. Author, Other, 2001.\n\
+             \\end{thebibliography}"
+        ),
+        "A. Author, Title, 1999.\n\nB. Author, Other, 2001.\n"
+    );
+}
+
+#[test]
+fn document_structure_commands_are_known_and_print_nothing() {
+    let converted = Converter::standard()
+        .latex_to_text(
+            r"\tableofcontents\listoffigures\appendix\markboth{l}{r}\addcontentsline{toc}{section}{x}text",
+        )
+        .expect("parses");
+    assert_eq!(converted.text, "text\n");
+    assert!(
+        converted.diagnostics.is_empty(),
+        "{:?}",
+        converted.diagnostics
+    );
+}
+
+#[test]
+fn the_late_preamble_declarations_swallow_their_arguments() {
+    let converted = Converter::standard()
+        .latex_to_text(
+            r"\newlength{\gap}\settowidth{\gap}{wide}\newcounter{step}\DeclareMathOperator{\tr}{tr}text",
+        )
+        .expect("parses");
+    assert_eq!(converted.text, "text\n");
+    assert!(
+        converted.diagnostics.is_empty(),
+        "{:?}",
+        converted.diagnostics
+    );
+}

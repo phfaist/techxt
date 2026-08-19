@@ -248,3 +248,59 @@ fn a_later_category_shadows_base() {
         "...\n"
     );
 }
+
+// --------------------------------------------------- boxes and typesetting-only
+
+#[test]
+fn a_box_renders_its_contents_and_none_of_its_measurements() {
+    assert_eq!(text(r"\fbox{framed}"), "framed\n");
+    assert_eq!(text(r"\framebox[2cm][c]{wide}"), "wide\n");
+    assert_eq!(text(r"\makebox[2cm]{wide}"), "wide\n");
+    assert_eq!(text(r"\parbox{3cm}{a paragraph}"), "a paragraph\n");
+    assert_eq!(text(r"\raisebox{1ex}{up}"), "up\n");
+    assert_eq!(text(r"\smash[t]{flat}"), "flat\n");
+    // A rule is geometry and nothing else.
+    assert_eq!(text(r"a\rule{1pt}{2pt}b"), "ab\n");
+}
+
+#[test]
+fn case_changing_macros_leave_the_case_alone() {
+    // Case is content (PLAN.md §9.2): the argument comes out as it was written.
+    assert_eq!(text(r"\MakeUppercase{quiet}"), "quiet\n");
+    assert_eq!(text(r"\MakeLowercase{LOUD}"), "LOUD\n");
+    assert_eq!(text(r"\uppercase{a} \lowercase{B}"), "a B\n");
+}
+
+#[test]
+fn text_scripts_use_unicode_when_it_has_the_characters() {
+    assert_eq!(text(r"1\textsuperscript{st}"), "1ˢᵗ\n");
+    assert_eq!(text(r"H\textsubscript{2}O"), "H₂O\n");
+    // Nothing unicode can set as a script: the text itself, rather than `^`/`_`
+    // notation in the middle of a sentence.
+    assert_eq!(text(r"x\textsuperscript{[q]}"), "x[q]\n");
+}
+
+#[test]
+fn a_page_break_is_the_strongest_break_plain_text_has() {
+    assert_eq!(text("a\\newpage b"), "a\n\nb\n");
+    assert_eq!(text("a\\clearpage b"), "a\n\nb\n");
+    // A line break, not a paragraph one.
+    assert_eq!(text("a\\linebreak b"), "a\nb\n");
+    // …and the ones that ask for *no* break render as nothing at all. (The space
+    // after a control word is the word's terminator, in LaTeX and here: `a` and `b`
+    // are one word, exactly as `Sk\l odowska` is one.)
+    assert_eq!(text("a\\nopagebreak b"), "ab\n");
+}
+
+#[test]
+fn typesetting_only_commands_render_as_nothing_and_are_not_unknown() {
+    let converted = conversion(r"a \hfill b \dotfill\ c \relax \allowbreak \makeatletter");
+    assert_eq!(converted.text, "a b c\n");
+    assert!(converted.diagnostics.is_empty(), "{:?}", converted.diagnostics);
+
+    // A counter's value is a number techxt does not track (PLAN.md §17), so it renders
+    // as nothing rather than as a wrong number — and the counter name does not leak.
+    let converted = conversion(r"page \arabic{page} \stepcounter{page}");
+    assert_eq!(converted.text, "page\n");
+    assert!(converted.diagnostics.is_empty(), "{:?}", converted.diagnostics);
+}

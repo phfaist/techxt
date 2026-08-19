@@ -112,3 +112,24 @@ fn disabling_the_alphabet_disables_it_for_every_macro() {
         assert!(converted.is_ascii(), "{latex:?} produced {converted:?}");
     }
 }
+
+// ------------------------------------------------------------- declarations
+
+#[test]
+fn font_and_size_declarations_are_known_and_change_nothing() {
+    // A declaration changes the font for the rest of its group, and techxt's font
+    // state travels down into arguments rather than sideways to siblings — so the
+    // styling is lost and every character is kept. What matters here is that it is
+    // *known*: no diagnostic, and no leaked command name.
+    let converted = Converter::standard()
+        .latex_to_text(r"{\bfseries loud} and {\Large big} and {\itshape slanted}")
+        .expect("parses");
+    assert_eq!(converted.text, "loud and big and slanted\n");
+    assert!(
+        converted.diagnostics.is_empty(),
+        "{:?}",
+        converted.diagnostics
+    );
+    // The argument forms are what carries a font into the output.
+    assert_eq!(text(r"\textbf{loud}"), "𝐥𝐨𝐮𝐝\n");
+}

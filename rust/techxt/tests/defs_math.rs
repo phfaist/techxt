@@ -425,3 +425,55 @@ fn display_math_is_never_re_wrapped() {
         "one 𝑎 + 𝑏 +\n𝑐 two\n"
     );
 }
+
+// ------------------------------------------ binomials, stacking, and the inner envs
+
+#[test]
+fn a_binomial_coefficient_names_itself() {
+    assert_eq!(text(r"$\binom{n}{k}$"), "(𝑛 choose 𝑘)\n");
+    assert_eq!(text(r"$\dbinom{n+1}{k}$"), "(𝑛 + 1 choose 𝑘)\n");
+}
+
+#[test]
+fn stacking_macros_render_the_annotation_as_a_script() {
+    // The one way plain text can put something above a baseline.
+    assert_eq!(text(r"$a \stackrel{\mathrm{def}}{=} b$"), "𝑎 =ᵈᵉᶠ 𝑏\n");
+    assert_eq!(text(r"$\overset{a}{b}$"), "𝑏ᵃ\n");
+    assert_eq!(text(r"$\underset{i}{\max}$"), "maxᵢ\n");
+    // An annotation unicode cannot set as a script falls back to LaTeX's own notation
+    // rather than being dropped.
+    assert_eq!(text(r"$\overset{Q}{x}$"), "𝑥^𝑄\n");
+}
+
+#[test]
+fn the_inner_math_environments_hand_their_atoms_to_the_formula_around_them() {
+    assert_eq!(
+        text(r"\begin{equation}\begin{aligned} a &= b \\ c &= d \end{aligned}\end{equation}"),
+        "    𝑎 = 𝑏\n    𝑐 = 𝑑\n"
+    );
+    assert_eq!(text(r"\begin{displaymath} x = y \end{displaymath}"), "    𝑥 = 𝑦\n");
+    // `\begin{math}` is `$…$` written out: inline wherever it stands.
+    assert_eq!(text(r"in \begin{math}a+b\end{math} here"), "in 𝑎 + 𝑏 here\n");
+}
+
+#[test]
+fn cases_is_a_matrix_with_braces() {
+    assert_eq!(
+        text(r"\begin{equation}\begin{cases} 1 & x > 0 \\ 0 & x \le 0 \end{cases}\end{equation}"),
+        "    ⎧ 1  𝑥 > 0 ⎫\n    ⎩ 0  𝑥 ≤ 0 ⎭\n"
+    );
+    assert_eq!(text(r"$\begin{cases} a \\ b \end{cases}$"), "{ 𝑎; 𝑏 }\n");
+}
+
+#[test]
+fn math_style_declarations_are_known_and_render_as_nothing() {
+    let converted = Converter::standard()
+        .latex_to_text(r"$\displaystyle \sum\limits_{i} x_i \nonumber$")
+        .expect("parses");
+    assert_eq!(converted.text, "∑ᵢ 𝑥ᵢ\n");
+    assert!(
+        converted.diagnostics.is_empty(),
+        "{:?}",
+        converted.diagnostics
+    );
+}
