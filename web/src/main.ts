@@ -122,6 +122,17 @@ function downloadText(text: string, name: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
+/**
+ * `launchQueue`, which no TypeScript DOM library declares yet. Only the two members
+ * the file handler of §9 uses are named here — inventing more would be inventing.
+ */
+interface LaunchParams {
+  files?: FileSystemFileHandle[];
+}
+interface LaunchQueue {
+  setConsumer(consumer: (params: LaunchParams) => void): void;
+}
+
 /* ------------------------------------------------------------ service worker */
 
 function registerServiceWorker(toast: Toaster): void {
@@ -159,7 +170,11 @@ async function start(): Promise<void> {
   registerServiceWorker(toast);
 
   const storage = browserStorage();
-  const loaded = await loadState({ fragment: window.location.hash, storage });
+  const loaded = await loadState({
+    fragment: window.location.hash,
+    query: window.location.search,
+    storage,
+  });
   const state = loaded.state;
   // An empty output pane is a bad first impression and a bad demo (§6.7).
   if (loaded.firstVisit && state.doc === '') state.doc = DEFAULT_EXAMPLE.source;
@@ -454,6 +469,39 @@ async function start(): Promise<void> {
     requestConversion('immediate');
   }
 
+  /**
+   * The manifest's `file_handlers` (§9, W8): an installed copy can be asked to open a
+   * `.tex`, and the file arrives through `launchQueue` rather than through any URL.
+   * Additive — a browser without it simply never calls this — and it replaces the
+   * document, so it offers the same single-level undo the Load menu does (§6.7).
+   */
+  function registerFileHandler(): void {
+    const queue = (window as unknown as { launchQueue?: LaunchQueue }).launchQueue;
+    if (!queue || typeof queue.setConsumer !== 'function') return;
+    queue.setConsumer((params) => {
+      void (async () => {
+        const handle = params?.files?.[0];
+        if (!handle) return;
+        let text: string;
+        let name: string;
+        try {
+          const file = await handle.getFile();
+          text = await file.text();
+          name = file.name;
+        } catch {
+          toast.show({ message: 'That file could not be read.', tone: 'alert' });
+          return;
+        }
+        const previous = state.doc;
+        setDocument(text);
+        toast.show({
+          message: `Opened “${name}”.`,
+          action: { label: 'Undo', onSelect: () => setDocument(previous) },
+        });
+      })();
+    });
+  }
+
   /* ----------------------------------------------------------- the keyboard */
 
   document.addEventListener('keydown', (event: KeyboardEvent) => {
@@ -490,6 +538,8 @@ async function start(): Promise<void> {
 
   // The pane got `ui` at init, so the split, the focus and the size are already its
   // own; the document is the one piece `PanesInit` does not carry.
+  registerFileHandler();
+
   panes.setDocument(state.doc);
   measuredColumns = panes.columns();
   // The font is applied without being awaited: the first conversion should not wait

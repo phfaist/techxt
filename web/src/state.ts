@@ -574,13 +574,37 @@ export async function decodeShare(fragment: string | null | undefined): Promise<
 export interface LoadInit {
   /** `location.hash`, or whatever a test wants to hand over. */
   fragment?: string | null;
+  /**
+   * `location.search`. The manifest's `share_target` is a GET target (§9, W8), so
+   * Android's share sheet arrives as `?text=…` — an explicit act by the person
+   * sharing, and therefore ahead of anything stored, like a fragment.
+   */
+  query?: string | null;
   storage?: StorageLike | null;
+}
+
+/**
+ * The document a `share_target` GET carried, or `null`.
+ *
+ * `title` and `url` are accepted by the manifest because a share sheet sends whatever
+ * it has and a target that rejects them gets skipped, but only `text` is a document;
+ * a share with no `text` falls through to the ordinary load path rather than pasting
+ * a URL into the editor.
+ */
+export function sharedText(query: string | null | undefined): string | null {
+  if (!query) return null;
+  try {
+    const text = new URLSearchParams(query.startsWith('?') ? query.slice(1) : query).get('text');
+    return text && text.trim() !== '' ? text : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface LoadedState {
   state: AppState;
   /** Which of the three sources the document and options came from. */
-  source: 'fragment' | 'storage' | 'defaults';
+  source: 'share-target' | 'fragment' | 'storage' | 'defaults';
   /** No fragment and no stored document: the app loads example 1 (§6.7). */
   firstVisit: boolean;
 }
@@ -595,6 +619,20 @@ export interface LoadedState {
 export async function loadState(init: LoadInit = {}): Promise<LoadedState> {
   const storage = init.storage ?? null;
   const ui = sanitizeUi(readJson(storage, STORAGE_KEYS.ui));
+
+  const fromShareSheet = sharedText(init.query);
+  if (fromShareSheet !== null) {
+    return {
+      state: {
+        v: 1,
+        doc: fromShareSheet,
+        opts: withDefaults(sanitizeOptions(readJson(storage, STORAGE_KEYS.opts))),
+        ui,
+      },
+      source: 'share-target',
+      firstVisit: false,
+    };
+  }
 
   const shared = await decodeShare(init.fragment);
   if (shared) {

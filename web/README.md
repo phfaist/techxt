@@ -107,15 +107,21 @@ gate, and deploys `web/dist` to GitHub Pages on a push to `main`.
 
 ## Release checklist
 
-Run these by hand before calling a release done ([`PLAN.md`](PLAN.md) §13):
+[`PLAN.md`](PLAN.md) §13. Several of these were driven headlessly in Chromium at W7
+and are noted below with what was measured; the ones that need a real device, or a
+browser engine that is not Blink, still have to be done by hand.
 
-1. Desktop Chrome, Firefox and Safari: type, wrap, switch fonts, share-link round trip.
-2. iOS Safari: install to the Home Screen, launch offline, keyboard up, copy works.
-3. Android Chrome: install, offline, share link from the share sheet.
-4. DevTools offline reload after a cold cache.
-5. A 200 KB document: typing stays responsive, the status line shows the time.
-6. A pathological document (deeply nested braces, `\frac` 200 deep): a diagnostic,
-   not a dead tab — the descent-guard calibration of [`PLAN.md`](PLAN.md) §4.6.
-7. A document mixing `\emph{…}`, CJK, Hebrew and emoji: no tofu in any of the six
-   display-font settings.
-8. Lighthouse: PWA installable, performance ≥ 95, accessibility 100.
+| # | Check | Status |
+|---|---|---|
+| 1 | Desktop: type, wrap, switch fonts, share-link round trip | **Chromium: passes.** A link is 183 characters for a document plus two changed options and reproduces the session in a fresh profile. **Firefox and Safari still to do by hand.** |
+| 2 | iOS Safari: install to the Home Screen, launch offline, keyboard up, copy works | **By hand — needs a device.** |
+| 3 | Android Chrome: install, offline, share link from the share sheet | **By hand — needs a device.** The `share_target` itself is verified: a `?text=` visit wins over the stored document and converts on arrival. |
+| 4 | DevTools offline reload after a cold cache | **Passes.** Service worker installs, and a reload with the network off serves the app and converts. |
+| 5 | A 200 KB document stays responsive | **Passes.** 157 ms in the worker, 338 ms wall including the debounce; the main thread answers in 2–20 ms throughout and a keystroke round-trips in ~100 ms. |
+| 6 | A pathological document is a diagnostic, not a dead tab | **Passes.** Every nesting shape refuses at 100–150 levels; a document 20 000 levels deep still returns a diagnostic and the same session converts afterwards. See [`PLAN.md`](PLAN.md) §4.6 for the calibration and for why the plan's byte budget had to become a depth limit. |
+| 7 | Markup mixed with CJK, Hebrew and emoji: no tofu in any of the six fonts | **Passes** in all six. |
+| 8 | Lighthouse: PWA installable, performance ≥ 95, accessibility 100 | **Accessibility: axe-core reports zero violations** at 1280×800 and 390×844. **Lighthouse itself still to run by hand.** |
+
+To re-drive the automated ones you need a browser and Playwright, which the repository
+deliberately does not depend on — install them outside it, build with `npm run build`,
+serve with `npm run preview`, and drive `http://localhost:4173/techxt/`.

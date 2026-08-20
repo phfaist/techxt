@@ -57,6 +57,25 @@ export default defineConfig({
             purpose: 'maskable',
           },
         ],
+        // W8, both additive: Android's share sheet can send selected LaTeX straight
+        // into the app, and an installed copy can offer to open a .tex. A GET target
+        // rather than POST, so no service-worker request handler is involved and the
+        // app just reads `?text=` on load (§9, §6.4). Neither field is in
+        // vite-plugin-pwa's manifest type yet, hence the cast; both are ignored by a
+        // browser that does not implement them.
+        ...({
+          share_target: {
+            action: BASE,
+            method: 'GET',
+            params: { text: 'text', title: 'title', url: 'url' },
+          },
+          file_handlers: [
+            {
+              action: BASE,
+              accept: { 'text/x-tex': ['.tex', '.latex'], 'application/x-tex': ['.tex'] },
+            },
+          ],
+        } as Record<string, unknown>),
       },
       workbox: {
         // The app only: shell, styles, glue and the engine. Deliberately no font —

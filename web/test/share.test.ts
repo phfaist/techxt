@@ -13,12 +13,26 @@ import {
   SHARE_LENGTH_LIMIT,
   SHARE_PREFIX_DEFLATE,
   SHARE_PREFIX_PLAIN,
+  STORAGE_KEYS,
   canCompress,
   decodeShare,
   encodeShare,
   encodeShareSettingsOnly,
+  loadState,
+  sharedText,
 } from '../src/state';
+import type { StorageLike } from '../src/state';
 import type { AppOptions } from '../src/types';
+
+/** The two methods `StorageLike` needs, backed by a Map. */
+function memoryStorage(): StorageLike {
+  const map = new Map<string, string>();
+  return {
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => void map.set(key, value),
+    removeItem: (key) => void map.delete(key),
+  };
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -178,5 +192,50 @@ describe('the length the app decides on', () => {
     expect(settingsOnly.length).toBeLessThan(SHARE_LENGTH_LIMIT);
     expect((await decodeShare(settingsOnly))?.doc).toBe('');
     expect((await decodeShare(settingsOnly))?.opts).toEqual(EVERY_OPTION);
+  });
+});
+
+/* ------------------------------------------------------- the share target (W8) */
+
+describe('sharedText', () => {
+  it('reads the text a GET share_target carried', () => {
+    expect(sharedText('?text=%5Csection%7BHi%7D')).toBe('\\section{Hi}');
+    expect(sharedText('text=%5Cemph%7Bx%7D')).toBe('\\emph{x}');
+  });
+
+  it('is null for a share with nothing to convert', () => {
+    // A share sheet sends whatever it has; only `text` is a document, so a share
+    // carrying just a title or a URL falls through to the ordinary load path rather
+    // than pasting a link into the editor.
+    expect(sharedText('?title=Paper&url=https://example.org')).toBeNull();
+    expect(sharedText('?text=')).toBeNull();
+    expect(sharedText('?text=%20%20')).toBeNull();
+    expect(sharedText('')).toBeNull();
+    expect(sharedText(null)).toBeNull();
+    expect(sharedText(undefined)).toBeNull();
+  });
+});
+
+describe('loadState with a share target', () => {
+  it('takes the shared document ahead of anything stored', async () => {
+    const storage = memoryStorage();
+    storage.setItem(STORAGE_KEYS.doc, 'the stored document');
+    storage.setItem(STORAGE_KEYS.opts, JSON.stringify({ mathMode: 'plain' }));
+
+    const loaded = await loadState({ query: '?text=shared%20markup', storage });
+
+    expect(loaded.source).toBe('share-target');
+    expect(loaded.state.doc).toBe('shared markup');
+    expect(loaded.firstVisit).toBe(false);
+    // The document is the share's; the settings stay the ones this browser had.
+    expect(loaded.state.opts.mathMode).toBe('plain');
+  });
+
+  it('lets an ordinary visit through untouched', async () => {
+    const storage = memoryStorage();
+    storage.setItem(STORAGE_KEYS.doc, 'the stored document');
+    const loaded = await loadState({ query: '?utm_source=whatever', storage });
+    expect(loaded.source).toBe('storage');
+    expect(loaded.state.doc).toBe('the stored document');
   });
 });

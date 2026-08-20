@@ -230,29 +230,46 @@ offset. Those diagnostics still show their message and `rendered` text.
 
 - `web/crate/.cargo/config.toml` raises the wasm stack from its 1 MiB default:
   `rustflags = ["-C", "link-arg=-zstack-size=8388608"]` (8 MiB).
-- **Use a byte budget, not a depth limit.** techy's `StdDescentGuard` estimates stack
-  use by *address distance* — it records the address of a local at `init` and compares
-  a fresh local's address at each `try_enter`, with no operating-system call anywhere.
-  What `techxt-cli` has and wasm lacks is only the *probe* behind
-  `computed_stack_budget` (`stacker` has no meaningful wasm implementation); the fixed
-  byte budget works here exactly as it does natively. Configure
-  `StdDescentGuardInit::fixed_stack_budget(6 * 1024 * 1024)` against the 8 MiB stack,
-  leaving 2 MiB for the refusal path and for whatever the binding and the
-  wasm-bindgen glue hold below the parse. (`fixed_stack_budget` subtracts no headroom
-  of its own — the number is used as given.)
+- ~~**Use a byte budget, not a depth limit.**~~ **Revised at W7 by measurement — use a
+  depth limit.** The original reasoning was that techy's `StdDescentGuard` estimates
+  stack use by *address distance*, with no operating-system call anywhere, so what
+  `techxt-cli` has and wasm lacks is only the *probe* behind `computed_stack_budget`
+  and a fixed byte budget should work here exactly as it does natively. That is wrong,
+  and the reason is worth keeping: **address distance measures the shadow stack in
+  linear memory, and the shadow stack is not the one that runs out.** Only
+  address-taken locals live there; an ordinary Rust local becomes a wasm local, held in
+  the engine's own call stack, which linear memory cannot see and `-zstack-size` cannot
+  size. Measured in Chromium, every deeply-nested shape died as a `RangeError: Maximum
+  call stack size exceeded` — an engine limit of roughly 1 MB a module cannot raise —
+  with the 6 MiB byte budget untouched and the guard silent. The budget was not too
+  generous; it was watching the wrong stack.
+- **So: `StdDescentGuardInit::depth_limit(300)`**, calibrated below. A depth limit is
+  also engine-independent in a way a byte budget is not, which matters because Safari's
+  and Firefox's stack limits are neither Chromium's nor probeable from here. The 8 MiB
+  shadow stack stays — it costs nothing and address-taken data below the parse still
+  lives there.
 - **Leaving the default would be wrong.** `StdDescentGuardInit::default()` is
   `fixed_stack_budget(250 KiB)` *marked unconfigured*: deliberately tight — on the
   order of ten nesting levels in a debug build — and it emits a self-describing
   refusal aimed at an embedder who has not chosen. We are that embedder.
-- **Calibrate at W7.** With the constants above, find the nesting depth at which the
-  guard refuses (`{{{…}}}`, `\frac{\frac{…}}`, a deeply nested list), confirm the
-  refusal arrives as a diagnostic rather than a trap, then confirm that a document a
-  good margin deeper still does not kill the instance. Record both numbers in a
-  comment beside the constant. If the margin is thin, lower the budget rather than
-  raise the stack: the guard's estimate tracks real consumption closely, but it is an
-  estimate. (Should a depth limit ever be preferred instead, note that
-  `depth_limit(levels)` counts engine *descents*, and one nesting level of input costs
-  about two of them.)
+- **Calibration (W7, Chromium 140, binary-searched, one fresh module instance per
+  probe — a trap poisons the whole instance, not just the `Session`).** Input nesting
+  depth at which an *unguarded* conversion killed the instance, and at which
+  `depth_limit(300)` refuses instead:
+
+  | shape | engine dies at | refuses at | descents/level | margin |
+  |---|---|---|---|---|
+  | `\sqrt{…}` | 577 | 100 | 3 | 5.8× |
+  | `\textbf{…}`, `x^{…}` | 585 | 100 | 3 | 5.9× |
+  | `\frac{…}{2}` | 593 | 100 | 3 | 5.9× |
+  | `\begin{itemize}\item …` | 670 | 100 | 3 | 6.7× |
+  | `{…}`, `${…}$` | 993 | 149–150 | 2 | 6.6× |
+
+  A document **20 000 levels** deep still comes back as
+  `core.constructs.descent-limit-exceeded` rather than a trap, and the same `Session`
+  converts an ordinary document correctly afterwards — which is checklist item 6 of
+  §13. If the margin ever looks thin, lower the limit: the stack cannot be raised at
+  all here, so the margin is the whole of the safety.
 - A panic — or a genuine overflow — leaves the wasm instance unusable. The worker
   catches it, posts `{type: 'fatal'}`, and the client discards and respawns the worker
   (§6.2). `console_error_panic_hook` is installed in all builds: a panic report from a
@@ -531,8 +548,25 @@ everything. When `truncated`, a final row reads "and N more (retention limit)".
 Five self-hosted faces plus the system stack, each shipped **whole** — see §8.4 for
 why nothing is subsetted. The selection criterion is coverage of what techxt itself
 emits: the Mathematical Alphanumeric Symbols, the sub/superscripts, the stacked
-delimiter pieces. A face that cannot render those is not offered, which is why the
-selector needs no warnings next to any entry.
+delimiter pieces.
+
+> **Measured at W5, and it does not hold for all five.** Of the 1 349 distinct
+> codepoints techxt's own repertoire emits, Fira Math covers 834 — it has bold and
+> double-struck but **no script and no fraktur alphabet, and no sub/superscript
+> digits** (140 missing in the Mathematical Alphanumeric block alone). Latin Modern
+> Math covers 965, but 175 of its 384 gaps are Cyrillic, which is passthrough text
+> rather than something techxt emits. STIX Two Math covers 1 241 and Libertinus Math
+> 1 245.
+>
+> Nothing here renders as a box — the chains of §8.2 fall back per glyph — so the cost
+> is a *mixed* face in `\mathfrak{A}` rather than tofu, which §8.2 argues is the right
+> outcome. But the sentence that used to stand here ("a face that cannot render those
+> is not offered, which is why the selector needs no warnings next to any entry") was
+> written before the measurement and Fira Math contradicts it. **This is a decision
+> for the owner, not for the implementation** (Appendix D: dropping a face needs the
+> same conversation as adding one). The three options are: keep it and accept the
+> fallback, keep it with a note in the selector, or drop it. Until that is settled it
+> stays, because it is the only humanist sans in the list and the fallback is honest.
 
 | id | face | character | licence |
 |---|---|---|---|
@@ -641,8 +675,22 @@ selection criterion, and the one hard gate on the default face:
    table, a nested list.
 2. Convert it with the built CLI (`cargo run -q --bin techxt`).
 3. Collect the codepoints of the output and report, per face, which of them the
-   `cmap` lacks. **Fails** if the default face (JuliaMono) is missing any — the
-   out-of-the-box rendering of techxt's own output is not allowed to regress.
+   `cmap` lacks. **Fails** if the default face (JuliaMono) is missing any beyond a
+   named baseline — the out-of-the-box rendering of techxt's own output is not allowed
+   to regress.
+
+   > The baseline exists because measurement found the default face already has two
+   > gaps: **U+301A/U+301B**, LEFT/RIGHT WHITE SQUARE BRACKET, which
+   > `\openbracketleft`/`\openbracketright` map to. JuliaMono has U+27E6/U+27E7, the
+   > mathematical white square brackets, and not the CJK-punctuation ones. A gate that
+   > is red on the day it is written teaches people to ignore it, so the two are a
+   > justified `KNOWN_DEFAULT_GAPS` constant in the script and anything beyond them
+   > fails; a gap that later closes is reported so the constant can be trimmed.
+   >
+   > **Worth raising as a library question** (Appendix D — not something the app may
+   > fix by reaching into the crate): whether `\openbracketleft` should map to U+27E6
+   > rather than U+301A. pylatexenc's choice is the CJK codepoint; U+27E6 is what the
+   > construct means and what math fonts carry.
    **Warns**, with the list written to the job summary, for the other four: a handful
    of gaps filled by the fallback chain is a documented fact about a face, not a bug,
    and only a face with a large or ugly gap comes off the list.
@@ -678,9 +726,12 @@ the script is a dev aid. The mark: `∑` converting to `S`-shaped text, or simpl
   This is stated in About and is worth keeping true.
 - **Updates**: `autoUpdate` plus a toast ("A new version is ready — Reload"). The
   document is already in localStorage, so a reload never loses work.
-- **Stretch (W8)**: a GET `share_target` (`?text=`) so Android's share sheet can send
-  selected LaTeX straight into the app, and `file_handlers` for `.tex` where
-  supported. Both are additive and neither may block the release.
+- **Stretch (W8), both shipped**: a GET `share_target` (`?text=`) so Android's share
+  sheet can send selected LaTeX straight into the app, and `file_handlers` for
+  `.tex`/`.latex` where supported. Both are additive — a browser that implements
+  neither ignores both manifest fields, and the code paths are only reached when the
+  browser calls them. A GET target rather than POST, so no service-worker request
+  handler is involved and the app simply reads `?text=` on load.
 
 ## 10. Build and tooling
 
@@ -789,6 +840,55 @@ Native timings; wasm is typically 1.5–3× slower and a mid-range phone slower 
 budget ~50–150 ms for an 80 KB document on a phone — comfortably inside the debounce,
 and the reason a Worker is enough and cancellation is not needed.
 
+### Measured at W7 — the finished binding, in a browser
+
+The probe of the table above was a scratch crate with `fn convert(&str, Option<usize>)
+-> String`. The shipped binding carries the serde derives and techy's
+`Diagnostic::render()`, which the panel's `rendered` field needs, so it is larger:
+
+| Quantity | Value |
+|---|---|
+| wasm, as shipped (`opt-level = 3` + LTO + `wasm-opt -O3`) | **939 287 B raw · 333 KB gzip** |
+
+Conversion in Chromium 140 on this machine, median of seven warm runs against one
+`Session` (a repeated `\section`/`\emph`/`$…$`/`\footnote`/`itemize` unit of 225 B):
+
+| Document | Value |
+|---|---|
+| 225 B | 4.6 ms |
+| 4.5 KB | 7.0 ms |
+| 45 KB | 28.8 ms |
+| 45 KB, `wrap_width(72)` | 19.2 ms |
+| first `Session` + first `convert` | 4.1 ms |
+| 200 KB, through the whole app (§13 item 5) | 157 ms convert · 338 ms wall including the debounce |
+
+Roughly 1.7× the native figures for the same shape of work — the low end of the
+1.5–3× the table above predicted, and comfortably inside the 120 ms debounce. Wrapping
+is *faster* than not wrapping at this size, which is the layout engine doing less work
+per line rather than more. Nothing here argues for revisiting `opt-level`.
+
+While that 200 KB document converts, the main thread answers in 2–20 ms and a keystroke
+round-trips in about 100 ms — which is the Worker of D3 doing its job, and the reason
+§6.2's Cancel button is a safety net rather than a routine control.
+
+Fonts as committed (§8.3 estimated "roughly 250–700 KB of woff2 each"; the default
+face is half again the top of that range, which is what moved the §11 per-file budget
+to 1.15 MB — subsetting it is the one thing §8.4 rules out):
+
+| face | bytes |
+|---|---|
+| `JuliaMono-Regular.woff2` | 1 042 116 |
+| `STIXTwoMath-Regular.woff2` | 552 084 |
+| `LatinModernMath-Regular.woff2` | 391 580 |
+| `LibertinusMath-Regular.woff2` | 380 036 |
+| `FiraMath-Regular.woff2` | 98 964 |
+| **total** | **2 464 780** |
+
+Glyph coverage of the 1 349 distinct codepoints techxt's own repertoire emits (§8.5):
+JuliaMono 1 347, Libertinus Math 1 245, STIX Two Math 1 241, Latin Modern Math 965,
+Fira Math 834. See §8.1 for what the two gaps in the default face are and §8.5 for what
+the others mean.
+
 The three build profiles differ by 106 KB gzipped between the fastest and the
 smallest. `opt-level = 3` takes the speed; the other two rows are here so the trade
 can be reversed on evidence rather than re-measured from scratch (§4.7). The speed
@@ -827,6 +927,17 @@ Each is a working, deployable state.
   *Done when*: checklist item 6 passes and the browser timings are recorded in §14.
 - **W8 — stretch.** Share target, `.tex` file handler, a pane-divider drag, an
   "explain this diagnostic" link into the crate docs.
+  *Done*: the pane-divider drag (with a keyboard-operable `role="separator"`); a GET
+  `share_target`, so Android's share sheet sends selected LaTeX straight in as
+  `?text=` — ahead of anything stored, since it is an explicit act by the person
+  sharing — verified end to end; and a `file_handlers` entry for `.tex`/`.latex`
+  consumed through `launchQueue`, which replaces the document with the same
+  single-level undo the Load menu offers.
+  *Not done*: the "explain this diagnostic" link. techxt is not published, so there is
+  no rendered crate documentation to link to and no per-identifier anchor to link at —
+  the link would be a 404 dressed as help. It becomes worth doing when the crate has
+  published docs, and the identifier is already on screen in monospace so a search
+  finds what there is.
 
 ## 16. Deliberate omissions
 
@@ -958,7 +1069,7 @@ and SHA-256 it used in `web/fonts/SOURCES.md`, and copies each licence verbatim 
 |---|---|---|
 | JuliaMono | `github.com/cormullion/juliamono` | the release's `webfonts/JuliaMono-Regular.woff2` — ship as-is |
 | Fira Math | `github.com/firamath/firamath` | `FiraMath-Regular.otf` → convert |
-| Latin Modern Math | CTAN package `lm-math` (GUST) | `latinmodern-math.otf` → convert |
+| Latin Modern Math | CTAN package `lm-math` (GUST) — *but see below* | `latinmodern-math.otf` → convert |
 | STIX Two Math | `github.com/stipub/stixfonts` | `STIXTwoMath-Regular.otf` → convert |
 | Libertinus | `github.com/alerque/libertinus` | `LibertinusMath-Regular.otf` → convert |
 
@@ -966,6 +1077,24 @@ and SHA-256 it used in `web/fonts/SOURCES.md`, and copies each licence verbatim 
 face's licence file *in the release actually downloaded* rather than assuming the
 table above; OFL versus GUST decides whether the name-ID suffix of §8.4 is the OFL's
 Reserved Font Name clause or the LPPL's rename requirement.
+
+**What the script actually fetched at W5** (`web/fonts/SOURCES.md` is the record, with
+every URL, version and SHA-256): JuliaMono 0.63.2 from its release's
+`JuliaMono-webfonts.tar.gz`, shipped byte for byte; Fira Math 0.3.4 (0.4 is beta-only
+and publishes no `.otf`); STIX Two Math **2.13, not 2.14** — 2.14 is tagged "INTERIM
+(build process conversion)" and ships no built fonts; Libertinus 7.051.
+
+**Latin Modern Math did not come from CTAN.** CTAN and gust.org.pl are unreachable
+from the network this was built on, so the file was taken from Debian/Ubuntu's
+`fonts-lmodern` package (`archive.ubuntu.com/…/lmodern/fonts-lmodern_2.005-2_all.deb`,
+member `usr/share/texmf/fonts/opentype/public/lm-math/latinmodern-math.otf`), which is
+GUST's 1.959 file redistributed unmodified, together with the GUST licence from the
+same package. `SOURCES.md` says so plainly rather than claiming CTAN. On a machine that
+can reach CTAN, prefer it and update the recorded hashes.
+
+**One deliberate deviation from §8.4's wording.** Name IDs 1/4/16 get `" Web"` as
+specified; **ID 6, the PostScript name, gets `"Web"` without the space**, because the
+OpenType specification excludes the space character from that field.
 
 ## Appendix D — executing this plan
 

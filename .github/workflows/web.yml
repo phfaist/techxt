@@ -32,16 +32,18 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # §4.7: the module is 872 KB raw / 300 KB gzipped today. The budget is roughly 20 %
-  # over that, so a dependency mistake shows up as a failed build rather than a slow
-  # page — and so the decision to trade size for speed gets revisited deliberately
-  # rather than eroded.
-  WASM_MAX_BYTES: 1100000
-  WASM_MAX_GZIP_BYTES: 350000
-  # §8.3 and §11 step 6: whole fonts are the point, but a 4 MB face added by accident
-  # should still be a conversation.
-  FONT_MAX_FILE_BYTES: 900000
-  FONT_MAX_TOTAL_BYTES: 3500000
+  # §4.7 and §14: the finished binding is 939 KB raw / 333 KB gzipped — larger than
+  # the 890/296 the plan measured from a bare `fn convert(&str) -> String` probe,
+  # because the real surface carries the serde derives and techy's
+  # `Diagnostic::render()`, which the panel's `rendered` field needs. The budget is
+  # roughly 20 % over the measured figure, so a dependency mistake shows up as a
+  # failed build rather than a slow page.
+  #
+  # The gzip ceiling is set at 400 KB deliberately: that is the number §4.7 names as
+  # the point to drop to `opt-level = "s"`, so CI fails exactly when the plan says the
+  # size/speed trade should be revisited — not before.
+  WASM_MAX_BYTES: 1150000
+  WASM_MAX_GZIP_BYTES: 400000
 
 jobs:
   web:
@@ -64,6 +66,7 @@ jobs:
             ~/.cargo/git/db
             ~/.cargo/bin/wasm-pack
             web/crate/target
+            rust/target
           key: web-${{ runner.os }}-${{ hashFiles('web/crate/Cargo.lock', 'rust/Cargo.lock') }}
           restore-keys: web-${{ runner.os }}-
 
@@ -81,6 +84,16 @@ jobs:
       - name: Tests (web/crate)
         working-directory: web/crate
         run: cargo test
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install node dependencies
+        working-directory: web
+        run: npm ci
 
       - name: Install wasm-pack
         run: |
@@ -112,16 +125,6 @@ jobs:
           fi
           exit $fail
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install node dependencies
-        working-directory: web
-        run: npm ci
-
       - name: Typecheck
         working-directory: web
         run: npm run typecheck
@@ -143,26 +146,16 @@ jobs:
           pip install --quiet fonttools brotli
           python3 web/tools/coverage_check.py --check
 
-      # §11 step 6.
+      # §11 step 6. The numbers live in `fetch_fonts.py`, beside the fonts they are
+      # about, so CI and a developer running the script locally cannot disagree —
+      # and so the reason a budget moved sits next to the value.
       - name: Assert the font budget
-        run: |
-          total=0
-          fail=0
-          for f in web/fonts/*.woff2; do
-            size=$(stat -c%s "$f")
-            total=$((total + size))
-            echo "$(basename "$f"): ${size} B" | tee -a "$GITHUB_STEP_SUMMARY"
-            if [ "$size" -gt "$FONT_MAX_FILE_BYTES" ]; then
-              echo "::error::$f is ${size} B, over the ${FONT_MAX_FILE_BYTES} B per-face budget (web/PLAN.md §11)"
-              fail=1
-            fi
-          done
-          echo "fonts total: ${total} B" | tee -a "$GITHUB_STEP_SUMMARY"
-          if [ "$total" -gt "$FONT_MAX_TOTAL_BYTES" ]; then
-            echo "::error::fonts total ${total} B, over the ${FONT_MAX_TOTAL_BYTES} B budget (web/PLAN.md §11)"
-            fail=1
-          fi
-          exit $fail
+        run: python3 web/tools/fetch_fonts.py --budget | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The committed faces are what ships; a file edited in place would otherwise
+      # never be noticed.
+      - name: Verify the committed fonts against SOURCES.md
+        run: python3 web/tools/fetch_fonts.py --check
 
       - uses: actions/upload-pages-artifact@v3
         with:
