@@ -20,15 +20,24 @@ import type { ExampleDoc } from './types';
  * `\cite` resolves to techxt's `<cit.>` placeholder rather than a warning — the
  * bibliography is not part of the fragment — so this stays clean.
  */
-const PAPER = String.raw`\section{A theory of everything}
+const EINSTEIN = String.raw`\section{The Equivalence Principle}
 
-We revisit Poincar\'e's argument in the light of \emph{modern} notation. The
-central estimate is $E = mc^2$, which the next section sharpens to an
-inequality.\footnote{The constant is not optimal; see \cite{poincare1905}.}
+Einstein's great insight was to treat gravity not as a force but a property of
+spacetime itself. The \emph{equivalence principle} states that at any point in
+spacetime, there is always a choice of a coordinate system that is locally the
+flat Minkowski metric $\eta_{\mu\nu}$ at that point.\footnote{See
+\cite{MyFavoriteGRBook} as well as
+\href{https://en.wikipedia.org/wiki/Equivalence_principle}{Wikipedia} for more
+details.}
 
-\subsection{Notation}
+\subsection{Curvature and the field equations}
 
-Throughout, $c$ is the speed of light and $m$ the rest mass.
+The energy and momentum are the sources of the curvature of spacetime. This
+relation is captured by \textbf{Einstein's equations}:
+\begin{equation}
+  R_{\mu\nu} - \tfrac{1}{2} R \, g_{\mu\nu} = \frac{8\pi G}{c^4} T_{\mu\nu} ,
+\end{equation}
+where $g_{\mu\nu}$ is the metric and $T_{\mu\nu}$ the stress-energy tensor.
 `;
 
 /** Sums with limits, a fraction, a root, Greek, a matrix and a display equation. */
@@ -93,10 +102,10 @@ written right to left, and an emoji 🎉 in the middle of a sentence.
 /** The Load ▾ menu, in the order it shows them. The first one is the first visit's. */
 export const EXAMPLES: readonly ExampleDoc[] = [
   {
-    id: 'paper',
-    title: 'A paper fragment',
-    blurb: 'Sections, emphasis, an accent, an inline formula, a footnote and a citation.',
-    source: PAPER,
+    id: 'ep',
+    title: 'The equivalence principle',
+    blurb: 'Sections, emphasis, an accent, math, a footnote and a citation.',
+    source: EINSTEIN,
   },
   {
     id: 'math',

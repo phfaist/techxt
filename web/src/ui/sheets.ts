@@ -103,7 +103,9 @@ export function initSheets(init: SheetsInit = {}): Sheets {
   let opener: HTMLElement | null = null;
 
   for (const trigger of document.querySelectorAll<HTMLElement>('[data-sheet]')) {
-    trigger.addEventListener('click', () => {
+    trigger.addEventListener('click', (event) => {
+      // Some triggers are <a href="#"> inline in prose text, not <button>s.
+      event.preventDefault();
       const id = trigger.dataset.sheet as SheetId;
       opener = trigger;
       open(id);

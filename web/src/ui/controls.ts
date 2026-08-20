@@ -165,7 +165,7 @@ export function initControls(init: ControlsInit): Controls {
       registerSelect('headingStyle', 'opt-heading', [
         { value: 'numbered-underlined', label: 'Number, title, underline (default)' },
         { value: 'underlined', label: 'Title and underline' },
-        { value: 'prefix', label: 'Number and title on one line' },
+        { value: 'prefix', label: '§.§ Title on one line' },
         { value: 'plain', label: 'Title alone' },
       ]),
     ),

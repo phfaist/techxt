@@ -61,7 +61,7 @@
       <div class="sheet-body">
         <h3>Techxt — LaTeX to unicode text converter</h3>
         <p>
-          Convert LaTeX code (approximately) into readable plain text:
+          Convert LaTeX code into a readable plain text approximation:
           <code>\emph{hi}</code> becomes <span class="sample">ℎ𝑖</span>,
           <code>\"o</code> becomes <span class="sample">ö</span>,
           <code>$\sum_{i=1}^n x_i$</code> becomes <span class="sample">∑ᵢ₌₁ⁿ 𝑥ᵢ</span>, an
@@ -69,73 +69,42 @@
           aligned text table.
         </p>
 
-        <h3 id="privacy">Rust libraries, Command-line tool, WebAssembly embedding</h3>
-        <p>The techxt converter library is written in Rust, and is based on the
-          <a href="https://github.com/phfaist/techy" target="_blank">techy</a>
-          parser library, designed to parse (La)TeX-like construct code.
-          Both libraries can be compiled to WebAssembly (WASM), facilitating their
-          embedding in the browser.
-        </p>
-
-        <h3 id="privacy">This web application</h3>
+        <h3>This web application runs entirely in the browser</h3>
         <p>
-          This web application runs entirely in the browser;
-          no document is ever uploaded.
-          You can install it as a
-          <a href="https://en.wikipedia.org/wiki/Progressive_web_app" target="_blank">Progressive
-            Web App</a> on your phone and on your desktop.
+          No input data is uploaded to any server.
+          You can <a href="#" data-sheet="install">install this app</a> as a Progressive Web App
+          on your phone and on your desktop 
+          (<a href="https://en.wikipedia.org/wiki/Progressive_web_app" target="_blank">read more</a>).
         </p>
 
-        <h3>Get it</h3>
-        <p>The Rust library:</p>
-        <pre class="snippet" tabindex="0"><code>[dependencies]
-techxt = { git = "https://github.com/phfaist/techxt", rev = "..." }</code></pre>
-        <p>The command-line program:</p>
-        <pre class="snippet" tabindex="0"><code>cd rust
-cargo run --bin techxt -- --wrap 78 paper.tex -o paper.txt</code></pre>
-
-        <h3>Links</h3>
-        <ul class="links">
-          <li>
-            <a href="https://github.com/phfaist/techxt" target="_blank" rel="noopener"
-              >Repository</a
-            >
-          </li>
-          <li>
-            <a
-              href="https://github.com/phfaist/techxt/blob/main/CHANGELOG.md"
-              target="_blank"
-              rel="noopener"
-              >Changelog</a
-            >
-          </li>
-          <li>
-            <a
-              href="https://github.com/phfaist/techxt/blob/main/PLAN.md"
-              target="_blank"
-              rel="noopener"
-              >Design notes</a
-            >
-          </li>
-          <li>
-            <a
-              href="https://github.com/phfaist/techxt/blob/main/web/PLAN.md"
-              target="_blank"
-              rel="noopener"
-              >This app’s design notes</a
-            >
-          </li>
-        </ul>
-
-        <h3>Fonts</h3>
-        <p class="credits-lead">The display faces, offered in the bar:</p>
-        <ul class="credits" id="font-credits"></ul>
-        <p class="credits-lead">The interface itself is set in:</p>
-        <ul class="credits" id="ui-font-credit"></ul>
-
-        <p class="colophon">
-          techxt <span id="techxt-version">—</span> · MIT licensed · © Philippe Faist
+        <h3>Rust libraries <i>techy</i> and <i>techxt</i>, successors to python's <i>pylatexenc</i></h3>
+        <p>The <i>techxt</i> converter library is written in Rust.  It is based on the
+          <i>techy</i> parser library, designed to parse (La)TeX-like construct code.
+          Both libraries can be compiled to WebAssembly (WASM), facilitating their
+          embedding in the browser (as you can see on this page).
         </p>
+        <p>The techy and techxt libraries are the result of rewriting the <i>pylatexenc</i>
+          python library capabilities from scratch, in Rust.  We've improved the design and
+          made the parsing faster.</p>
+        <p>Techy: <a href="https://github.com/phfaist/techy" target="_blank">github project</a> |
+           Techxt: <a href="https://github.com/phfaist/techxt" target="_blank">github project</a> |
+           Pylatexenc: <a href="https://github.com/phfaist/pylatexenc" target="_blank">github project</a></p>
+        <p>The techy/techxt libraries are currently in early development stage.</p>
+
+        <h3>The <i>techxt</i> command-line tool</h3>
+        <p>Prefer the command line? Download/clone
+           <a href="https://github.com/phfaist/techxt" target="_blank">the techxt repository</a>,
+           and install the binary:</p>
+        <pre class="snippet" tabindex="0"><code>techxt$ cargo install --path rust/techxt-cli</code></pre>
+        <p>Then:</p>
+        <pre class="snippet" tabindex="0"><code>$ techxt myfile.tex 
+Here is some math: ∑ₖ₌₁ⁿ 1/𝑘² …
+</code></pre>
+
+        <div class="colophon font-credits-fine-print">
+          techxt <span id="techxt-version">—</span> · MIT licensed · © Philippe Faist <br/>
+          <!--· -->Fonts: <ul class="credits" id="font-credits"></ul><ul class="credits" id="ui-font-credit"></ul>
+        </div>
       </div>
     </dialog>
 
@@ -143,7 +112,7 @@ cargo run --bin techxt -- --wrap 78 paper.tex -o paper.txt</code></pre>
 
     <dialog class="sheet" id="sheet-install" aria-labelledby="sheet-install-title">
       <div class="sheet-head">
-        <h2 class="sheet-title" id="sheet-install-title">Install techxt</h2>
+        <h2 class="sheet-title" id="sheet-install-title">Install the techxt app</h2>
         <button class="btn sheet-close" type="button" data-close-sheet aria-label="Close">
           <span aria-hidden="true">✕</span>
         </button>
@@ -244,6 +213,16 @@ cargo run --bin techxt -- --wrap 78 paper.tex -o paper.txt</code></pre>
           Display fonts are fetched as you choose them. <strong>Keep all fonts offline</strong>,
           in More options, fetches all five now so they work with the network off too.
         </p>
+
+        <h3>The <i>techxt</i> command-line tool</h3>
+        <p>Prefer the command line? Download/clone
+           <a href="https://github.com/phfaist/techxt" target="_blank">the techxt repository</a>,
+           and install the binary:</p>
+        <pre class="snippet" tabindex="0"><code>techxt$ cargo install --path rust/techxt-cli</code></pre>
+        <p>Then:</p>
+        <pre class="snippet" tabindex="0"><code>$ techxt myfile.tex 
+Here is some math: ∑ₖ₌₁ⁿ 1/𝑘² …
+</code></pre>
       </div>
     </dialog>
 

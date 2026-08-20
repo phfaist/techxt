@@ -1475,9 +1475,9 @@ select.control {
  * dialog told to be a grid is a closed dialog you can see.
  */
 .sheet {
-  /* Wide enough for the prose it holds, and no wider; as tall as it needs to be, up
+  /* A comfortable width; as tall as it needs to be, up
      to nearly the screen — a short sheet should not be a tall box with a hole in it. */
-  width: min(44rem, 100% - 2rem);
+  width: min(80rem, 100% - 2rem);
   /* `fit-content`, not `auto`: a modal dialog is `position: fixed; inset: 0`, and an
      `auto` height between a top and a bottom of zero stretches to the whole screen. */
   height: fit-content;
@@ -1540,7 +1540,7 @@ select.control {
   overflow: auto;
   overscroll-behavior: contain;
   padding: 0.4rem 1.75rem 2.25rem;
-  max-width: 68ch;
+  /*max-width: 68ch;*/
 }
 
 .sheet-body h3 {
@@ -1635,6 +1635,30 @@ select.control {
 
 .credits li {
   margin-bottom: 0.4rem;
+}
+
+/* Inline the font-credit <ul>s into the colophon line, dot-separated. */
+.font-credits-fine-print {
+  display: inline;
+}
+.font-credits-fine-print .credits, .font-credits-fine-print .credits > li {
+  display: inline;
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+.font-credits-fine-print .credits li {
+  display: inline;
+  margin: 0;
+}
+
+.font-credits-fine-print .credits li:not(:last-child)::after,
+.font-credits-fine-print .credits:not(:empty) + .credits:not(:empty)::before {
+  content: '\00A0\00B7\00A0';
+  font-size: 0.7em;
 }
 
 .colophon {
