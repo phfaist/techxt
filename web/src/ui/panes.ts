@@ -576,13 +576,22 @@ export function initPanes(init: PanesInit): Panes {
     }
   }
 
-  function relayoutDiagnostics(): void {
+  /** The cheap half of a relayout: string slicing and a handful of DOM nodes. */
+  function syncBackdrop(): void {
     rebuildBackdrop();
     backdrop.scrollTop = input.scrollTop;
     backdrop.scrollLeft = input.scrollLeft;
+  }
+
+  function relayoutDiagnostics(): void {
+    syncBackdrop();
     rebuildGutter();
   }
 
+  // `rebuildGutter` measures in a throwaway mirror (a forced layout) — worth
+  // debouncing on a resize. `syncBackdrop` is cheap and runs on every keystroke
+  // instead (below): with the debounce, a fast typist would never let it fire, and
+  // the highlight would sit frozen on stale, unwrapped text for the whole burst.
   let diagLayoutTimer = 0;
   function scheduleRelayoutDiagnostics(): void {
     window.clearTimeout(diagLayoutTimer);
@@ -608,11 +617,16 @@ export function initPanes(init: PanesInit): Panes {
     // The diagnostics themselves are stale until the next result arrives — same as
     // the panel above — but their *offsets* still have to track every keystroke, or
     // an edit before a span paints the highlight over the wrong characters until
-    // that result lands (§7). The backdrop's text needs the same tracking, for its
-    // wrapping to stay in step with the real textarea's.
+    // that result lands (§7). Debouncing that redraw (as `scheduleRelayoutDiagnostics`
+    // does for the gutter, below) would defeat the point: a fast typist never leaves
+    // an 80ms gap for it to fire, so the backdrop would sit frozen — stale text,
+    // stale wrapping, stale everything — for the whole burst. So this part runs now.
     remapPaintDiagnostics(paintDiagnosticsText, input.value);
     paintDiagnosticsText = input.value;
+    syncBackdrop();
     init.onInput(input.value, bulk ? 'paste' : 'type');
+    // Only the gutter still waits: it measures in a throwaway mirror, which forces a
+    // layout, so it stays debounced rather than paying for that on every keystroke.
     scheduleRelayoutDiagnostics();
   });
 
