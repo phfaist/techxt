@@ -1,0 +1,23 @@
+{
+  "name": "techxt-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "techxt in the browser — a static, installable LaTeX-to-text converter",
+  "license": "MIT",
+  "scripts": {
+    "wasm": "wasm-pack build crate --target web --release --out-dir pkg",
+    "dev": "npm run wasm && vite",
+    "build": "npm run wasm && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "fonts": "python3 tools/fetch_fonts.py"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12",
+    "vite-plugin-pwa": "^1.0.3",
+    "vitest": "^3.2.4"
+  }
+}

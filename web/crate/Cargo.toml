@@ -1,0 +1,30 @@
+[package]
+name = "techxt-web"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "The wasm binding behind the techxt web app (web/PLAN.md §4)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+techxt = { path = "../../rust/techxt" }
+wasm-bindgen = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = "0.1"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O3", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext"]

@@ -33,3 +33,13 @@ flamegraph.svg
 
 # Claude config files
 .claude
+
+# The web app (web/PLAN.md §12): node's dependency tree, Vite's output and cache, and
+# the two generated build directories of the wasm binding. `web/package-lock.json`,
+# `web/crate/Cargo.lock` and the woff2 faces under `web/fonts/` are tracked on purpose.
+web/node_modules/
+web/dist/
+web/.vite/
+web/dev-dist/
+web/crate/target/
+web/crate/pkg/

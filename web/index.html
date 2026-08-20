@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>techxt — LaTeX-like markup to plain text</title>
+    <meta
+      name="description"
+      content="Convert LaTeX-like markup to readable plain unicode text, entirely in your browser. No upload, no server, works offline."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16151a" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta property="og:title" content="techxt — LaTeX-like markup to plain text" />
+    <meta
+      property="og:description"
+      content="Paste LaTeX, read plain text. Runs entirely in your browser."
+    />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <!--
+      The shell. Everything interactive is built by the modules under src/ui/ into the
+      four mounts below; this file holds only the frame and the prose (web/PLAN.md §6.1).
+    -->
+    <header class="site-header">
+      <a class="site-name" href="#about">techxt</a>
+      <p class="site-tagline">LaTeX-like markup → plain text</p>
+      <nav class="site-links">
+        <a href="#about">About</a>
+        <a href="https://github.com/phfaist/techxt" rel="noopener">GitHub</a>
+      </nav>
+    </header>
+
+    <div class="app" id="app">
+      <div id="controls-mount"></div>
+      <div id="panes-mount"></div>
+      <div id="status-mount"></div>
+    </div>
+
+    <section class="below" id="about">
+      <div class="below-inner">
+        <h2>What this is</h2>
+        <p>
+          <strong>techxt</strong> converts documents written in a LaTeX-like language into
+          readable plain text: <code>\emph{hi}</code> becomes <span class="sample">ℎ𝑖</span>,
+          <code>\"o</code> becomes <span class="sample">ö</span>,
+          <code>$\sum_{i=1}^n x_i$</code> becomes <span class="sample">∑ᵢ₌₁ⁿ 𝑥ᵢ</span>, an
+          <code>itemize</code> becomes a bulleted list, and a <code>tabular</code> becomes an
+          aligned text table.
+        </p>
+        <p>
+          Content conversion and text layout are separate stages, so wrapping, blank lines and
+          indentation are decided once from complete information instead of macro by macro.
+          Unknown constructs and skipped content produce structured diagnostics with source
+          positions rather than silent surprises — the panel under the panes is showing you the
+          same reports the command-line program prints.
+        </p>
+
+        <h2 id="privacy">Your document stays here</h2>
+        <p class="privacy">
+          Everything runs in your browser. No document is ever uploaded, and the page makes no
+          third-party network requests at all — no CDN, no analytics, no error reporting. Install
+          it from your browser’s menu and it works with the network off.
+        </p>
+
+        <h2>Get it</h2>
+        <p>The Rust library:</p>
+        <pre class="snippet"><code>[dependencies]
+techxt = { git = "https://github.com/phfaist/techxt", rev = "..." }</code></pre>
+        <p>The command-line program:</p>
+        <pre class="snippet"><code>cd rust
+cargo run --bin techxt -- --wrap 78 paper.tex -o paper.txt</code></pre>
+
+        <h2>Links</h2>
+        <ul class="links">
+          <li><a href="https://github.com/phfaist/techxt" rel="noopener">Repository</a></li>
+          <li>
+            <a href="https://github.com/phfaist/techxt/blob/main/CHANGELOG.md" rel="noopener"
+              >Changelog</a
+            >
+          </li>
+          <li>
+            <a href="https://github.com/phfaist/techxt/blob/main/PLAN.md" rel="noopener"
+              >Design notes</a
+            >
+          </li>
+          <li>
+            <a href="https://github.com/phfaist/techxt/blob/main/web/PLAN.md" rel="noopener"
+              >This app’s design notes</a
+            >
+          </li>
+        </ul>
+
+        <h2>Fonts</h2>
+        <ul class="credits" id="font-credits"></ul>
+
+        <footer class="colophon">
+          <p>
+            techxt <span id="techxt-version">—</span> · MIT licensed ·
+            © Philippe Faist
+          </p>
+        </footer>
+      </div>
+    </section>
+
+    <div id="toast-mount"></div>
+  </body>
+</html>
