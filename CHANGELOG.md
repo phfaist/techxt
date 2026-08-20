@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`MathMode::Source` is now honored by every spelling of a formula.** It was
+  answered by the math *groups* alone — `$…$`, `\(…\)`, `\[…\]`, `$$…$$` — so a
+  formula written as a math environment (`equation`, `align`, `gather`, a bare
+  matrix, …) or as `\ensuremath` was converted instead of re-emitted, and one
+  document could show the same equation both ways. Every construct that opens a math
+  scope now re-emits its LaTeX in that mode and does not enter its body; display
+  formulas take a block of their own and inline ones stay in the running text, as the
+  groups already did. `Fancy` and `Plain` are unchanged.
+
 ## [0.1.0] — 2026-08-19
 
 First version: everything [`PLAN.md`](PLAN.md) specifies, implemented and tested.

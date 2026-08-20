@@ -14,6 +14,11 @@
 //! two it is depends on nothing but whether math was already being rendered, so no
 //! environment has to know where it was written.
 //!
+//! Opening a scope carries the third obligation as well: in
+//! [`MathMode::Source`](crate::convert::MathMode::Source) an environment that opens a
+//! formula re-emits it as LaTeX and never enters its body, which is what makes
+//! `\begin{equation}` and the `\[…\]` it is a synonym for answer that mode alike.
+//!
 //! # Two separators, three meanings
 //!
 //! The `&` and `\\` that [`defs::base`](super::base) defines read
@@ -167,13 +172,24 @@ struct Formula {
 impl TextHandler for Formula {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        node: NodeRef<'_, Latexlike>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let enclosing = cx.state().math;
         // A math environment *is* display math (PLAN.md §9.5) — unless it is written
         // inside an inline formula, where there is no second line to display it on.
         let display = self.display && enclosing.is_none_or(|math| math.display);
+
+        // A formula this environment opens is a formula, however it is spelled: in
+        // `Source` mode it re-emits as LaTeX exactly as `\[…\]` does, and its body is
+        // never entered. One a formula already surrounds is that formula's business —
+        // and in `Source` mode there is no such case to answer, since the formula
+        // outside was not descended into either.
+        if enclosing.is_none() {
+            if let Some(flow) = math::source_scope(node, display, cx.options()) {
+                return Ok(flow);
+            }
+        }
 
         let mut inner = cx.state().clone();
         inner.math = Some(MathCtx {
@@ -214,6 +230,14 @@ impl TextHandler for Matrix {
 
         let enclosing = cx.state().math;
         let display = enclosing.is_none_or(|math| math.display);
+
+        // Written outside a formula, a matrix opens one — so `Source` mode re-emits it
+        // rather than drawing it, on the same terms as every other math scope.
+        if enclosing.is_none() {
+            if let Some(flow) = math::source_scope(node, display, cx.options()) {
+                return Ok(flow);
+            }
+        }
 
         let mut inner = cx.state().clone();
         inner.math = Some(MathCtx {

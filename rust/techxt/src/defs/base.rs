@@ -56,7 +56,7 @@ use crate::diag::{MisplacedAlignment, UnsupportedIgnored};
 use crate::flow::{Flow, FlowItem};
 use crate::layout::render_inline;
 use crate::mathfmt::{fmt_script_text, ScriptKind};
-use crate::render::{MathCtx, RenderCx, RenderError};
+use crate::render::{math, MathCtx, RenderCx, RenderError};
 
 use super::handler;
 
@@ -779,9 +779,19 @@ struct ModeShift {
 impl TextHandler for ModeShift {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        node: NodeRef<'_, Latexlike>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
+        // An `\ensuremath` written outside a formula *opens* one, so it answers `Source`
+        // mode the way `$…$` and `\begin{equation}` do: re-emitted, argument and all,
+        // rather than rendered. `\text` never opens one, and one written inside a
+        // formula is not reached in that mode at all.
+        if self.math && cx.state().math.is_none() {
+            if let Some(flow) = math::source_scope(node, false, cx.options()) {
+                return Ok(flow);
+            }
+        }
+
         let mut state = cx.state().clone();
         state.math = self.math.then_some(MathCtx {
             // An `\ensuremath` is inline by construction: it is what a macro writes so

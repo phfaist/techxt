@@ -124,3 +124,56 @@ fn source_mode_hands_back_the_latex() {
         "$\\frac{a+b}{2} \\sin x^2$\n"
     );
 }
+
+// ------------------------------- one formula, every spelling, in `Source` mode
+
+/// `Source` mode is a property of *a formula*, not of the syntax that opened it.
+///
+/// A formula can be written as a math group, as a math environment, or as an
+/// `\ensuremath`; every one of them opens a math scope, and so every one of them has to
+/// hand back its LaTeX rather than a rendering of it. Re-emitting one spelling and
+/// rendering another gives two answers for the same equation.
+#[test]
+fn source_mode_answers_every_spelling_of_one_formula_alike() {
+    let converter = Converter::builder()
+        .math_mode(MathMode::Source)
+        .build()
+        .expect("builds");
+    let source = |latex: &str| converter.latex_to_text(latex).expect("parses").text;
+
+    // Display: the group, and the environments it is short for. Each takes a block of
+    // its own, as display math does in the rendering modes.
+    assert_eq!(
+        source(r"\[ \sum_{k=1}^\infty a_k \]"),
+        "\\[ \\sum_{k=1}^\\infty a_k \\]\n"
+    );
+    assert_eq!(
+        source(r"\begin{equation} \sum_{k=1}^\infty a_k \end{equation}"),
+        "\\begin{equation} \\sum_{k=1}^\\infty a_k \\end{equation}\n"
+    );
+    assert_eq!(
+        source(r"\begin{displaymath} \sum_{k=1}^\infty a_k \end{displaymath}"),
+        "\\begin{displaymath} \\sum_{k=1}^\\infty a_k \\end{displaymath}\n"
+    );
+
+    // Inline: `$…$`, the environment it is short for, and `\ensuremath`. Each stays in
+    // the running text it was written in.
+    assert_eq!(source("a $x^2$ b"), "a $x^2$ b\n");
+    assert_eq!(
+        source(r"a \begin{math}x^2\end{math} b"),
+        "a \\begin{math}x^2\\end{math} b\n"
+    );
+    assert_eq!(source(r"a \ensuremath{x^2} b"), "a \\ensuremath{x^2} b\n");
+
+    // A matrix written outside a formula opens one too, exactly as it does in the
+    // rendering modes (see `example_23_holds_for_a_bare_matrix_environment_too`) —
+    // and one written inside a display group is re-emitted by that group, not twice.
+    assert_eq!(
+        source(r"\begin{pmatrix} 1 & 2 \\ 30 & 4 \end{pmatrix}"),
+        "\\begin{pmatrix} 1 & 2 \\\\ 30 & 4 \\end{pmatrix}\n"
+    );
+    assert_eq!(
+        source(r"\[\begin{pmatrix} 1 & 2 \\ 30 & 4 \end{pmatrix}\]"),
+        "\\[\\begin{pmatrix} 1 & 2 \\\\ 30 & 4 \\end{pmatrix}\\]\n"
+    );
+}
