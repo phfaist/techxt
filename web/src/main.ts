@@ -219,6 +219,7 @@ async function start(): Promise<void> {
 
   function handleResult(result: ConversionResult): void {
     diagnostics.setResult(result);
+    panes.setDiagnostics(result.diagnostics);
     if (result.ok) {
       lastGoodOutput = result.text;
       panes.setOutput(result.text);
@@ -353,6 +354,11 @@ async function start(): Promise<void> {
     },
     onConvertNow() {
       requestConversion('immediate');
+    },
+    onMarkerSelect(diagnostic) {
+      state.ui.diagnosticsOpen = true;
+      persistence.ui(state.ui);
+      diagnostics.reveal(diagnostic);
     },
   });
 

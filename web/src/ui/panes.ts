@@ -21,6 +21,7 @@ import { applyFont } from '../fonts';
 import type { FontId } from '../fonts';
 import { MIN_FIT_COLUMNS, columnsFor } from '../state';
 import type { ExampleDoc } from '../types';
+import type { Diagnostic, Span } from '../worker/protocol';
 import type { Panes, PanesInit } from './api';
 
 /**
@@ -69,6 +70,16 @@ export function initPanes(init: PanesInit): Panes {
   let reportedColumns = 0;
   /** Mean advance per (font, size); a face that has not loaded yet is re-measured. */
   const advanceCache = new Map<string, number>();
+
+  /** The latest error/warning diagnostics with a span — what §7's markers paint. */
+  let paintDiagnostics: Array<Diagnostic & { span: Span }> = [];
+  /** The text `paintDiagnostics`' offsets are valid for — see `remapPaintDiagnostics`. */
+  let paintDiagnosticsText = '';
+  /** One gutter button per painted diagnostic, in the same order. */
+  let gutterButtons: HTMLButtonElement[] = [];
+  /** Each button's vertical offset within the *content*, independent of scrolling. */
+  let gutterContentTops: number[] = [];
+  let gutterLineHeight = 0;
 
   /* ------------------------------------------------------------------ DOM */
 
@@ -120,7 +131,25 @@ export function initPanes(init: PanesInit): Panes {
   input.setAttribute('wrap', 'soft');
   input.spellcheck = false;
 
-  inPane.append(inHead, inputLabel, input);
+  /**
+   * A gentle underline for the error/warning spans, laid behind `input` (§7). A
+   * `<textarea>` cannot style part of its own text, so this mirrors it instead: same
+   * classes, so the same padding and font keep every character lined up with the
+   * real one above it; transparent text of its own, so only the highlight shows.
+   */
+  const backdrop = el('div', 'pane-body pane-input pane-input-backdrop');
+  backdrop.setAttribute('aria-hidden', 'true');
+
+  const editorArea = el('div', 'pane-editor-area');
+  editorArea.append(backdrop, input);
+
+  /** One clickable bar per error/warning span, aligned to the line it points at. */
+  const gutter = el('div', 'pane-gutter');
+
+  const editorShell = el('div', 'pane-editor');
+  editorShell.append(gutter, editorArea);
+
+  inPane.append(inHead, inputLabel, editorShell);
 
   /* --- divider */
 
@@ -417,12 +446,174 @@ export function initPanes(init: PanesInit): Panes {
   });
   requestAnimationFrame(measure);
 
+  /* ------------------------------------------------------ diagnostics in the editor */
+
+  /**
+   * `paintDiagnostics` are only ever as fresh as the last conversion result, but the
+   * debounce that keeps that cheap also means a keystroke can land well before one
+   * arrives. Left alone, a span past the caret would sit on the wrong characters
+   * every time an earlier edit shifted it — not just briefly, but until the next
+   * result — so every edit nudges the cached offsets along with it, the same way an
+   * editor's own decorations track a live document. Offsets in the common prefix or
+   * suffix around the edit move by its length delta; a span the edit actually landed
+   * inside cannot be repositioned in any way that means anything, so it is dropped
+   * until the real result replaces it.
+   */
+  function remapPaintDiagnostics(before: string, after: string): void {
+    if (paintDiagnostics.length === 0 || before === after) return;
+    const maxCommon = Math.min(before.length, after.length);
+    let prefix = 0;
+    while (prefix < maxCommon && before[prefix] === after[prefix]) prefix += 1;
+    let suffix = 0;
+    const maxSuffix = maxCommon - prefix;
+    while (
+      suffix < maxSuffix &&
+      before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+    ) {
+      suffix += 1;
+    }
+    const oldEditEnd = before.length - suffix;
+    const delta = after.length - before.length;
+
+    const next: Array<Diagnostic & { span: Span }> = [];
+    for (const diagnostic of paintDiagnostics) {
+      const { span } = diagnostic;
+      if (span.start >= oldEditEnd) {
+        next.push({ ...diagnostic, span: { ...span, start: span.start + delta, end: span.end + delta } });
+      } else if (span.end <= prefix) {
+        next.push(diagnostic);
+      }
+      // Otherwise the edit falls inside this span — no ink for it until it's real.
+    }
+    paintDiagnostics = next;
+  }
+
+  /**
+   * The backdrop's text, split into plain runs and one `<span>` per error/warning
+   * run — merged by worst severity where two diagnostics overlap. `buildMirror`'s
+   * technique (below) would work here too, but the backdrop *is* a styled mirror
+   * already, kept live in the DOM, so it needs no throwaway element of its own.
+   */
+  function backdropRuns(text: string): Node[] {
+    const spans = paintDiagnostics
+      .map((d) => ({
+        start: clamp(d.span.start, 0, text.length),
+        end: clamp(d.span.end, 0, text.length),
+        rank: d.severity === 'error' ? 2 : 1,
+      }))
+      .filter((s) => s.end > s.start);
+
+    const nodes: Node[] = [];
+    if (spans.length === 0) {
+      nodes.push(document.createTextNode(text));
+    } else {
+      const bounds = Array.from(
+        new Set([0, text.length, ...spans.flatMap((s) => [s.start, s.end])]),
+      ).sort((a, b) => a - b);
+      for (let i = 0; i < bounds.length - 1; i += 1) {
+        const start = bounds[i];
+        const end = bounds[i + 1];
+        if (start === undefined || end === undefined || start >= end) continue;
+        let rank = 0;
+        for (const s of spans) {
+          if (s.start <= start && s.end >= end) rank = Math.max(rank, s.rank);
+        }
+        const chunk = text.slice(start, end);
+        if (rank === 0) {
+          nodes.push(document.createTextNode(chunk));
+        } else {
+          nodes.push(el('span', rank === 2 ? 'hl-error' : 'hl-warning', chunk));
+        }
+      }
+    }
+    // A textarea shows a trailing blank line when the value ends in `\n`; without
+    // this, the mirror's last line falls a row short and every marker below it drifts.
+    if (text === '' || text.endsWith('\n')) nodes.push(document.createTextNode(' '));
+    return nodes;
+  }
+
+  function rebuildBackdrop(): void {
+    backdrop.replaceChildren(...backdropRuns(input.value));
+  }
+
+  /** Rebuild the gutter's buttons and cache each one's position within the content. */
+  function rebuildGutter(): void {
+    gutter.replaceChildren();
+    gutterButtons = [];
+    gutterContentTops = [];
+    // Hidden (0-width) in mobile focus mode: nothing to measure, and `buildMirror`
+    // would copy a stale or percentage width. It rebuilds correctly once shown again.
+    if (paintDiagnostics.length === 0 || input.clientWidth === 0) return;
+
+    gutterContentTops = caretOffsets(
+      input,
+      paintDiagnostics.map((d) => d.span.start),
+    );
+    gutterLineHeight = parseFloat(getComputedStyle(input).lineHeight) || 16;
+
+    for (const diagnostic of paintDiagnostics) {
+      const button = el('button', 'gutter-marker');
+      button.type = 'button';
+      button.dataset.sev = diagnostic.severity;
+      const where = diagnostic.span ? ` (line ${diagnostic.span.line})` : '';
+      button.title = `${diagnostic.severity}${where}: ${diagnostic.message}`;
+      button.setAttribute('aria-label', button.title);
+      button.addEventListener('click', () => init.onMarkerSelect(diagnostic));
+      gutter.append(button);
+      gutterButtons.push(button);
+    }
+    positionGutter();
+  }
+
+  /** Cheap re-layout for a scroll: reuses the cached content offsets. */
+  function positionGutter(): void {
+    const top = input.scrollTop;
+    for (const [index, button] of gutterButtons.entries()) {
+      const contentTop = gutterContentTops[index];
+      if (contentTop === undefined) continue;
+      button.style.top = `${contentTop - top}px`;
+      button.style.height = `${gutterLineHeight}px`;
+    }
+  }
+
+  function relayoutDiagnostics(): void {
+    rebuildBackdrop();
+    backdrop.scrollTop = input.scrollTop;
+    backdrop.scrollLeft = input.scrollLeft;
+    rebuildGutter();
+  }
+
+  let diagLayoutTimer = 0;
+  function scheduleRelayoutDiagnostics(): void {
+    window.clearTimeout(diagLayoutTimer);
+    diagLayoutTimer = window.setTimeout(relayoutDiagnostics, 80);
+  }
+
+  input.addEventListener('scroll', () => {
+    backdrop.scrollTop = input.scrollTop;
+    backdrop.scrollLeft = input.scrollLeft;
+    positionGutter();
+  });
+
+  // Wrapping depends on the pane's width, so every resize — the split drag, a focus
+  // toggle, an orientation change — moves every line after the first wrapped one.
+  const editorObserver = new ResizeObserver(scheduleRelayoutDiagnostics);
+  editorObserver.observe(input);
+
   /* ------------------------------------------------------- the input events */
 
   input.addEventListener('input', (event) => {
     const inputType = (event as InputEvent).inputType ?? '';
     const bulk = inputType.startsWith('insertFromPaste') || inputType === 'insertFromDrop';
+    // The diagnostics themselves are stale until the next result arrives — same as
+    // the panel above — but their *offsets* still have to track every keystroke, or
+    // an edit before a span paints the highlight over the wrong characters until
+    // that result lands (§7). The backdrop's text needs the same tracking, for its
+    // wrapping to stay in step with the real textarea's.
+    remapPaintDiagnostics(paintDiagnosticsText, input.value);
+    paintDiagnosticsText = input.value;
     init.onInput(input.value, bulk ? 'paste' : 'type');
+    scheduleRelayoutDiagnostics();
   });
 
   input.addEventListener('keydown', (event) => {
@@ -471,6 +662,12 @@ export function initPanes(init: PanesInit): Panes {
     setDocument(value: string) {
       input.value = value;
       input.scrollTop = 0;
+      // A whole new document invalidates the last diagnostics outright — unlike a
+      // typed edit, this is not "stale until the next result", it is a different
+      // document, and the old spans would light up unrelated text.
+      paintDiagnostics = [];
+      paintDiagnosticsText = value;
+      relayoutDiagnostics();
     },
 
     setOutput(value: string) {
@@ -505,6 +702,17 @@ export function initPanes(init: PanesInit): Panes {
         input.scrollTop = Math.max(0, place.top - Math.max(0, view - place.height) / 2);
       }
       input.scrollIntoView({ block: 'nearest' });
+    },
+
+    setDiagnostics(diagnostics: readonly Diagnostic[]) {
+      paintDiagnostics = diagnostics.filter(
+        (d): d is Diagnostic & { span: Span } =>
+          d.span !== null && (d.severity === 'error' || d.severity === 'warning'),
+      );
+      // The new offsets are authoritative for whatever the document is right now —
+      // this replaces anything `remapPaintDiagnostics` had been approximating.
+      paintDiagnosticsText = input.value;
+      relayoutDiagnostics();
     },
 
     columns: () => (columnsValue > 0 ? columnsValue : measureQuietly() || MIN_FIT_COLUMNS),
@@ -602,19 +810,15 @@ function svgIcon(...shapes: [string, Record<string, string>][]): SVGSVGElement {
 }
 
 /**
- * Where the character at `index` sits inside the textarea's scrollable content.
- *
- * A mirror `<div>` is given the textarea's box and text metrics and filled with the
- * text up to `index`; a marker span then reports its own offset, which — because
- * `offsetTop` is measured from the mirror's padding edge, exactly as `scrollTop` is —
- * can be compared with `scrollTop` directly. Soft wrapping is reproduced by
- * `white-space: pre-wrap` at the same content width, so a wrapped line counts as the
- * several visual rows it really occupies.
+ * An invisible `<div>` given the textarea's box and text metrics, so a marker span
+ * placed inside it reports the same `offsetTop` a character at that position would
+ * scroll to in the real textarea — `offsetTop` is measured from the padding edge,
+ * exactly as `scrollTop` is, so the two are directly comparable. Soft wrapping is
+ * reproduced by `white-space: pre-wrap` at the same content width, so a wrapped line
+ * counts as the several visual rows it really occupies. Caller fills it in, measures,
+ * and removes it — the mirror carries no state of its own between calls.
  */
-function caretPosition(
-  area: HTMLTextAreaElement,
-  index: number,
-): { top: number; height: number } | null {
+function buildMirror(area: HTMLTextAreaElement): HTMLDivElement {
   const style = getComputedStyle(area);
   const mirror = document.createElement('div');
   const copy = [
@@ -653,7 +857,15 @@ function caretPosition(
   mirror.style.setProperty('white-space', 'pre-wrap');
   mirror.style.setProperty('overflow-wrap', 'break-word');
   mirror.style.setProperty('pointer-events', 'none');
+  return mirror;
+}
 
+/** Where the character at `index` sits inside the textarea's scrollable content. */
+function caretPosition(
+  area: HTMLTextAreaElement,
+  index: number,
+): { top: number; height: number } | null {
+  const mirror = buildMirror(area);
   mirror.textContent = area.value.slice(0, index);
   const marker = document.createElement('span');
   marker.textContent = area.value.slice(index, index + 1) || '.';
@@ -664,4 +876,31 @@ function caretPosition(
   mirror.remove();
   if (!Number.isFinite(top)) return null;
   return { top, height };
+}
+
+/**
+ * {@link caretPosition}'s `top`, for several indices at once — one mirror, one
+ * reflow, however many gutter markers there are, rather than one of each per marker.
+ */
+function caretOffsets(area: HTMLTextAreaElement, indices: readonly number[]): number[] {
+  if (indices.length === 0) return [];
+  const text = area.value;
+  const mirror = buildMirror(area);
+  const order = indices
+    .map((index, position) => ({ index: clamp(index, 0, text.length), position }))
+    .sort((a, b) => a.index - b.index);
+  const markers: HTMLSpanElement[] = new Array(indices.length);
+  let cursor = 0;
+  for (const { index, position } of order) {
+    if (index > cursor) mirror.append(document.createTextNode(text.slice(cursor, index)));
+    const marker = document.createElement('span');
+    marker.textContent = text.slice(index, index + 1) || '.';
+    mirror.append(marker);
+    markers[position] = marker;
+    cursor = Math.max(cursor, index + 1);
+  }
+  document.body.append(mirror);
+  const offsets = markers.map((marker) => marker.offsetTop);
+  mirror.remove();
+  return offsets;
 }

@@ -49,9 +49,12 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
   let listDirty = true;
   let announceTimer = 0;
   let announced = '';
+  let flashTimer = 0;
   const showing: Record<Severity, boolean> = { error: true, warning: true, note: true };
   /** Which rows have their `rendered` detail open, kept across re-renders. */
   const expanded = new Set<string>();
+  /** The row for each currently-rendered diagnostic, so {@link reveal} can find one. */
+  const rowElements = new Map<string, HTMLLIElement>();
 
   /* ------------------------------------------------------------------ DOM */
 
@@ -126,7 +129,9 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
   const truncated = el('p', 'diag-truncated');
   truncated.hidden = true;
 
-  panel.append(filters, list, empty, truncated);
+  // The list first, the filters that shape it below — the panel opens onto the
+  // report itself rather than onto a row of controls (§7).
+  panel.append(list, empty, truncated, filters);
   root.append(strip, panel);
   mount.append(root);
 
@@ -196,11 +201,14 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
     }
     listDirty = false;
     list.replaceChildren();
+    rowElements.clear();
 
     const diagnostics = result?.diagnostics ?? [];
     const visible = diagnostics.filter((d) => showing[d.severity]);
     for (const [index, diagnostic] of visible.entries()) {
-      list.append(row(diagnostic, index));
+      const item = row(diagnostic, index);
+      rowElements.set(rowKey(diagnostic), item);
+      list.append(item);
     }
 
     if (diagnostics.length === 0) {
@@ -260,7 +268,7 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
     expander.type = 'button';
     expander.setAttribute('aria-expanded', String(expanded.has(key)));
     expander.setAttribute('aria-controls', detailId);
-    const expanderCaret = el('span', 'caret', '▸');
+    const expanderCaret = el('span', 'caret');
     expanderCaret.setAttribute('aria-hidden', 'true');
     expander.append(expanderCaret, el('span', 'sr-only', 'Full report'));
     expander.title = 'The full report, as techxt-cli prints it';
@@ -328,6 +336,23 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
     },
 
     setOpen,
+
+    reveal(diagnostic: Diagnostic) {
+      // A gutter marker can point at a severity the filters are currently hiding.
+      if (!showing[diagnostic.severity]) {
+        showing[diagnostic.severity] = true;
+        filterButtons.get(diagnostic.severity)?.setAttribute('aria-pressed', 'true');
+        listDirty = true;
+      }
+      setOpen(true); // also renders the list, if `listDirty` made that necessary
+      const li = rowElements.get(rowKey(diagnostic));
+      if (!li) return;
+      li.scrollIntoView({ block: 'nearest' });
+      window.clearTimeout(flashTimer);
+      li.classList.add('is-flash');
+      flashTimer = window.setTimeout(() => li.classList.remove('is-flash'), 1200);
+      li.querySelector<HTMLElement>('.drow-main')?.focus();
+    },
   };
 
   /* -------------------------------------------------------------- helpers */

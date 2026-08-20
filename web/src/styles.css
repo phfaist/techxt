@@ -795,6 +795,109 @@ select.control {
 }
 
 /*
+ * The gutter and the backdrop share the source pane's second grid row with the
+ * textarea (§7): a narrow clickable column of severity bars at the left, and, behind
+ * the real text, a mirror that tints the error/warning spans without ever touching
+ * what the user typed.
+ */
+.pane-editor {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-gutter {
+  position: relative;
+  width: 14px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gutter-marker {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.gutter-marker::before {
+  content: "";
+  display: block;
+  width: 3px;
+  height: 100%;
+  margin-inline: auto;
+  border-radius: 2px;
+  background: var(--sev-warn);
+  opacity: 0.7;
+  transition: opacity 130ms ease, width 130ms ease;
+}
+
+.gutter-marker[data-sev="error"]::before {
+  background: var(--sev-error);
+}
+
+.gutter-marker:hover::before,
+.gutter-marker:focus-visible::before {
+  opacity: 1;
+  width: 4px;
+}
+
+.gutter-marker:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+  border-radius: 2px;
+}
+
+.pane-editor-area {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The backdrop first, the real textarea on top of it — DOM order is the stacking. */
+.pane-editor-area > * {
+  position: absolute;
+  inset: 0;
+}
+
+.pane-input-backdrop {
+  overflow: auto;
+  color: transparent;
+  pointer-events: none;
+  scrollbar-width: none;
+}
+
+.pane-input-backdrop::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * Gentle, not loud: the same soft tint the diagnostics panel's chips use behind
+ * their letter, plus a thin underline so the shape still reads without colour.
+ */
+.hl-error,
+.hl-warning {
+  border-radius: 2px;
+  text-decoration-line: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1.5px;
+}
+
+.hl-error {
+  background: var(--sev-error-bg);
+  text-decoration-color: var(--sev-error);
+}
+
+.hl-warning {
+  background: var(--sev-warn-bg);
+  text-decoration-color: var(--sev-warn);
+}
+
+/*
  * Never `pre-wrap`: the library decided the line breaks, and a second, invisible
  * wrapping by the browser would misrepresent the output. With Wrap: Off the correct
  * behaviour is a horizontal scrollbar (§6.3).
@@ -1082,9 +1185,9 @@ select.control {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-  padding: 0.7rem 0.75rem 0.5rem;
+  padding: 0.5rem 0.75rem 0.7rem;
   position: sticky;
-  top: 0;
+  bottom: 0;
   background: var(--bg-raised);
   z-index: 1;
 }
@@ -1174,6 +1277,12 @@ select.control {
   background: var(--hover);
 }
 
+/* A `reveal()` from a gutter marker lands here for a moment, then fades. */
+.diag-row.is-flash {
+  background: var(--accent-soft);
+  transition: background-color 200ms ease;
+}
+
 .drow-main {
   grid-column: 1;
   display: flex;
@@ -1242,6 +1351,21 @@ select.control {
 .drow-expander:hover {
   background: var(--hover);
   color: var(--fg);
+}
+
+/*
+ * A CSS-drawn triangle rather than a glyph: a Unicode arrow at 0.66em reads as a
+ * speck in some UI fonts, and direction is the one thing this control has to say.
+ * Left-pointing at rest, rotated down when the detail below it is open.
+ */
+.drow-expander .caret {
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 4px 0 4px 6px;
+  border-color: transparent transparent transparent currentColor;
+  transform: rotate(180deg);
+  transition: transform 130ms ease;
 }
 
 .drow-expander[aria-expanded="true"] .caret {
@@ -1615,7 +1739,8 @@ select.control {
     grid-template-rows: auto minmax(0, 1fr);
   }
 
-  .panes[data-focus="output"] .pane-in > .pane-body {
+  /* The gutter and the backdrop go with the textarea they annotate (§7). */
+  .panes[data-focus="output"] .pane-in .pane-editor {
     display: none;
   }
 

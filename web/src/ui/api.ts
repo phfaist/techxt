@@ -60,6 +60,8 @@ export interface PanesInit {
   onLoadExample(example: ExampleDoc): void;
   /** Ctrl/Cmd+Enter — convert now, skipping the debounce. */
   onConvertNow(): void;
+  /** A gutter marker was clicked: reveal that diagnostic in the panel. */
+  onMarkerSelect(diagnostic: Diagnostic): void;
 }
 
 export interface Panes {
@@ -73,6 +75,11 @@ export interface Panes {
   getOutput(): string;
   /** Focus the textarea and select `[start, end)` in UTF-16 code units (§4.4). */
   selectSpan(start: number, end: number): void;
+  /**
+   * The latest diagnostics, for the in-editor underline and the gutter markers
+   * (error/warning only — a note has nothing to point at that is worth the ink).
+   */
+  setDiagnostics(diagnostics: readonly Diagnostic[]): void;
   /** The current fit-to-pane column count for the output pane (§6.5). */
   columns(): number;
   /** Apply a display font; resolves when the face has loaded (or failed to). */
@@ -140,4 +147,6 @@ export interface DiagnosticsPanel {
   /** A persistent aside in the status line, e.g. "too large to save locally". */
   setNote(note: string | null): void;
   setOpen(open: boolean): void;
+  /** A gutter marker was clicked: open the panel and scroll that row into view. */
+  reveal(diagnostic: Diagnostic): void;
 }
