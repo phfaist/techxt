@@ -80,7 +80,7 @@ $\to$, $\gets$, $\Rightarrow$, $\Leftrightarrow$, $\mapsto$, $\uparrow$.
 `;
 
 /** The case the font fallback chains of §8.2 exist for. */
-const UNICODE = String.raw`techxt copies text it does not recognise straight through, so a document can
+const UNICODE = String.raw`Techxt copies text it does not recognize straight through, so a document can
 mix scripts freely: \emph{kanji} 漢字とかな in Japanese, \emph{ivrit} עברית
 written right to left, and an emoji 🎉 in the middle of a sentence.
 

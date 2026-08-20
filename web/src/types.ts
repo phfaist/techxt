@@ -19,7 +19,7 @@ import type { OptionsPayload } from './worker/protocol';
 export type WrapMode = 'fit' | 'off' | number;
 
 /** The column presets the primary bar offers besides *Fit* and *Off*. */
-export const WRAP_PRESETS: readonly number[] = [40, 60, 72, 80];
+export const WRAP_PRESETS: readonly number[] = [40, 60, 72, 80, 100, 120];
 
 /** Where `\today` comes from: the browser's clock, the library's `<today>`, or a literal. */
 export type TodayMode = 'browser' | 'library' | 'custom';

@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>techxt — LaTeX-like markup to plain text</title>
+    <title>Techxt — LaTeX to plain unicode text</title>
     <meta
       name="description"
-      content="Convert LaTeX-like markup to readable plain unicode text, entirely in your browser. No upload, no server, works offline."
+      content="Convert LaTeX-like markup to readable plain unicode text, entirely in your browser."
     />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#f0f2ee" media="(prefers-color-scheme: light)" />
@@ -59,28 +59,31 @@
         </button>
       </div>
       <div class="sheet-body">
-        <h3>What this is</h3>
+        <h3>Techxt — LaTeX to unicode text converter</h3>
         <p>
-          <strong>techxt</strong> converts documents written in a LaTeX-like language into
-          readable plain text: <code>\emph{hi}</code> becomes <span class="sample">ℎ𝑖</span>,
+          Convert LaTeX code (approximately) into readable plain text:
+          <code>\emph{hi}</code> becomes <span class="sample">ℎ𝑖</span>,
           <code>\"o</code> becomes <span class="sample">ö</span>,
           <code>$\sum_{i=1}^n x_i$</code> becomes <span class="sample">∑ᵢ₌₁ⁿ 𝑥ᵢ</span>, an
           <code>itemize</code> becomes a bulleted list, and a <code>tabular</code> becomes an
           aligned text table.
         </p>
-        <p>
-          Content conversion and text layout are separate stages, so wrapping, blank lines and
-          indentation are decided once from complete information instead of macro by macro.
-          Unknown constructs and skipped content produce structured diagnostics with source
-          positions rather than silent surprises — the panel under the panes is showing you the
-          same reports the command-line program prints.
+
+        <h3 id="privacy">Rust libraries, Command-line tool, WebAssembly embedding</h3>
+        <p>The techxt converter library is written in Rust, and is based on the
+          <a href="https://github.com/phfaist/techy" target="_blank">techy</a>
+          parser library, designed to parse (La)TeX-like construct code.
+          Both libraries can be compiled to WebAssembly (WASM), facilitating their
+          embedding in the browser.
         </p>
 
-        <h3 id="privacy">Your document stays here</h3>
-        <p class="privacy">
-          Everything runs in your browser. No document is ever uploaded, and the page makes no
-          third-party network requests at all — no CDN, no analytics, no error reporting.
-          Install it and it works with the network off.
+        <h3 id="privacy">This web application</h3>
+        <p>
+          This web application runs entirely in the browser;
+          no document is ever uploaded.
+          You can install it as a
+          <a href="https://en.wikipedia.org/wiki/Progressive_web_app" target="_blank">Progressive
+            Web App</a> on your phone and on your desktop.
         </p>
 
         <h3>Get it</h3>
