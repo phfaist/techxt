@@ -1,4 +1,4 @@
-# techxt — LaTeX-like markup to plain (unicode) text
+# techxt — LaTeX to plain unicode text
 
 `techxt` converts documents written in a LaTeX-like language into readable plain
 text: `\emph{hi}` becomes `ℎ𝑖`, `\"o` becomes `ö`, `$\sum_{i=1}^n x_i$` becomes
