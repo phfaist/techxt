@@ -19,6 +19,22 @@ console_error_panic_hook = "0.1"
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
 
+# The lint policy of `rust/Cargo.toml`, copied verbatim rather than inherited: this
+# package is deliberately outside the `rust/` workspace (web/PLAN.md D1), so it sees
+# neither `[workspace.lints]` nor `rust/`'s CI, and `web/PLAN.md` §11 step 2 says it
+# restores both for itself. `missing_docs = "deny"` means every public item in here
+# carries a doc comment, the binding included.
+[lints.rust]
+missing_docs = "deny"
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "warn"
+bare_urls = "warn"
+
+# web/PLAN.md §4.7. `opt-level = 3` is the deliberate choice: conversion speed is what a
+# person feels while typing, and the module is not a heavy page. "s" and "z" are the
+# measured alternatives held in reserve (PLAN §14) if the size budget of §11 ever bites.
 [profile.release]
 opt-level = 3
 lto = true
@@ -26,5 +42,9 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
+# The `--enable-*` flags are required, not cosmetic: wasm-pack ships binaryen 117, which
+# predates the bulk-memory operations current rustc emits by default, and without them
+# `wasm-opt` fails validation and the build breaks (PLAN §4.7, Appendix B). If a future
+# wasm-pack ships a newer binaryen they become harmless.
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["-O3", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext"]
