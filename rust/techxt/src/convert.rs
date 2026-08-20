@@ -864,7 +864,10 @@ pub enum MathMode {
     /// The same symbol conversion without the joiner: pieces concatenate directly, so
     /// `$a + b$` comes out as `𝑎+𝑏`. Source whitespace is still ignored.
     Plain,
-    /// Leave the formula as LaTeX, re-emitted from the parsed tree.
+    /// Leave the formula as LaTeX, re-emitted from the parsed tree, however the formula
+    /// was spelled: `$…$`, `\[…\]`, an `equation` or `align` environment, a matrix
+    /// written outside a formula, an `\ensuremath`. The contents are shown rather than
+    /// converted, so nothing inside them is rendered.
     Source,
 }
 

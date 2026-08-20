@@ -367,6 +367,87 @@ fn a_math_environment_is_display_math() {
 }
 
 #[test]
+fn a_math_environment_re_emits_its_source_in_source_mode() {
+    // A math environment opens a formula (PLAN.md §9.5), so `Source` mode shows it
+    // rather than rendering it — the same answer `\[…\]` gives. Answering at the group
+    // alone is what once made one equation read two ways depending on its spelling.
+    let source = with(|b| b.math_mode(MathMode::Source));
+    let round_trips = |latex: &str| {
+        assert_eq!(
+            source.latex_to_text(latex).expect("parses").text,
+            format!("{latex}\n"),
+            "{latex}"
+        );
+    };
+
+    round_trips(r"\[ \sum_{k=1}^\infty a_k \]");
+    round_trips(r"\begin{equation} \sum_{k=1}^\infty a_k \end{equation}");
+    for name in [
+        "equation*",
+        "align",
+        "gather",
+        "multline",
+        "eqnarray",
+        "dmath",
+    ] {
+        round_trips(&format!(
+            r"\begin{{{name}}} a &= 1 \\ b &= 2 \end{{{name}}}"
+        ));
+    }
+    // An environment argument is part of the invocation and comes back with it.
+    round_trips(r"\begin{alignat}{2} a &= 1 \end{alignat}");
+    round_trips(r"\begin{array}{cc} 1 & 2 \end{array}");
+    // As do a matrix's delimiters, which are its name rather than its body.
+    round_trips(r"\begin{pmatrix} 1 & 2 \\ 30 & 4 \end{pmatrix}");
+}
+
+#[test]
+fn source_mode_shows_a_formula_once_and_does_not_enter_it() {
+    // An environment inside a formula is part of that formula's source, and the
+    // formula is re-emitted whole: the inner one is not shown a second time, and
+    // nothing inside either of them renders.
+    let source = with(|b| b.math_mode(MathMode::Source));
+    assert_eq!(
+        source
+            .latex_to_text(r"\[\begin{split} a &= b \end{split}\]")
+            .expect("parses")
+            .text,
+        "\\[\\begin{split} a &= b \\end{split}\\]\n"
+    );
+    // `subequations` is not a formula — it is document content holding formulas — so
+    // it drops away and each equation inside it answers for itself.
+    assert_eq!(
+        source
+            .latex_to_text(
+                r"\begin{subequations}\begin{equation}a=1\end{equation}\begin{equation}b=2\end{equation}\end{subequations}"
+            )
+            .expect("parses")
+            .text,
+        "\\begin{equation}a=1\\end{equation}\n\n\\begin{equation}b=2\\end{equation}\n"
+    );
+}
+
+#[test]
+fn source_mode_keeps_an_inline_formula_in_its_running_text() {
+    // `\begin{math}` and `\ensuremath` are `$…$` in other words: they open an inline
+    // scope, so their source stays in the line instead of taking a block of its own.
+    let source = with(|b| b.math_mode(MathMode::Source));
+    let text = |latex: &str| source.latex_to_text(latex).expect("parses").text;
+
+    assert_eq!(text("a $x^2$ b"), "a $x^2$ b\n");
+    assert_eq!(
+        text(r"a \begin{math}x^2\end{math} b"),
+        "a \\begin{math}x^2\\end{math} b\n"
+    );
+    assert_eq!(text(r"a \ensuremath{x^2} b"), "a \\ensuremath{x^2} b\n");
+    // A display environment does stand apart, exactly as `\[…\]` does.
+    assert_eq!(
+        text(r"a \begin{equation}x^2\end{equation} b"),
+        "a\n\n\\begin{equation}x^2\\end{equation}\n\nb\n"
+    );
+}
+
+#[test]
 fn inside_a_math_environment_a_break_is_a_line_and_an_ampersand_is_nothing() {
     // PLAN.md §9.7: the joiner already spaces the relation the `&` was aligning.
     assert_eq!(

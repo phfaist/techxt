@@ -20,10 +20,19 @@
 //! preformatted lines inside a four-space indent block, where nothing may re-wrap the
 //! alignment the joiner computed. **Atoms never leave a math scope**, and therefore
 //! never reach the layout engine.
+//!
+//! **Not converting it at all.** [`source_scope`] is the other end of the same
+//! boundary, for [`Source`](crate::convert::MathMode::Source) mode: the scope is not
+//! entered, and the formula goes out as the LaTeX it was written as. Every scope-opening
+//! construct asks it before it folds anything, which is what makes `\[…\]` and
+//! `\begin{equation}` — one formula, two spellings — come out the same.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::{format, vec};
+
+use techy::core::node::NodeRef;
+use techy::latexlike::Latexlike;
 
 use crate::convert::{MathMode, Options};
 use crate::flow::{BlockKind, Flow, FlowItem};
@@ -45,6 +54,45 @@ const DISPLAY_INDENT: &str = "    ";
 /// finished text instead.
 pub(crate) fn atoms_in_use(state: &RenderState, options: &Options) -> bool {
     state.in_math() && options.math_mode == MathMode::Fancy
+}
+
+/// A math scope in [`Source`](MathMode::Source) mode: the formula as the LaTeX it was
+/// written as, rather than a rendering of it (PLAN.md §9.5).
+///
+/// Answers `None` in the two modes that render — there is a formula to fold, and the
+/// caller goes on and folds it — and `Some` in `Source`, where the subtree is re-emitted
+/// from node payloads and never descended into at all. Not descending is the point: the
+/// contents are being *shown*, not converted, so nothing inside them may render, report
+/// or collect anything.
+///
+/// **Every construct that opens a math scope asks this first**, and asking at each of
+/// them is exactly what keeps the spellings of one formula from disagreeing: a `$…$` or
+/// `\[…\]` group, an `equation` or `align` environment, a matrix written outside a
+/// formula, an argument a handler renders as math (`\ensuremath`). A scope that a
+/// formula already surrounds never gets here, because that formula was itself re-emitted
+/// without descending.
+///
+/// `display` chooses the shape, as it does in the rendering modes: display math is a
+/// [`Verbatim`](FlowItem::Verbatim) block of its own, inline math an
+/// [`InlineVerbatim`](FlowItem::InlineVerbatim) word in the running text. Neither is
+/// given the display indent — that indent is part of rendering a formula, and this is
+/// its source.
+pub(crate) fn source_scope(
+    node: NodeRef<'_, Latexlike>,
+    display: bool,
+    options: &Options,
+) -> Option<Flow> {
+    if options.math_mode != MathMode::Source {
+        return None;
+    }
+    let latex = super::source::latex_source(node);
+    let mut flow = Flow::new();
+    flow.push(if display {
+        FlowItem::Verbatim(latex.into())
+    } else {
+        FlowItem::InlineVerbatim(latex.into())
+    });
+    Some(flow)
 }
 
 /// Split a plain string into atoms and put them into the flow (PLAN.md §9.5).

@@ -116,7 +116,7 @@ use techy::error::{Diagnostic, Diagnostics, Severity};
 use techy::latexlike::{GroupType, Latexlike, MathGroupForm};
 use techy::recompose::{ConcatPieces, Recompose, RecomposeContext, Recomposer};
 
-use crate::convert::{FootnoteStyle, MathMode, Options};
+use crate::convert::{FootnoteStyle, Options};
 use crate::def::{embedded_rule, CallableKind, RuleTable};
 use crate::diag::{RenderAborted, TechxtCondition};
 use crate::flow::{display_width, BlockKind, Flow, FlowItem};
@@ -335,8 +335,11 @@ impl<'a> TextRenderer<'a> {
     /// subtree, which also puts it under the run's descent guard — one policy for the
     /// whole document rather than an exception for math.
     ///
-    /// In [`Source`](MathMode::Source) mode there is nothing to fold: the formula is
-    /// re-emitted as the LaTeX it was written as, from node payloads (PLAN.md §1.6).
+    /// In [`Source`](crate::convert::MathMode::Source) mode there is nothing to fold:
+    /// the formula is re-emitted as the LaTeX it was written as, from node payloads
+    /// (PLAN.md §1.6). That is [`math::source_scope`]'s job rather than this method's,
+    /// because a math group is only one of the ways a formula is opened — a math
+    /// environment is another — and all of them have to answer alike.
     fn math_group(
         &mut self,
         node: NodeRef<'_, Latexlike>,
@@ -345,14 +348,7 @@ impl<'a> TextRenderer<'a> {
     ) -> Recompose<Flow, RenderState> {
         let display = form == MathGroupForm::Display;
 
-        if self.config.options.math_mode == MathMode::Source {
-            let latex = source::latex_source(node);
-            let mut flow = Flow::new();
-            flow.push(if display {
-                FlowItem::Verbatim(latex.into())
-            } else {
-                FlowItem::InlineVerbatim(latex.into())
-            });
+        if let Some(flow) = math::source_scope(node, display, &self.config.options) {
             return Recompose::Emit(flow);
         }
 
