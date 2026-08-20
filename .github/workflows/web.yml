@@ -1,0 +1,190 @@
+# The web app's gates and its deployment (web/PLAN.md §11).
+#
+# `ci.yml` stays untouched and `rust/`-scoped. This workflow exists because
+# `web/crate` deliberately lives outside the `rust/` workspace (web/PLAN.md D1), so
+# `cd rust && cargo …` cannot see it: the fmt/clippy/test steps below are the gates
+# the binding would otherwise lose by being a standalone package.
+#
+# Same toolchain philosophy as `ci.yml`: the runner's own rustup, and no third-party
+# actions — only `actions/checkout`, `actions/cache`, `actions/setup-node`,
+# `actions/upload-pages-artifact`, `actions/configure-pages` and
+# `actions/deploy-pages`, all first-party.
+
+name: Web
+
+on:
+  push:
+    paths:
+      - "web/**"
+      - "rust/techxt/**"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "rust/techxt/**"
+      - ".github/workflows/web.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # §4.7: the module is 872 KB raw / 300 KB gzipped today. The budget is roughly 20 %
+  # over that, so a dependency mistake shows up as a failed build rather than a slow
+  # page — and so the decision to trade size for speed gets revisited deliberately
+  # rather than eroded.
+  WASM_MAX_BYTES: 1100000
+  WASM_MAX_GZIP_BYTES: 350000
+  # §8.3 and §11 step 6: whole fonts are the point, but a 4 MB face added by accident
+  # should still be a conversation.
+  FONT_MAX_FILE_BYTES: 900000
+  FONT_MAX_TOTAL_BYTES: 3500000
+
+jobs:
+  web:
+    name: Build and check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the stable toolchain and the wasm target
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin/wasm-pack
+            web/crate/target
+          key: web-${{ runner.os }}-${{ hashFiles('web/crate/Cargo.lock', 'rust/Cargo.lock') }}
+          restore-keys: web-${{ runner.os }}-
+
+      # The gates `web/crate` loses by living outside the `rust/` workspace (D1).
+      # `[lints]` in its manifest copies `rust/`'s policy, so `missing_docs` is denied
+      # here too.
+      - name: Formatting (web/crate)
+        working-directory: web/crate
+        run: cargo fmt --all --check
+
+      - name: Clippy (web/crate)
+        working-directory: web/crate
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests (web/crate)
+        working-directory: web/crate
+        run: cargo test
+
+      - name: Install wasm-pack
+        run: |
+          if ! command -v wasm-pack >/dev/null; then
+            cargo install wasm-pack --locked
+          fi
+          wasm-pack --version
+
+      - name: Build the wasm module
+        working-directory: web
+        run: npm run wasm
+
+      # §11 step 3. A module that outgrows this is not necessarily wrong, but it is a
+      # decision, and §4.7 names `opt-level = "s"` as the first thing to try.
+      - name: Assert the wasm size budget
+        working-directory: web
+        run: |
+          raw=$(stat -c%s crate/pkg/techxt_web_bg.wasm)
+          gz=$(gzip -9 -c crate/pkg/techxt_web_bg.wasm | wc -c)
+          echo "wasm: ${raw} B raw, ${gz} B gzipped" | tee -a "$GITHUB_STEP_SUMMARY"
+          fail=0
+          if [ "$raw" -gt "$WASM_MAX_BYTES" ]; then
+            echo "::error::wasm is ${raw} B raw, over the ${WASM_MAX_BYTES} B budget (web/PLAN.md §4.7)"
+            fail=1
+          fi
+          if [ "$gz" -gt "$WASM_MAX_GZIP_BYTES" ]; then
+            echo "::error::wasm is ${gz} B gzipped, over the ${WASM_MAX_GZIP_BYTES} B budget (web/PLAN.md §4.7)"
+            fail=1
+          fi
+          exit $fail
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install node dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Unit tests
+        working-directory: web
+        run: npm test
+
+      - name: Build the app
+        working-directory: web
+        run: npx vite build
+
+      # §8.5. The default face is a hard gate — the out-of-the-box rendering of
+      # techxt's own output is not allowed to regress. The other four warn into the
+      # job summary: a handful of gaps filled by the fallback chain is a documented
+      # fact about a face, not a bug.
+      - name: Glyph coverage
+        run: |
+          pip install --quiet fonttools brotli
+          python3 web/tools/coverage_check.py --check
+
+      # §11 step 6.
+      - name: Assert the font budget
+        run: |
+          total=0
+          fail=0
+          for f in web/fonts/*.woff2; do
+            size=$(stat -c%s "$f")
+            total=$((total + size))
+            echo "$(basename "$f"): ${size} B" | tee -a "$GITHUB_STEP_SUMMARY"
+            if [ "$size" -gt "$FONT_MAX_FILE_BYTES" ]; then
+              echo "::error::$f is ${size} B, over the ${FONT_MAX_FILE_BYTES} B per-face budget (web/PLAN.md §11)"
+              fail=1
+            fi
+          done
+          echo "fonts total: ${total} B" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$total" -gt "$FONT_MAX_TOTAL_BYTES" ]; then
+            echo "::error::fonts total ${total} B, over the ${FONT_MAX_TOTAL_BYTES} B budget (web/PLAN.md §11)"
+            fail=1
+          fi
+          exit $fail
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: web
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # A group of its own, and no cancellation: a rapid second push should queue
+    # behind the first deployment rather than race it.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/configure-pages@v5
+      - id: deployment
+        uses: actions/deploy-pages@v4

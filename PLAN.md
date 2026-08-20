@@ -68,6 +68,8 @@ techxt/                        # repo root (language-neutral)
     Cargo.toml                 # [workspace] resolver = "2", members = ["techxt", "techxt-cli"]
     techxt/                    # library crate: no_std + alloc
     techxt-cli/                # binary crate (std); [[bin]] name = "techxt"
+  web/                         # browser app: wasm binding + static SPA (web/PLAN.md)
+    crate/                     # the wasm-bindgen binding — standalone, not a member
   tools/                       # dev-only scripts (symbol-table generation, §12.4)
   # later, sibling root folders that do not talk to rust/'s build system:
   # python/  (maturin extension)   js/  (wasm/Node)
@@ -88,6 +90,10 @@ techxt/                        # repo root (language-neutral)
 - **No cargo features.** The definitions library is organized as Rust modules the
   user references explicitly; unreferenced modules are removed by dead-code
   elimination. No `serde` feature in v1.
+- `web/` is a sibling root of the same kind as the planned `python/` and `js/`: it
+  has its own build system and its own CI workflow, and the repository root has no
+  `Cargo.toml`, so the package under `web/crate/` is standalone and cannot perturb
+  `cd rust && cargo test`. Its normative design is [`web/PLAN.md`](web/PLAN.md).
 
 ---
 
@@ -1073,3 +1079,10 @@ generated words ("Theorem", "Abstract"); streaming incremental layout; serde;
 `LatexlikeLang` and tree annotations; Python (`python/`, maturin) and JS/wasm
 (`js/`) sibling bindings — the module-based defs organization was chosen with wasm
 dead-code elimination in mind.
+
+The wasm binding under [`web/crate/`](web/crate) is **not** the planned `js/`
+package: it is app-private, shaped for one UI, and free to change without a release
+(see [`web/PLAN.md`](web/PLAN.md) §3). It is, however, the working proof that the
+public API compiles and performs acceptably on `wasm32-unknown-unknown`, so a future
+`js/` starts from a known-good shape rather than from scratch — and when it exists,
+`web/` depends on it and `web/crate/` is deleted.

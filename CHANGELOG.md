@@ -5,6 +5,32 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The library version is untouched by any of this: `web/` is an application built on
+techxt, not a change to it.
+
+### Added
+
+- **The browser app (`web/`).** A static, installable single-page tool that converts
+  LaTeX-like markup to plain text entirely on the device, and doubles as the
+  project's home page at <https://phfaist.github.io/techxt/>. Two panes with live,
+  debounced conversion in a Web Worker; the conversion options of
+  [`web/PLAN.md`](web/PLAN.md) §5; techxt's diagnostics shown as the structured,
+  positioned things they are, with click-to-select in the input; five self-hosted
+  unsubsetted display faces behind per-glyph fallback chains; a service worker, so
+  it installs and works with the network off. No document ever leaves the browser
+  and the page contacts nothing third-party.
+- **The wasm binding (`web/crate/`).** A standalone `wasm-bindgen` package —
+  deliberately outside the `rust/` workspace — exposing a cached `Converter`, an
+  options DTO whose absent fields mean *the library's* defaults, and diagnostics
+  remapped from UTF-8 byte offsets to the UTF-16 offsets a `<textarea>` wants. It is
+  app-private and is not the `js/` package [`PLAN.md`](PLAN.md) §17 anticipates.
+- **`.github/workflows/web.yml`.** `fmt`, `clippy` and `cargo test` for the binding
+  (the gates it loses by living outside `rust/`), a wasm size budget, a glyph
+  coverage gate on the default display face, a font size budget, and deployment to
+  GitHub Pages on a push to `main`. `ci.yml` is untouched and stays `rust/`-scoped.
+
 ## [0.1.0] — 2026-08-19
 
 First version: everything [`PLAN.md`](PLAN.md) specifies, implemented and tested.

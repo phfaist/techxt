@@ -1,5 +1,9 @@
 # techxt — LaTeX to plain unicode text
 
+**Try it in the browser: <https://phfaist.github.io/techxt/>** — paste LaTeX, read
+plain text. It runs entirely on your device, works offline, and is the fastest
+explanation of what techxt does.
+
 `techxt` converts documents written in a LaTeX-like language into readable plain
 text: `\emph{hi}` becomes `ℎ𝑖`, `\"o` becomes `ö`, `$\sum_{i=1}^n x_i$` becomes
 `∑ᵢ₌₁ⁿ 𝑥ᵢ`, an `itemize` becomes a bulleted list, and a `tabular` becomes an
@@ -96,10 +100,16 @@ sibling folder and does not talk to the others' build systems.
 rust/          Cargo workspace
   techxt/        library crate (no_std + alloc)
   techxt-cli/    binary crate (std), installs as the `techxt` command
+web/           the browser app: a wasm binding, a static single-page tool, and
+               the project's home page — see web/README.md
 tools/         dev-only scripts (symbol-table generation)
 python/        planned: maturin extension
 js/            planned: wasm/Node bindings
 ```
+
+`web/` brings its own toolchain (npm, `wasm-pack`) and its own CI workflow, and its
+`web/crate/` binding is deliberately *not* a member of the `rust/` workspace, so
+`cd rust && cargo test` neither sees it nor is slowed by it.
 
 The Rust workspace is built from `rust/`:
 

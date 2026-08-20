@@ -60,10 +60,12 @@ web/
     main.ts               bootstrap and wiring
     state.ts              option model, defaults, localStorage, URL codec
     convert-client.ts     worker lifecycle, debounce, request sequencing
+    types.ts              app-level types shared by the codec and the UI
     worker/
       convert.worker.ts   loads wasm, answers convert requests
       protocol.ts         message types shared by both sides
     ui/
+      api.ts              what main.ts may assume about the four modules below
       panes.ts            input/output panes, resize, autofit measurement
       controls.ts         primary bar + "More options" disclosure
       diagnostics.ts      the diagnostics panel and jump-to-source
@@ -72,6 +74,7 @@ web/
     examples.ts           the sample documents, inlined
     about.ts              below-the-fold content, or plain markup in index.html
     styles.css            tokens, layout, light/dark
+  test/                   vitest over the pure logic (§13)
   public/
     icons/                PWA icons (generated, committed)
     og.png                social preview (generated, committed)
@@ -91,6 +94,13 @@ web/
     src/diag.rs           the diagnostic DTO, offsets, line/column
     pkg/                  wasm-pack output — generated, gitignored
 ```
+
+Two files are contracts rather than implementation, and exist because the app is
+written by more than one pair of hands at a time. `src/types.ts` holds the app-level
+types the state codec and the UI both need — including the two settings of §5 that
+are the *app* being helpful rather than the library offering a choice. `src/ui/api.ts`
+holds the interfaces the four UI modules satisfy and `main.ts` programs against, so
+neither side can drift without `tsc` saying so.
 
 `web/crate/` is deliberately *not* a member of the `rust/` workspace and is not
 reachable from it: the repository root has no `Cargo.toml`, so a package under `web/`
@@ -403,7 +413,14 @@ first `\title`/`\section` if one exists, else `converted.txt`.
 One versioned object:
 
 ```ts
-interface AppState { v: 1; doc: string; opts: Partial<Options>; ui: { font, size, split, moreOpen } }
+interface AppState { v: 1; doc: string; opts: AppOptions; ui: UiState }
+
+// AppOptions is Partial<Options> plus the two app-level settings of §5, which are not
+// library options and must not be sent to the binding as if they were:
+//   wrap: 'fit' | 'off' | number        →  wrapWidth, once the pane has been measured
+//   todayMode: 'browser' | 'library' | 'custom' (+ todayCustom)  →  today
+// `resolveOptions(opts, columns)` in state.ts is the single place that translation
+// happens, so the worker never sees an app-level value.
 ```
 
 - **localStorage**, debounced 500 ms, three keys (`techxt.doc.v1`, `techxt.opts.v1`,
