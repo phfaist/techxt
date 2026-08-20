@@ -49,7 +49,7 @@ bare_urls = "warn"
 # exact commit the plan was written against (PLAN.md §3 describes that API). Switch
 # to a version requirement once techy publishes; until then techxt itself cannot be
 # published either (PLAN.md §16 M8).
-techy = { git = "https://github.com/phfaist/techy", rev = "8167971" }
+techy = { git = "https://github.com/phfaist/techy", rev = "aa71c83" }
 # East-Asian-width-aware display width of the rendered text, for the layout engine's
 # column accounting (PLAN.md §7). no_std-capable and dependency-free.
 unicode-width = "0.2"

@@ -71,14 +71,14 @@ fn no_math_atom_reaches_the_layout_engine() {
 }
 
 #[test]
-fn a_deeply_braced_formula_costs_heap_and_not_stack() {
-    // A formula folds its own children (the joiner has to see them all at once), and it
-    // does so with an explicit stack, so its own nesting cannot outgrow the machine
-    // stack. The descent guard is configured explicitly because the default budget is
-    // deliberately tight (DECISIONS.md D9) and would refuse this before the fold ever
-    // ran. The depth is modest because the *parser* recurses and is the binding
-    // constraint on a test thread's smaller stack; what is under test here is that the
-    // fold adds no constraint of its own.
+fn a_deeply_braced_formula_folds_under_the_runs_descent_guard() {
+    // A formula's interior is descended into by the driver like any other subtree — the
+    // joiner runs afterwards, on the assembled flow (DECISIONS.md D24) — so it is
+    // guarded exactly as the braces outside a formula are, by the run's own descent
+    // guard and by nothing special of math's. The guard is configured explicitly
+    // because the default budget is deliberately tight (DECISIONS.md D9) and would
+    // refuse this depth. The depth is modest because the *parser* recurses too and is
+    // the binding constraint on a test thread's smaller stack.
     let converter = Converter::builder()
         .descent_guard(StdDescentGuardInit::depth_limit(1000))
         .build()

@@ -28,7 +28,9 @@ use alloc::{format, vec};
 use crate::convert::{MathMode, Options};
 use crate::flow::{BlockKind, Flow, FlowItem};
 use crate::layout::render_inline;
-use crate::mathfmt::{join_atoms_with, segment_plain, Atom, AtomBody, AtomClass, MathBox};
+use crate::mathfmt::{
+    join_atoms_with, segment_plain, Atom, AtomBody, AtomClass, MathBox, MathWrapDelims,
+};
 
 use super::state::RenderState;
 
@@ -72,7 +74,7 @@ pub(crate) fn atom(atom: Atom, state: &RenderState, options: &Options) -> Flow {
         flow.push(FlowItem::MathAtom(atom));
         return flow;
     }
-    Flow::text(&flatten(&atom, options))
+    Flow::text(&flatten(&atom, &options.math_expression_in))
 }
 
 /// One atom as finished text, with no neighbours to consult.
@@ -80,11 +82,9 @@ pub(crate) fn atom(atom: Atom, state: &RenderState, options: &Options) -> Flow {
 /// [`Atom::flatten`] is almost this, but it shows a wrappable body's contents *without*
 /// delimiters — correct for a diagnostic fallback, wrong here: with no joiner to decide,
 /// `x^{ABC}` has to commit to `x^(ABC)` or the extent of the script is lost.
-fn flatten(atom: &Atom, options: &Options) -> String {
+fn flatten(atom: &Atom, wrap: &MathWrapDelims) -> String {
     match &atom.body {
-        AtomBody::Wrappable { inner, prefix } => {
-            format!("{prefix}{}", options.math_expression_in.wrap(inner))
-        }
+        AtomBody::Wrappable { inner, prefix } => format!("{prefix}{}", wrap.wrap(inner)),
         _ => atom.flatten(),
     }
 }
@@ -127,8 +127,36 @@ pub(crate) fn inline_text(flow: &Flow, state: &RenderState, options: &Options) -
 /// joined on its own, exactly as if it were a formula of its own. An empty formula
 /// (`$ $`) produces nothing at all, block included.
 pub(crate) fn finish(body: Flow, display: bool, options: &Options) -> Flow {
-    if options.math_mode != MathMode::Fancy {
-        return finish_plain(body, display, options);
+    finish_with(
+        body,
+        display,
+        options.math_mode,
+        &options.math_expression_in,
+    )
+}
+
+/// [`finish`] as a function of a math scope alone, for a caller that cannot keep the
+/// [`Options`] alive.
+///
+/// The math-group handler closes its scope from a post-processing function attached to
+/// the instruction it returns ([`ConcatPieces::map`](techy::recompose::ConcatPieces::map)),
+/// and that function is `'static`: it may not borrow the renderer, and so may not borrow
+/// the renderer's options either. These two fields are everything the boundary consults,
+/// so it carries them and not a clone of the whole option set, once per formula.
+pub(crate) fn scope_closer(
+    display: bool,
+    options: &Options,
+) -> impl FnOnce(Flow) -> Flow + 'static {
+    let mode = options.math_mode;
+    let wrap = options.math_expression_in.clone();
+    move |body| finish_with(body, display, mode, &wrap)
+}
+
+/// The body of [`finish`], taking the two options it consults directly rather than the
+/// whole [`Options`] they belong to.
+fn finish_with(body: Flow, display: bool, mode: MathMode, wrap: &MathWrapDelims) -> Flow {
+    if mode != MathMode::Fancy {
+        return finish_plain(body, display, wrap);
     }
 
     // Only a display scope has lines to break; inline math has nowhere to put a second
@@ -148,7 +176,7 @@ pub(crate) fn finish(body: Flow, display: bool, options: &Options) -> Flow {
 
     let boxes: Vec<MathBox> = lines
         .iter()
-        .map(|line| join_atoms_with(atoms_of(line), display, &options.math_expression_in).math_box)
+        .map(|line| join_atoms_with(atoms_of(line), display, wrap).math_box)
         .filter(|assembled| !assembled.is_blank())
         .collect();
     if boxes.is_empty() {
@@ -167,7 +195,7 @@ pub(crate) fn finish(body: Flow, display: bool, options: &Options) -> Flow {
 /// already the answer and only display's indent block has to be added. Stray atoms are
 /// flattened rather than dropped: a handler that built one anyway must still show its
 /// content.
-fn finish_plain(body: Flow, display: bool, options: &Options) -> Flow {
+fn finish_plain(body: Flow, display: bool, wrap: &MathWrapDelims) -> Flow {
     let mut flow = Flow::new();
     if display {
         flow.push(FlowItem::BlockStart(BlockKind::Indent {
@@ -177,7 +205,7 @@ fn finish_plain(body: Flow, display: bool, options: &Options) -> Flow {
     }
     for item in body.into_items() {
         match item {
-            FlowItem::MathAtom(atom) => flow.push(FlowItem::Text(flatten(&atom, options).into())),
+            FlowItem::MathAtom(atom) => flow.push(FlowItem::Text(flatten(&atom, wrap).into())),
             other => flow.push(other),
         }
     }
@@ -456,11 +484,7 @@ mod tests {
             cls: AtomClass::both(AtomClass::Script),
             script: None,
         };
-        let options = Options {
-            math_expression_in: MathWrapDelims::Braces,
-            ..Options::default()
-        };
-        assert_eq!(flatten(&atom, &options), "^{abc}");
+        assert_eq!(flatten(&atom, &MathWrapDelims::Braces), "^{abc}");
         // In fancy math the atom travels intact instead, for the joiner to decide.
         let flow = super::atom(atom, &math_state(false), &Options::default());
         assert!(matches!(flow.items().first(), Some(FlowItem::MathAtom(_))));

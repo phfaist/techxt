@@ -75,13 +75,25 @@
 //! and its siblings sit at the front of the dispatch chain and apply wherever the
 //! construct occurs.
 //!
-//! **A formula is one such construct.** A math group answers with a finished piece
-//! rather than an instruction to descend, because the joiner has to see the whole
-//! formula before any of it can become text (PLAN.md §9.5) — so a wrapper sees the
-//! `$…$` node and may replace it, but not the `x` inside it. What it gets in exchange
-//! is the guarantee that goes with it: no
-//! [`MathAtom`](crate::flow::FlowItem::MathAtom) is ever handed out, in a wrapper's
-//! piece or anywhere else.
+//! **A formula is not such a construct.** A math group has to see its whole contents
+//! before any of them can become text — that is what the joiner is for (PLAN.md §9.5) —
+//! but it gets them without folding them itself: it answers with an ordinary
+//! instruction to descend and attaches the joining to it as post-processing
+//! ([`ConcatPieces::map`]). The driver still does the descending, so a wrapper's
+//! overrides reach the `x` inside `$x + y$` exactly as they reach the `x` in `{x}`.
+//!
+//! Inside a formula the currency changes, and an override there has to know it: the
+//! pieces are [`MathAtom`](crate::flow::FlowItem::MathAtom)s, and a run of anything
+//! else — [`Text`](crate::flow::FlowItem::Text), glue, a verbatim fragment — is read by
+//! the joiner as *one* opaque text atom, spaced against its neighbours but never
+//! respaced inside. An override that wants the joiner's spacing emits atoms of its own
+//! ([`mathfmt`](crate::mathfmt) builds them); one that does not, and simply replaces
+//! `x` with `X`, gets `X` where `x` would have been.
+//!
+//! The guarantee that goes with the atom stands either way: **an atom never leaves the
+//! formula it belongs to.** The post-processing function converts the whole scope
+//! before its piece reaches the formula's parent, so no atom reaches the layout engine,
+//! and none survives into the piece a run finally yields.
 
 mod cx;
 pub(crate) mod math;
@@ -98,7 +110,7 @@ use alloc::string::String;
 use core::convert::Infallible;
 
 use techy::core::constructs::DescentLimitApproaching;
-use techy::core::node::{NodeKind, NodeRef, NodeSlice};
+use techy::core::node::{NodeKind, NodeRef};
 use techy::core::DescentWarning;
 use techy::error::{Diagnostic, Diagnostics, Severity};
 use techy::latexlike::{GroupType, Latexlike, MathGroupForm};
@@ -284,10 +296,9 @@ impl<'a> TextRenderer<'a> {
         &mut self,
         node: NodeRef<'_, Latexlike>,
         state: &RenderState,
-        cx: &mut RecomposeContext<'_, Latexlike, ()>,
     ) -> Recompose<Flow, RenderState> {
         match node.group_type() {
-            Some(GroupType::Math(form)) => self.math_group(node, state, form, cx),
+            Some(GroupType::Math(form)) => self.math_group(node, state, form),
             Some(GroupType::Verbatim) => {
                 // One raw characters child, by construction. `Emit` prunes it, so it is
                 // read here rather than folded.
@@ -304,11 +315,25 @@ impl<'a> TextRenderer<'a> {
 
     /// A math group — `$…$`, `\(…\)`, `\[…\]`, `$$…$$` (PLAN.md §9.5).
     ///
-    /// A math group is a **math scope**: it renders its contents with
-    /// [`RenderState::math`] set, collects the [`MathAtom`](FlowItem::MathAtom)s they
-    /// produced, and hands them to the joiner, which decides the spacing. What comes
-    /// back out is ordinary text, glue and preformatted lines — see
-    /// [`math::finish`] — so an atom never escapes the formula it belongs to.
+    /// A math group is a **math scope**: its contents are folded with
+    /// [`RenderState::math`] set, and the [`MathAtom`](FlowItem::MathAtom)s they produce
+    /// go to the joiner, which decides the spacing. What comes back out is ordinary
+    /// text, glue and preformatted lines — see [`math::finish`] — so an atom never
+    /// escapes the formula it belongs to.
+    ///
+    /// The joiner has to see the whole formula at once, but that is *not* a reason to
+    /// fold the children here. Doing so would take the driver out of the loop, and with
+    /// it any recomposer wrapping this one — the wrapping contract of PLAN.md §3 would
+    /// stop at the `$`. So the answer is an ordinary instruction to descend, with the
+    /// scope's closing attached to it as post-processing
+    /// ([`ConcatPieces::map`]): the driver folds the children through the run's
+    /// outermost recomposer, and only then is the assembled flow handed to
+    /// [`math::scope_closer`]'s function, which joins it and converts it at the flow
+    /// boundary.
+    ///
+    /// A formula's interior is therefore descended into by the driver like any other
+    /// subtree, which also puts it under the run's descent guard — one policy for the
+    /// whole document rather than an exception for math.
     ///
     /// In [`Source`](MathMode::Source) mode there is nothing to fold: the formula is
     /// re-emitted as the LaTeX it was written as, from node payloads (PLAN.md §1.6).
@@ -317,7 +342,6 @@ impl<'a> TextRenderer<'a> {
         node: NodeRef<'_, Latexlike>,
         state: &RenderState,
         form: MathGroupForm,
-        cx: &mut RecomposeContext<'_, Latexlike, ()>,
     ) -> Recompose<Flow, RenderState> {
         let display = form == MathGroupForm::Display;
 
@@ -337,82 +361,11 @@ impl<'a> TextRenderer<'a> {
             display,
             matrix: false,
         });
-        let body = self.fold_math_scope(node, &inner, cx);
-        Recompose::Emit(math::finish(body, display, &self.config.options))
-    }
-
-    /// Fold the children of a math group and hand back their flow, atoms and all.
-    ///
-    /// Everywhere else the driver composes a node's children for us, but it composes
-    /// them straight into the *parent*'s piece — and a formula has to see its own
-    /// contents before anyone else does, because the joiner works on the whole sequence
-    /// at once. A math group therefore folds its children itself and answers
-    /// [`Recompose::Emit`].
-    ///
-    /// The walk keeps its own stack on the heap rather than recursing, so that a formula
-    /// buried under any number of braces costs memory and never the machine stack. It
-    /// asks the renderer for each child's instruction exactly as the driver would; the
-    /// only [`Concat`](Recompose::Concat) this renderer ever answers is a transparent
-    /// concatenation of children (an ordinary group, a list), which is why descending
-    /// into them is the whole of what the instruction says. Nested regions —
-    /// arguments, environment bodies — are still folded by techy's own driver through
-    /// the re-entrant context ops, and so remain under its descent guard.
-    fn fold_math_scope(
-        &mut self,
-        node: NodeRef<'_, Latexlike>,
-        state: &RenderState,
-        cx: &mut RecomposeContext<'_, Latexlike, ()>,
-    ) -> Flow {
-        /// One level of the walk: the children still to visit and what they have
-        /// composed so far.
-        struct Frame<'t> {
-            children: NodeSlice<'t, Latexlike, ()>,
-            next: usize,
-            acc: Flow,
-        }
-
-        let mut stack = alloc::vec![Frame {
-            children: node.children(),
-            next: 0,
-            acc: Flow::new(),
-        }];
-        loop {
-            // The stack starts with one frame and is only ever emptied by the pop
-            // below, which returns instead of looping — so this is always `Some`. The
-            // `else` arm is what keeps that reasoning from being an `unwrap`.
-            let Some(frame) = stack.last_mut() else {
-                return Flow::new();
-            };
-            let Some(child) = frame.children.get(frame.next) else {
-                let Some(done) = stack.pop() else {
-                    return Flow::new();
-                };
-                match stack.last_mut() {
-                    Some(parent) => parent.acc.extend(done.acc),
-                    None => return done.acc,
-                }
-                continue;
-            };
-            frame.next += 1;
-
-            let instruction = match self.recompose_node(child, state, cx) {
-                Ok(instruction) => instruction,
-                // `Recomposer::Error` is `Infallible`; this arm has no value to bind.
-                Err(never) => match never {},
-            };
-            match instruction {
-                Recompose::Emit(flow) => {
-                    if let Some(frame) = stack.last_mut() {
-                        frame.acc.extend(flow);
-                    }
-                }
-                Recompose::Concat(_) => stack.push(Frame {
-                    children: child.children(),
-                    next: 0,
-                    acc: Flow::new(),
-                }),
-            }
-        }
+        Recompose::Concat(
+            ConcatPieces::children()
+                .with_state(inner)
+                .map(math::scope_closer(display, &self.config.options)),
+        )
     }
 
     /// A callable: find its rule (PLAN.md §10.3), then run it (PLAN.md §10.4).
@@ -476,7 +429,7 @@ impl Recomposer<Latexlike, ()> for TextRenderer<'_> {
         Ok(match node.kind() {
             NodeKind::Chars { .. } => Recompose::Emit(self.chars(node, state)),
             NodeKind::Comment(_) => Recompose::Emit(self.comment(node)),
-            NodeKind::Group(_) => self.group(node, state, cx),
+            NodeKind::Group(_) => self.group(node, state),
             NodeKind::List => Recompose::Concat(ConcatPieces::children()),
             NodeKind::Callable(_) => self.callable(node, state, cx),
         })
@@ -707,12 +660,13 @@ mod tests {
     }
 
     #[test]
-    fn a_wrapper_never_receives_a_math_atom() {
-        // A formula answers with a finished piece, so the driver does not descend into
-        // it and the wrapper's override never sees its characters — which is also what
-        // guarantees that no atom can reach a wrapper's flow, or the layout engine.
+    fn a_wrappers_override_is_consulted_inside_a_formula() {
+        // The whole point of closing a math scope with `ConcatPieces::map` instead of
+        // folding the children here (DECISIONS.md D24): the driver does the descending,
+        // so the wrapper's override applies inside `$…$` and inside `\[…\]` just as it
+        // does in running text — braces in the way included.
         let converter = Converter::standard();
-        let tree = parse(&converter, r"a $x + y$ b");
+        let tree = parse(&converter, r"a ${x} + y$ b \[z\]");
 
         let mut wrapper = ShoutingWrapper {
             inner: converter.renderer(),
@@ -720,14 +674,85 @@ mod tests {
         let flow = TreeRecomposer::new(&mut wrapper)
             .recompose(&tree, RenderState::initial(converter.options()))
             .expect("no refusal");
+
+        // Uppercased, so the characters went through the wrapper; joined and spaced,
+        // so the formula still closed its own scope around them.
+        assert_eq!(
+            render(&flow, &LayoutOptions::default()),
+            "A X + Y B\n\n    Z\n"
+        );
+        // And the guarantee that survives the change: an atom never leaves the formula
+        // it belongs to, so no wrapper — this one or any other — is ever handed one.
         assert!(!flow
             .items()
             .iter()
             .any(|item| matches!(item, FlowItem::MathAtom(_))));
+    }
+
+    /// A consumer's recomposer that renders one macro as a math atom of its own.
+    struct StarWrapper<'a> {
+        inner: TextRenderer<'a>,
+    }
+
+    impl Recomposer<Latexlike, ()> for StarWrapper<'_> {
+        type State = RenderState;
+        type Piece = Flow;
+        type Error = Infallible;
+
+        fn recompose_node(
+            &mut self,
+            node: NodeRef<'_, Latexlike, ()>,
+            state: &RenderState,
+            cx: &mut RecomposeContext<'_, Latexlike, ()>,
+        ) -> Result<Recompose<Flow, RenderState>, Infallible> {
+            if node.macro_name() == Some("star") {
+                let mut flow = Flow::new();
+                flow.push(FlowItem::MathAtom(crate::mathfmt::Atom::from_text(
+                    "★",
+                    crate::mathfmt::AtomClass::both(crate::mathfmt::AtomClass::Bin),
+                )));
+                return Ok(Recompose::Emit(flow));
+            }
+            self.inner.recompose_node(node, state, cx)
+        }
+    }
+
+    #[test]
+    fn a_wrappers_override_inside_a_formula_takes_part_in_the_joining() {
+        // An override inside a formula is not merely *reached*: what it emits is the
+        // scope's own currency, so an atom it builds is spaced by the joiner like any
+        // other. Here a binary operator gets the spaces a binary operator gets.
+        let converter = Converter::standard();
+        let tree = parse(&converter, r"$a \star b$");
+
+        let mut wrapper = StarWrapper {
+            inner: converter.renderer(),
+        };
+        let flow = TreeRecomposer::new(&mut wrapper)
+            .recompose(&tree, RenderState::initial(converter.options()))
+            .expect("no refusal");
         assert_eq!(
             render(&flow, &LayoutOptions::default()),
-            "A \u{1d465} + \u{1d466} B\n"
+            "\u{1d44e} ★ \u{1d44f}\n"
         );
+    }
+
+    #[test]
+    fn a_wrappers_override_does_not_reach_a_math_environments_body() {
+        // The counterpart, and *not* a math-specific rule: a math environment is
+        // rendered by a techxt rule, and a rule folds its body through the renderer it
+        // holds — the inner one. See the module documentation on the reach of a
+        // wrapper. `\[…\]` above is a math *group*, which no rule renders.
+        let converter = Converter::standard();
+        let tree = parse(&converter, r"\begin{equation}z\end{equation}");
+
+        let mut wrapper = ShoutingWrapper {
+            inner: converter.renderer(),
+        };
+        let flow = TreeRecomposer::new(&mut wrapper)
+            .recompose(&tree, RenderState::initial(converter.options()))
+            .expect("no refusal");
+        assert_eq!(render(&flow, &LayoutOptions::default()), "    \u{1d467}\n");
     }
 
     #[test]
