@@ -29,7 +29,7 @@
       four mounts below; this file holds only the frame and the prose (web/PLAN.md §6.1).
     -->
     <header class="site-header">
-      <a class="site-name" href="#about">techxt</a>
+      <h1 class="site-name"><a href="#about">techxt</a></h1>
       <p class="site-tagline">LaTeX-like markup → plain text</p>
       <nav class="site-links">
         <a href="#about">About</a>
@@ -37,15 +37,15 @@
       </nav>
     </header>
 
-    <div class="app" id="app">
+    <main class="app" id="app" aria-label="Converter">
       <div id="controls-mount"></div>
       <div id="panes-mount"></div>
       <div id="status-mount"></div>
-    </div>
+    </main>
 
-    <section class="below" id="about">
+    <section class="below" id="about" aria-labelledby="about-heading">
       <div class="below-inner">
-        <h2>What this is</h2>
+        <h2 id="about-heading">What this is</h2>
         <p>
           <strong>techxt</strong> converts documents written in a LaTeX-like language into
           readable plain text: <code>\emph{hi}</code> becomes <span class="sample">ℎ𝑖</span>,
@@ -71,10 +71,10 @@
 
         <h2>Get it</h2>
         <p>The Rust library:</p>
-        <pre class="snippet"><code>[dependencies]
+        <pre class="snippet" tabindex="0"><code>[dependencies]
 techxt = { git = "https://github.com/phfaist/techxt", rev = "..." }</code></pre>
         <p>The command-line program:</p>
-        <pre class="snippet"><code>cd rust
+        <pre class="snippet" tabindex="0"><code>cd rust
 cargo run --bin techxt -- --wrap 78 paper.tex -o paper.txt</code></pre>
 
         <h2>Links</h2>

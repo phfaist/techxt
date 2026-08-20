@@ -88,7 +88,11 @@ export interface ControlsInit {
   ui: UiState;
   /** The options the user has changed; everything else is a library default. */
   options: AppOptions;
-  /** The techxt version, for the "report a bug" line of the More panel. */
+  /**
+   * The techxt version, for the "report a bug" line of the More panel — `''` at
+   * construction, because the bar is built before wasm has loaded so the page is
+   * usable while it does. {@link Controls.setVersion} fills it in on `ready`.
+   */
   version: string;
   /** A whole new option object — the caller diffs and re-converts. */
   onOptionsChange(options: AppOptions): void;
@@ -106,6 +110,8 @@ export interface Controls {
   setFont(font: FontId, size: number): void;
   setMoreOpen(open: boolean): void;
   setKeepFontsOffline(enabled: boolean): void;
+  /** Fill in the embedded techxt version once the worker has reported it. */
+  setVersion(version: string): void;
   /** Close the disclosure — what Escape does (§6.9). */
   close(): void;
 }

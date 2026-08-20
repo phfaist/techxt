@@ -1,2 +1,1508 @@
-/* Placeholder — the real stylesheet is written at W2. */
-:root { color-scheme: light dark; }
+/*
+ * techxt web — one stylesheet (web/PLAN.md §6.1, §6.9, §8.2, §8.3).
+ *
+ * Order: the five @font-face declarations, the design tokens (light, then the dark
+ * overrides), the base, then one section per UI module, then the page below the fold,
+ * then the responsive and motion rules.
+ *
+ * Two conventions worth knowing before editing:
+ *
+ * - **Colour is never the only signal.** Severity is carried by a letter (E/W/N), by
+ *   the chip's shape, and by its border style, so the panel reads the same to someone
+ *   who cannot tell the three hues apart.
+ * - **Exactly two transitions exist** (§6.9): the toast's entrance and the dimming of
+ *   a stale output pane. Both are switched off under `prefers-reduced-motion`, along
+ *   with the one keyframe animation (the in-flight dot).
+ */
+
+/* ------------------------------------------------------------------ fonts */
+
+/*
+ * `local()` comes first so a TeX user who already has the face installed downloads
+ * nothing at all, and `font-display: swap` keeps the text readable while a face is on
+ * its way. A declared face that nothing applies is never fetched — that laziness is
+ * the whole loading mechanism (§8.3), which is why there is no `preload` here.
+ */
+
+@font-face {
+  font-family: "JuliaMono Web";
+  src: local("JuliaMono"), url("../fonts/JuliaMono-Regular.woff2") format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Fira Math Web";
+  src: local("Fira Math"), url("../fonts/FiraMath-Regular.woff2") format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Latin Modern Math Web";
+  src: local("Latin Modern Math"), url("../fonts/LatinModernMath-Regular.woff2") format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "STIX Two Math Web";
+  src: local("STIX Two Math"), url("../fonts/STIXTwoMath-Regular.woff2") format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Libertinus Math Web";
+  src: local("Libertinus Math"), url("../fonts/LibertinusMath-Regular.woff2") format("woff2");
+  font-display: swap;
+}
+
+/* ----------------------------------------------------------------- tokens */
+
+:root {
+  color-scheme: light dark;
+
+  /* Warm paper and ink: a page about typesetting should not look like a form. */
+  --bg: #fbfaf8;
+  --bg-sunken: #f1eee7;
+  --bg-inset: #f6f4ef;
+  --bg-raised: #ffffff;
+
+  --fg: #1d1b18;
+  --fg-muted: #59544c;
+  --fg-faint: #6f6961;
+
+  --line: #ded8cc;
+  --line-strong: #c4bcac;
+
+  --accent: #0f6a5b;
+  --accent-fg: #ffffff;
+  --accent-soft: #e4f0ec;
+  --focus: #0f6a5b;
+
+  --sev-error: #a3231c;
+  --sev-error-bg: #f8e5e2;
+  --sev-warn: #8a5a06;
+  --sev-warn-bg: #f8eed6;
+  --sev-note: #40556e;
+  --sev-note-bg: #e8edf4;
+
+  --shadow: 0 10px 30px rgb(38 32 20 / 18%);
+
+  --ui-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  /* `--pane-font` and `--pane-size` are set on <html> by src/fonts.ts (§8.1). */
+
+  --r: 10px;
+  --r-sm: 6px;
+  --header-h: 46px;
+  --divider-w: 9px;
+  --tap: 44px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16151a;
+    --bg-sunken: #1c1b22;
+    --bg-inset: #1a1920;
+    --bg-raised: #23222b;
+
+    --fg: #ece8e1;
+    --fg-muted: #b3ada4;
+    --fg-faint: #8a8479;
+
+    --line: #33313b;
+    --line-strong: #4b4956;
+
+    --accent: #5fd3bb;
+    --accent-fg: #10241f;
+    --accent-soft: #1b332e;
+    --focus: #5fd3bb;
+
+    --sev-error: #ff9086;
+    --sev-error-bg: #3a1f1d;
+    --sev-warn: #ecbb55;
+    --sev-warn-bg: #362b16;
+    --sev-note: #a8bedb;
+    --sev-note-bg: #212a36;
+
+    --shadow: 0 10px 30px rgb(0 0 0 / 45%);
+  }
+}
+
+/* ------------------------------------------------------------------- base */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--ui-font);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+pre,
+fieldset {
+  margin: 0;
+}
+
+/*
+ * Author rules that set `display` outrank the UA's `[hidden] { display: none }`
+ * whatever their specificity, and several elements below are shown and hidden through
+ * the `hidden` property. This keeps that property meaning what it says.
+ */
+[hidden] {
+  display: none !important;
+}
+
+:where(
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary,
+  [tabindex]
+):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.glyph,
+.caret {
+  display: inline-block;
+  line-height: 1;
+}
+
+.caret {
+  font-size: 0.72em;
+  color: var(--fg-muted);
+}
+
+.icon {
+  flex: none;
+}
+
+/* --------------------------------------------------------- buttons, inputs */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.1;
+  padding: 0.4rem 0.6rem;
+  min-height: 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg-raised);
+  color: var(--fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--bg-inset);
+  border-color: var(--fg-faint);
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.btn-accent:hover {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+.btn-quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-muted);
+}
+
+.btn-quiet:hover {
+  background: var(--bg-inset);
+  color: var(--fg);
+}
+
+.control {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.4rem;
+  min-height: 32px;
+  /* A select's `min-width: auto` is its widest option, which is how a long option
+     text turns into a page that scrolls sideways. It may always shrink. */
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg-raised);
+  color: var(--fg);
+}
+
+.control-number {
+  width: 5.5rem;
+}
+
+.control-text {
+  width: 11rem;
+}
+
+.control-range {
+  width: 6rem;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  accent-color: var(--accent);
+}
+
+.control-check {
+  width: 1.05rem;
+  height: 1.05rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+/* --------------------------------------------------------------- the shell */
+
+.site-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: var(--header-h);
+  padding-inline: max(0.85rem, env(safe-area-inset-left))
+    max(0.85rem, env(safe-area-inset-right));
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-sunken);
+}
+
+/*
+ * `.site-name` is the page's `<h1>` with the link inside it, so the UA's `2em` and
+ * its block margins are reset here (the margin by the base rule above) and the colour
+ * and focus ring belong to the `<a>`. The strip stays exactly one line.
+ */
+.site-name {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.site-name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.site-name a:hover {
+  text-decoration: underline;
+}
+
+.site-tagline {
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.site-links {
+  margin-left: auto;
+  display: flex;
+  gap: 0.85rem;
+  font-size: 0.85rem;
+}
+
+.site-links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.site-links a:hover {
+  text-decoration: underline;
+}
+
+.app {
+  /* `--vvh` follows the visual viewport (src/ui/panes.ts), so the on-screen
+     keyboard shortens the tool instead of pushing it off the screen (§6.6). */
+  height: calc(var(--vvh, 100dvh) - var(--header-h));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+}
+
+.controls-host,
+.panes-host,
+.diagnostics-host {
+  display: contents;
+}
+
+/* ------------------------------------------------------ the primary bar (§5) */
+
+.controls {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--line);
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  padding: 0.4rem 0.7rem;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.field-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* A value that is the library's own default is drawn unset; a chosen one is marked. */
+.field[data-set="true"] .field-label::after,
+.field-check[data-set="true"] .check-label::after {
+  content: "•";
+  margin-left: 0.35em;
+  color: var(--accent);
+  font-size: 1.15em;
+  line-height: 0;
+}
+
+.field[data-set="true"] > .control,
+.field[data-set="true"] .today-row > .control {
+  border-color: var(--accent);
+}
+
+.font-row,
+.today-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.size-out {
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+  min-width: 3.2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.hint {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--fg-muted);
+}
+
+/* In the one-row bar a hint would cost a screenful, so it stays available to
+   `aria-describedby` and to the tooltip, and out of the layout. */
+.bar > .field > .hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------- More options (§5) */
+
+.more {
+  position: relative;
+  margin-left: auto;
+}
+
+.more-summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.more-summary::-webkit-details-marker {
+  display: none;
+}
+
+.more[open] > .more-summary .glyph {
+  transform: rotate(90deg);
+}
+
+.more-body {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: min(54rem, 92vw);
+  max-height: min(70dvh, 40rem);
+  overflow: auto;
+  padding: 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+
+.more-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+
+.group {
+  display: grid;
+  gap: 0.8rem;
+  align-content: start;
+  margin: 0;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.group legend {
+  padding: 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+}
+
+.more-body .field {
+  display: grid;
+  gap: 0.25rem;
+  align-items: start;
+}
+
+.more-body .field-label {
+  white-space: normal;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.6rem;
+}
+
+.check-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.more-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+}
+
+.more-note {
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+  flex: 1 1 18rem;
+}
+
+.more-version {
+  font-family: var(--mono);
+}
+
+.more-link {
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------ panes (§6.1) */
+
+.panes {
+  display: grid;
+  grid-template-columns:
+    minmax(0, var(--split-a, 1fr))
+    var(--divider-w)
+    minmax(0, var(--split-b, 1fr));
+  min-height: 0;
+  background: var(--line);
+}
+
+.pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-raised);
+}
+
+.pane-out {
+  position: relative;
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 38px;
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--line);
+}
+
+.pane-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--fg-muted);
+}
+
+.pane-note,
+.pane-flag {
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.pane-flag {
+  color: var(--sev-warn);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0 0.45em;
+}
+
+.pane-tools {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.pane-body {
+  min-height: 0;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 0;
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-family: var(--pane-font, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: var(--pane-size, 15px);
+  line-height: 1.5;
+}
+
+.pane-body:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.pane-input {
+  display: block;
+  width: 100%;
+  resize: none;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/*
+ * Never `pre-wrap`: the library decided the line breaks, and a second, invisible
+ * wrapping by the browser would misrepresent the output. With Wrap: Off the correct
+ * behaviour is a horizontal scrollbar (§6.3).
+ */
+.pane-output {
+  white-space: pre;
+  overflow: auto;
+  tab-size: 8;
+  -moz-tab-size: 8;
+  transition: opacity 140ms ease;
+}
+
+/* A hard parse failure dims the last good answer rather than throwing it away. */
+.pane-output.is-stale {
+  opacity: 0.45;
+}
+
+/*
+ * The hidden sample the fit-to-pane measurement is taken from (§6.5).
+ *
+ * `fixed`, not `absolute`: the sample is 63 characters wide — some 570 px — and an
+ * absolutely positioned box still contributes to its ancestors' scrollable overflow,
+ * so it would make the whole page scroll sideways on a phone while being invisible
+ * (§6.6 forbids exactly that). A fixed box is attached to the viewport and never adds
+ * to the scrollable area, and `getBoundingClientRect()` measures it just the same.
+ */
+.pane-gauge {
+  position: fixed;
+  top: 0;
+  left: 0;
+  /* Explicit, so the measured box is the text's own width and not a shrink-to-fit
+     against whatever the containing block happens to be. */
+  width: max-content;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: pre;
+}
+
+.pane-divider {
+  position: relative;
+  cursor: col-resize;
+  background: var(--line);
+  touch-action: none;
+  display: grid;
+  place-items: center;
+}
+
+.pane-divider-grip {
+  width: 2px;
+  height: 26px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+
+.pane-divider:hover,
+.panes.is-dragging .pane-divider {
+  background: var(--accent-soft);
+}
+
+.pane-divider:hover .pane-divider-grip,
+.panes.is-dragging .pane-divider-grip {
+  background: var(--accent);
+}
+
+.panes.is-dragging {
+  user-select: none;
+}
+
+.focus-button {
+  display: none;
+}
+
+/* --------------------------------------------------------- the Load ▾ menu */
+
+.menu {
+  position: relative;
+}
+
+.menu-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  display: grid;
+  gap: 0.15rem;
+  min-width: 15rem;
+  max-width: min(24rem, 80vw);
+  padding: 0.3rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+
+.menu-item {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.45rem 0.55rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background: var(--bg-inset);
+}
+
+.menu-item-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.menu-item-blurb {
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+}
+
+/* ------------------------------------------------------- diagnostics (§7) */
+
+.diagnostics {
+  display: grid;
+  grid-template-rows: auto minmax(0, auto);
+  min-height: 0;
+  border-top: 1px solid var(--line);
+  background: var(--bg-sunken);
+}
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.5rem;
+  min-height: 34px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.status-item + .status-item::before {
+  content: "·";
+  margin-right: 0.45rem;
+  color: var(--fg-faint);
+}
+
+.status-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.35rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.status-toggle:hover {
+  background: var(--bg-inset);
+}
+
+.diagnostics.is-open .status-toggle .caret {
+  transform: rotate(90deg);
+}
+
+.status-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.status-dot {
+  color: var(--fg-faint);
+}
+
+.status-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+
+.status-count[data-sev="error"] {
+  color: var(--sev-error);
+}
+
+.status-count[data-sev="warning"] {
+  color: var(--sev-warn);
+}
+
+.status-count[data-sev="note"] {
+  color: var(--sev-note);
+}
+
+.status-clean {
+  color: var(--fg-muted);
+}
+
+.clean-mark {
+  margin-right: 0.35em;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.status-failed {
+  margin-left: 0.5em;
+  padding: 0 0.4em;
+  border: 1px solid currentColor;
+  border-radius: var(--r-sm);
+  color: var(--sev-error);
+  font-weight: 600;
+}
+
+.status-meta {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.status-note {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.status-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--fg-muted);
+}
+
+.busy-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: techxt-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes techxt-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.status-cancel {
+  color: var(--sev-error);
+  border-color: currentColor;
+  min-height: 26px;
+  padding: 0.15rem 0.5rem;
+}
+
+.diag-panel {
+  overflow: auto;
+  max-height: min(42dvh, 22rem);
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+
+.diag-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 1;
+}
+
+.chip-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.chip-filter[aria-pressed="true"] {
+  color: var(--fg);
+  background: var(--bg-inset);
+  border-color: var(--fg-faint);
+}
+
+.chip-filter[aria-pressed="false"] {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.chip-filter:disabled {
+  opacity: 0.4;
+  cursor: default;
+  text-decoration: none;
+}
+
+/*
+ * Severity, three ways over: the letter, the shape (square / round / dashed square)
+ * and the hue. Hue is the one that is allowed to fail.
+ */
+.chip-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 1.2rem;
+  height: 1.2rem;
+  border: 1px solid currentColor;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.chip-mark[data-sev="error"] {
+  color: var(--sev-error);
+  background: var(--sev-error-bg);
+  border-radius: 3px;
+}
+
+.chip-mark[data-sev="warning"] {
+  color: var(--sev-warn);
+  background: var(--sev-warn-bg);
+  border-radius: 999px;
+}
+
+.chip-mark[data-sev="note"] {
+  color: var(--sev-note);
+  background: var(--sev-note-bg);
+  border-radius: 3px;
+  border-style: dashed;
+}
+
+.diag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.diag-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  border-bottom: 1px solid var(--line);
+}
+
+.drow-main {
+  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diag-row[data-sev="error"] .drow-main {
+  border-left-color: var(--sev-error);
+}
+
+.diag-row[data-sev="warning"] .drow-main {
+  border-left-color: var(--sev-warn);
+}
+
+.diag-row[data-sev="note"] .drow-main {
+  border-left-color: var(--sev-note);
+}
+
+button.drow-main:hover {
+  background: var(--bg-inset);
+}
+
+.drow-main.is-inert {
+  cursor: default;
+  color: var(--fg-muted);
+}
+
+.drow-id {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: var(--fg-muted);
+}
+
+.drow-message {
+  flex: 1 1 14rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.drow-where {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.8em;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+
+.drow-why {
+  flex-basis: 100%;
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--fg-faint);
+}
+
+.drow-expander {
+  grid-column: 2;
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.drow-expander:hover {
+  background: var(--bg-inset);
+  color: var(--fg);
+}
+
+.drow-expander[aria-expanded="true"] .caret {
+  transform: rotate(90deg);
+}
+
+/* techy's own rendering, caret line and trace frames included — unedited (§7). */
+.drow-detail {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.6rem 0.8rem 0.8rem 1rem;
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 8;
+  background: var(--bg-inset);
+  border-top: 1px dashed var(--line);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.diag-empty,
+.diag-truncated {
+  padding: 0.7rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+
+.diag-truncated {
+  border-top: 1px dashed var(--line);
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------ toast */
+
+.toast-mount {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 0.75rem calc(0.75rem + env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+
+.toast-region {
+  max-width: 100%;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: min(34rem, 100%);
+  margin-top: 0.5rem;
+  padding: 0.55rem 0.6rem 0.55rem 0.75rem;
+  background: var(--bg-raised);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.toast.is-shown {
+  opacity: 1;
+  transform: none;
+}
+
+.toast[data-tone="alert"] {
+  border-left-color: var(--sev-error);
+}
+
+.toast-message {
+  flex: 1 1 auto;
+  font-size: 0.88rem;
+}
+
+.toast-close {
+  min-height: 28px;
+  padding: 0.1rem 0.45rem;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+/* -------------------------------------------------------- below the fold */
+
+.below {
+  border-top: 1px solid var(--line);
+  background: var(--bg-sunken);
+  padding: 2.75rem 0 3.5rem;
+  padding-inline: max(1rem, env(safe-area-inset-left))
+    max(1rem, env(safe-area-inset-right));
+}
+
+.below-inner {
+  max-width: 68ch;
+  margin: 0 auto;
+}
+
+.below h2 {
+  margin: 2.2rem 0 0.6rem;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.below h2:first-child {
+  margin-top: 0;
+}
+
+.below p {
+  margin-bottom: 0.85rem;
+}
+
+.below a {
+  color: var(--accent);
+}
+
+.below code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  padding: 0.05em 0.3em;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.sample {
+  font-family: var(--pane-font, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+
+.privacy {
+  padding: 0.75rem 0.9rem;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+.snippet {
+  margin-bottom: 0.85rem;
+  padding: 0.7rem 0.85rem;
+  overflow-x: auto;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.snippet code {
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: inherit;
+}
+
+.links {
+  padding-left: 1.15rem;
+}
+
+.links li {
+  margin-bottom: 0.25rem;
+}
+
+.credits {
+  list-style: none;
+  padding-left: 0;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.credits li {
+  margin-bottom: 0.35rem;
+}
+
+.colophon {
+  margin-top: 2.5rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 560px) {
+  .site-tagline {
+    display: none;
+  }
+
+  /* The range still moves the size; the readout is what the row cannot afford. */
+  .size-out {
+    display: none;
+  }
+}
+
+/* Stacked panes, a Focus button, no divider (§6.6). */
+@media (max-width: 860px) {
+  .panes {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(38dvh, 1fr) minmax(38dvh, 1fr);
+    overflow-y: auto;
+  }
+
+  .pane-divider {
+    display: none;
+  }
+
+  .focus-button {
+    display: inline-flex;
+  }
+
+  /* The divider is desktop-only (§6.6), so the stacked panes need their own rule. */
+  .pane-out {
+    border-top: 1px solid var(--line-strong);
+  }
+
+  .panes[data-focus="input"] {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .panes[data-focus="input"] .pane-out > .pane-body {
+    display: none;
+  }
+
+  .panes[data-focus="output"] {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .panes[data-focus="output"] .pane-in > .pane-body {
+    display: none;
+  }
+
+  /*
+   * Two rows on a phone, by construction (§6.1): the bar becomes a two-column grid
+   * and auto-placement puts Wrap | Math on the first row and the display font | More
+   * options on the second, in DOM order. A wrapping flex row could not promise that —
+   * a select is as wide as its widest option unless it is told it may shrink, which
+   * is what turned this into four rows and a page that scrolled sideways.
+   */
+  .bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.4rem 0.6rem;
+    padding: 0.4rem 0.6rem;
+  }
+
+  .bar > .field {
+    min-width: 0;
+  }
+
+  .bar > .field > select.control,
+  .bar .font-row > select.control {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .field-font > .font-row {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .bar .control-number {
+    flex: 0 0 4.75rem;
+  }
+
+  .bar .control-range {
+    flex: none;
+    width: 4.5rem;
+  }
+
+  .more {
+    justify-self: end;
+    margin-left: 0;
+  }
+
+  .more-body {
+    position: fixed;
+    top: auto;
+    right: 0.5rem;
+    left: 0.5rem;
+    bottom: 0.5rem;
+    width: auto;
+    max-height: 72dvh;
+  }
+
+  /* With the keyboard up there is no room to insist on 38dvh a pane. */
+  .kbd-up .panes {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .kbd-up .site-header {
+    display: none;
+  }
+
+  .kbd-up .app {
+    height: var(--vvh, 100dvh);
+  }
+
+  .diag-panel {
+    max-height: min(50dvh, 18rem);
+  }
+}
+
+/*
+ * Below 700 px the bar's labels go visually hidden: a phone has room for the controls
+ * or for their names, not both, and `<label for>` still names them for a screen
+ * reader. Each control carries the same words as a `title` (see ui/controls.ts), and
+ * the option text of the three primary controls is §5's own vocabulary — Fit / Off,
+ * Fancy / Plain / Source — which reads on its own.
+ */
+@media (max-width: 700px) {
+  .bar > .field > .field-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* The "chosen" dot rides on the label, so the control takes over the job here. */
+  .bar > .field[data-set="true"] > select.control,
+  .bar > .field[data-set="true"] .font-row > select.control {
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+}
+
+/*
+ * Below 620 px the pane headers drop the *words* of the buttons that have a mark of
+ * their own — Download's icon, Focus's ⇅ — and keep them as `.sr-only` text so the
+ * accessible name and the 44 px target both survive. Load and Copy keep their words:
+ * Load has no icon at all, and Copy is goal 1 of §1.
+ */
+@media (max-width: 620px) {
+  .pane-tools .btn:not(.btn-labelled) .btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .pane-tools .btn:not(.btn-labelled) {
+    padding-inline: 0.45rem;
+    gap: 0;
+  }
+}
+
+/* Touch targets of at least 44 px (§6.6). */
+@media (pointer: coarse) {
+  .btn,
+  .control,
+  .status-toggle,
+  .chip-filter,
+  .drow-expander,
+  .menu-item {
+    min-height: var(--tap);
+  }
+
+  .pane-tools .btn {
+    min-width: var(--tap);
+  }
+
+  .drow-expander {
+    width: var(--tap);
+  }
+
+  .control-range,
+  .control-check {
+    min-height: 0;
+  }
+
+  .control-check {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+}
+
+/* The only two transitions, and the one animation (§6.9). */
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .pane-output {
+    transition: none;
+  }
+
+  .busy-dot {
+    animation: none;
+    opacity: 0.7;
+  }
+}
