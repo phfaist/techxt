@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+     role="img" aria-labelledby="icon-title icon-desc">
+  <title id="icon-title">techxt</title>
+  <desc id="icon-desc">A summation sign beside three lines of text: a formula converted to
+  plain text.</desc>
+
+  <!--
+    The mark (web/PLAN.md §8.6). A summation sign and three text lines of decreasing
+    length: what the app does, in one shape — a formula on the left, the plain text it
+    becomes on the right.
+
+    Hand-drawn on a 512 grid, centred on (256, 256), so that the numbers can be read
+    and changed. Everything is a stroked path with round caps and joins, which is what
+    keeps it legible when the whole thing is 32 px across and the sigma's diagonals are
+    two pixels wide: a filled outline at that size turns to mush, a stroke does not.
+
+      plate   rounded square, rx = 116 ≈ 22.7 % — close enough to the iOS mask that
+              apple-touch-icon.png can be rendered full-bleed and cropped by it
+      sigma   x 100 → 268, y 112 → 400, stroke 58
+      lines   x 322 → 428 / 412 / 386, at y 172 / 256 / 340, stroke 42
+
+    The two colours are the only ones the icon set uses. The plate is mid-toned on
+    purpose: 4.7:1 against the light background of the page and 3.7:1 against the dark
+    one, so the icon holds its edge in either scheme instead of dissolving into one of
+    them. tools/make_icons.py reads the plate's fill for the full-bleed variants, so a
+    colour change here reaches every PNG.
+  -->
+  <rect id="plate" x="0" y="0" width="512" height="512" rx="116" fill="#2e7d6f"/>
+  <g id="mark" fill="none" stroke="#fbfaf8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M268 112 H100 L186 256 L100 400 H268" stroke-width="58"/>
+    <path d="M322 172 H428 M322 256 H412 M322 340 H386" stroke-width="42"/>
+  </g>
+</svg>
