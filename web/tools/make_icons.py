@@ -78,12 +78,12 @@ MASKABLE_SCALE = 0.78
 APPLE_SCALE = 1.0
 
 CARD = (1200, 630)
-PAPER = (251, 250, 248, 255)  # #fbfaf8, the light theme of index.html
-INK = (22, 21, 26, 255)  # #16151a, its dark counterpart
+PAPER = (240, 242, 238, 255)  # #f0f2ee, the light theme of index.html
+INK = (35, 41, 38, 255)  # #232926, its ink
 TEAL = (46, 125, 111, 255)  # the plate colour of icon.svg
-MUTED = (90, 96, 100, 255)
-RULE = (223, 220, 214, 255)
-ARROW = (154, 160, 163, 255)
+MUTED = (93, 102, 95, 255)  # --fg-muted
+RULE = (230, 234, 227, 255)  # --field
+ARROW = (141, 149, 142, 255)  # --fg-faint
 
 
 # ------------------------------------------------------------------- the SVG variants

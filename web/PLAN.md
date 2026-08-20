@@ -12,7 +12,9 @@ the app and defers to it on everything about conversion behaviour.
 **The page is a tool, not a brochure.** A visitor lands on an input box with a
 document already in it and an output pane beside it; conversion happens as they type.
 The project framing — name, one sentence, GitHub link — is a header strip, and the
-prose lives below the fold where it cannot cost the tool a screenful.
+prose lives in sheets over the tool where it cannot cost it a screenful. The page
+itself never scrolls: the tool is exactly one viewport, and About and Install are
+dialogs (§6.8).
 
 Goals, in priority order:
 
@@ -43,7 +45,7 @@ anything.
 | D5 | Three primary controls, the rest behind "More options" | Two-tier options model (§5) |
 | D6 | `localStorage` for session state, URL fragment for sharing | A versioned state codec (§6.4) |
 | D7 | Diagnostics in a collapsible panel, click to select the span in the input | The binding must return UTF-16 offsets, not byte offsets (§4.4) |
-| D8 | App fills the viewport; header is one line; About/examples below the fold | Mobile layout has to work with the on-screen keyboard up (§6.6) |
+| D8 | App fills the viewport; header is one line; About/Install are modal sheets and the page never scrolls | Mobile layout has to work with the on-screen keyboard up (§6.6) |
 
 ## 3. Folder layout
 
@@ -79,7 +81,7 @@ web/
     icons/                PWA icons (generated, committed)
     og.png                social preview (generated, committed)
   fonts/
-    *.woff2                five faces (§8.1), unsubsetted, committed
+    *.woff2                five display faces (§8.1) and the interface face (§8.7)
     licences/              each upstream OFL / GUST licence, verbatim
   tools/
     fetch_fonts.py        obtains and re-packages web/fonts/ (no subsetting)
@@ -380,7 +382,7 @@ no use for the CLI's UTC caution.
 ├───────────────────────────┴──────────────────────────────┤
 │ ▸ 3 warnings · 128 ms · 1 240 chars                      │  status + diagnostics
 └──────────────────────────────────────────────────────────┘
-                    (About, examples, install — below the fold)
+            (About and Install are sheets over this, not a page under it)
 ```
 
 Panes are a CSS grid, `1fr 1fr` on desktop with a draggable divider (the ratio is
@@ -446,9 +448,12 @@ interface AppState { v: 1; doc: string; opts: AppOptions; ui: UiState }
   settings too.
 - **Share link**: `#d=` + base64url(`deflate-raw`(JSON of `{v, doc, opts}`)) via
   `CompressionStream`, with an uncompressed base64url fallback where it is missing.
-  Written only when the user presses **Copy link** — never on every keystroke, so the
-  URL and the history stay stable. Over ~8000 characters the button offers "copy
-  settings only" instead, since browsers and chat clients start mangling longer URLs.
+  Read on load, and written only into a crash report (§6.2), which is the one place
+  the app needs a reproduction it can hand to someone — never on every keystroke, so
+  the URL and the history stay stable. Over ~8000 characters the settings-only
+  encoding is used instead, since browsers and chat clients start mangling longer
+  URLs. There is no "copy link" control: a link that carries a document silently is
+  a thing to be asked for, not a button to press by accident.
 - On load: fragment (if present) wins over localStorage, which wins over defaults.
   The fragment is left in place so a reload reproduces it.
 - Only options that differ from `Options::default()` are serialized, so a link stays
@@ -505,22 +510,42 @@ cost no fetch and work offline. Each is at most ~15 lines — a demo, not a corp
 A **Load ▾** menu in the input pane header offers them; choosing one replaces the
 document (with a single-level undo via the toast, since it discards work).
 
-### 6.8 The page below the fold
+### 6.8 The two sheets
 
-Short, and written once: what techxt is (two sentences, adapted from the repository
-README); the crate and CLI snippets from the README, verbatim so they cannot drift
-into being wrong; a link to the repository, to `CHANGELOG.md` and to the rendered
-crate documentation; the privacy line ("everything runs in your browser — no document
-is ever uploaded, and the page makes no network requests after it loads"); font
-credits with their licences (§8.1); and the embedded techxt version from
+The page does not scroll. The tool is one viewport tall and everything else is a
+`<dialog>` opened with `showModal()` over it — the top layer, the backdrop, Escape,
+the focus ring and the inertness of the tool behind are the platform's, and none of
+them is reimplemented (`src/ui/sheets.ts`). A sheet is a card on the desktop and the
+whole screen on a phone. The header's **About** and **Install** are buttons, not
+anchors: the fragment belongs to the share codec (§6.4), and a nav link that
+overwrites it would cost a reader their document on reload.
+
+**About**, short and written once: what techxt is (two sentences, adapted from the
+repository README); the crate and CLI snippets from the README, verbatim so they
+cannot drift into being wrong; a link to the repository, to `CHANGELOG.md` and to the
+design notes; the privacy line ("everything runs in your browser — no document is
+ever uploaded, and the page makes no network requests after it loads"); font credits
+with their licences (§8.1, §8.7); and the embedded techxt version from
 `techxt_version()`, which is what makes a bug report actionable.
+
+**Install** explains how to install the app on the device that is reading it. The
+`beforeinstallprompt` event is captured at module scope — Chrome fires it once, early,
+and an event nobody listened for is gone — and offers a real install button where the
+browser has one to give. Everything else is prose per platform: the steps are chosen
+by user-agent sniffing, which is the right tool exactly once, since "tap Share, then
+Add to Home Screen" is true of Safari on iOS and of nothing else and no feature test
+will tell you where a menu item is. The other platforms stay one disclosure away, so
+a wrong guess costs a click rather than the answer, and an already-installed copy is
+told so instead (`display-mode: standalone`).
 
 ### 6.9 Accessibility
 
-Labelled controls (`<label for>`, no placeholder-as-label); the diagnostics summary
+Sheets are real `<dialog>`s, so the tool behind one is inert and Escape closes it
+without a keydown handler of ours. Labelled controls (`<label for>`, no
+placeholder-as-label); the diagnostics summary
 is `aria-live="polite"` and announces counts, not every keystroke; visible focus
 rings; light/dark via `prefers-color-scheme` with CSS custom properties and AA
-contrast in both; `prefers-reduced-motion` respected by the only two transitions.
+contrast in both; `prefers-reduced-motion` respected by every transition and the one animation.
 Keyboard: Ctrl/Cmd+Enter converts, Ctrl/Cmd+Shift+C copies output, Escape closes the
 options disclosure.
 
@@ -591,7 +616,8 @@ preference, not a compromise.
 
 One weight each: techxt expresses boldness with Unicode alphabets (𝐛𝐨𝐥𝐝), never with
 font weight, so a bold face would never be used. A size control (12–20 px) sits beside
-the selector, and the chosen face applies to both panes.
+the selector, and the chosen face applies to the output pane alone — the source pane
+is code, and stays in the platform monospace at a size of its own.
 
 ### 8.2 Every face is a chain, not a font
 
@@ -704,6 +730,29 @@ apple-touch-icon, plus `og.png` (1200×630) for social previews. Outputs committ
 the script is a dev aid. The mark: `∑` converting to `S`-shaped text, or simply
 `𝕥` — decided when it is drawn, not in this plan.
 
+### 8.7 The interface face
+
+The five faces above are *display* faces: the user picks one and it renders the
+converted text. The app's own chrome — labels, prose, diagnostics — is set in one
+more, **Commissioner** (Kostas Bartsokas, OFL), and it is deliberately not part of
+the registry in `src/fonts.ts`: it is never offered, never persisted, never named in
+a share link, and `coverage_check.py` skips it, because what it does with a fraktur
+alphabet is nobody's business.
+
+It is shipped like the others — whole, pinned, hashed, licence copied, in
+`fetch_fonts.py` and `SOURCES.md` — with three differences that follow from its being
+chrome rather than content:
+
+- **One file, every weight.** The variable cut (`wght` 100–900, 170 KB of woff2)
+  costs less than the three static weights the interface uses would, and comes with
+  Commissioner's `FLAR` and `VOLM` axes. `styles.css` sets a little of both — a face
+  chosen rather than defaulted to, and not enough to notice at 13 px.
+- **No `local()` arm.** §8.3's first arm finds an installed original; an installed
+  Commissioner would be a static instance, and the rule promises a range.
+- **It is precached.** §8.3's laziness is for faces nobody may pick. This one is on
+  every screen, so it belongs to the shell: an installed copy should not have to draw
+  its own chrome in a fallback the first time it opens with the network off.
+
 ## 9. PWA
 
 - **Manifest** (via `vite-plugin-pwa`): `name: "techxt — LaTeX to text"`,
@@ -711,12 +760,12 @@ the script is a dev aid. The mark: `∑` converting to `S`-shaped text, or simpl
   `display: "standalone"`, theme/background from the CSS tokens (both schemes),
   the icon set of §8.6.
 - **Service worker**: Workbox `generateSW`, `registerType: 'autoUpdate'`. The
-  precache is the app only — `**/*.{html,js,css,wasm,png,svg}` — and **no font at
-  all**: unsubsetted faces are several hundred KB each, and precaching even one would
-  put it on the install path twice (the page fetches it anyway). Fonts are served by
-  a `CacheFirst` runtime route on `/fonts/*.woff2` (max 8 entries, one-year expiry),
-  so the face in use lands in the cache on first paint and works offline from then on
-  (§8.3). The wasm module (~890 KB) is under Workbox's default 2 MiB per-file
+  precache is the app only — `**/*.{html,js,css,wasm,png,svg}` plus the interface
+  face (§8.7) — and **no display font**: unsubsetted faces are several hundred KB
+  each, and precaching even one would put it on the install path twice (the page
+  fetches it anyway). Fonts are served by a `CacheFirst` runtime route on
+  `/fonts/*.woff2` (max 8 entries, one-year expiry), so the face in use lands in the
+  cache on first paint and works offline from then on (§8.3). The wasm module (~890 KB) is under Workbox's default 2 MiB per-file
   precache cap; the cap is set explicitly anyway, so future growth fails the build
   loudly instead of silently skipping the engine.
 - **Offline**: the app — shell, engine, worker — is precached, so a cold offline start

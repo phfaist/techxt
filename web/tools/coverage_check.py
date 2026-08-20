@@ -71,6 +71,11 @@ FONTS = WEB / "fonts"
 #: The face `src/fonts.ts` names as `DEFAULT_FONT`, and the only hard gate here.
 DEFAULT_FACE = "JuliaMono-Regular.woff2"
 
+#: The interface face of web/PLAN.md §8.7 sits in the same directory and is not a
+#: display face: it sets the app's own chrome and never renders converted text, so
+#: what it does with a fraktur alphabet is nobody's business.
+SKIP_FACES = frozenset({"Commissioner-Variable.woff2"})
+
 #: Floors below which a parse is treated as broken rather than as a small table.
 #: The tables held 991 symbols and 26 accents when this was written; these are not
 #: exact so that adding or dropping an entry does not fail the build, but a parser
@@ -511,7 +516,7 @@ def main(argv=None) -> int:
     )
     args = parser.parse_args(argv)
 
-    faces = sorted(FONTS.glob("*.woff2"))
+    faces = [path for path in sorted(FONTS.glob("*.woff2")) if path.name not in SKIP_FACES]
     if not faces:
         raise SystemExit(f"{FONTS}: no woff2 faces; run web/tools/fetch_fonts.py")
     if not (FONTS / DEFAULT_FACE).exists():

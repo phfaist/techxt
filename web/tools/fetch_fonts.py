@@ -291,6 +291,42 @@ FACES: tuple[Face, ...] = (
             'inherited names, none of which is "Libertinus".',
         ),
     ),
+    Face(
+        id="commissioner",
+        label="Commissioner Variable",
+        version="1.012",
+        upstream="https://github.com/kosbarts/Commissioner",
+        output="Commissioner-Variable.woff2",
+        font=Blob(
+            url="https://github.com/kosbarts/Commissioner/releases/download/1.012/Commissioner_1.012.zip",
+            sha256="32ce19ee0517421d2c4c312fed8cf761ab2a6a12ed29957eaab7f790d6bdc46f",
+            kind="zip",
+            member=(
+                "Commissioner_1.012/Kostas_Bartsokas_Commissioner_1.012/fonts/variable/"
+                "Commissioner[FLAR,VOLM,wght].ttf"
+            ),
+        ),
+        packaging="convert",
+        licence=Blob(
+            url="https://github.com/kosbarts/Commissioner/releases/download/1.012/Commissioner_1.012.zip",
+            sha256="32ce19ee0517421d2c4c312fed8cf761ab2a6a12ed29957eaab7f790d6bdc46f",
+            kind="zip",
+            member="Commissioner_1.012/Kostas_Bartsokas_Commissioner_1.012/OFL.txt",
+        ),
+        licence_output="Commissioner-OFL.txt",
+        licence_name="SIL Open Font License 1.1",
+        notes=(
+            "**The interface face, not a display face** (§8.7): it sets the app's own "
+            "chrome and never the converted text, so it is absent from the registry in "
+            "`src/fonts.ts` and from the selector, and `coverage_check.py` skips it.",
+            "One file for the whole family: the `wght` axis spans 100-900, so the three "
+            "weights the interface uses are one download rather than three. `FLAR` "
+            "(flare) and `VOLM` (volume) come with it, and `styles.css` sets a little "
+            "of the first.",
+            "The OFL header declares no Reserved Font Name, so the ` Web` suffix is "
+            "this project's own convention here, as it is for Fira Math.",
+        ),
+    ),
 )
 
 
@@ -460,9 +496,10 @@ def render_sources(records: list[dict]) -> str:
     lines = [
         HEADER,
         "",
-        "# Where the display fonts came from",
+        "# Where the fonts came from",
         "",
-        "The five faces of [`web/PLAN.md`](../PLAN.md) §8.1, each shipped **whole** —",
+        "The five display faces of [`web/PLAN.md`](../PLAN.md) §8.1 and the interface face of",
+        "§8.7, each shipped **whole** —",
         "nothing here is subsetted, and §8.4 explains why at length. This file is written by",
         "`web/tools/fetch_fonts.py`; `python3 web/tools/fetch_fonts.py --check` verifies that",
         "the committed files still hash to what is recorded below.",

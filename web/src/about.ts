@@ -10,7 +10,7 @@
  * assigns `innerHTML`, and a credit line is not the place to make an exception.
  */
 
-import { FONTS } from './fonts';
+import { FONTS, INTERFACE_FONT } from './fonts';
 
 export interface AboutSection {
   /** Fill in the version the worker reported (§6.2's `ready` message). */
@@ -56,6 +56,15 @@ export function initAbout(root: ParentNode = document): AboutSection {
       .filter((font) => font.credit.length > 0)
       .map((font) => creditItem(font.credit, font.licence, font.licenceFile));
     credits.replaceChildren(...items);
+  }
+
+  // The interface face is credited beside them, in its own line: it is not one of the
+  // five, and putting it in the same list would say it was (§8.7).
+  const uiCredit = root.querySelector('#ui-font-credit');
+  if (uiCredit) {
+    uiCredit.replaceChildren(
+      creditItem(INTERFACE_FONT.credit, INTERFACE_FONT.licence, INTERFACE_FONT.licenceFile),
+    );
   }
 
   return {

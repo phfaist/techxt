@@ -1,5 +1,9 @@
 /**
- * The contract between `main.ts` and the four UI modules.
+ * The contract between `main.ts` and the UI modules.
+ *
+ * Four of the five are here. The fifth, `ui/sheets.ts`, keeps its own: it talks to
+ * the app through one optional callback and answers no question about a conversion,
+ * so an entry in this file would be a table of contents and nothing more.
  *
  * Each module owns a region of the page: it builds its own markup into the mount it
  * is given, owns the class names it styles in `styles.css`, and talks to the rest of
@@ -100,8 +104,6 @@ export interface ControlsInit {
   onMoreToggle(open: boolean): void;
   /** "Keep all fonts offline" was ticked or unticked (§8.3). */
   onKeepFontsOffline(enabled: boolean): void;
-  /** "Copy link" — the caller builds the fragment and writes the clipboard (§6.4). */
-  onShare(): void;
 }
 
 export interface Controls {

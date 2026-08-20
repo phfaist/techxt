@@ -1,7 +1,7 @@
 /**
  * Bootstrap and wiring (web/PLAN.md §6, §9).
  *
- * This file owns everything the four UI modules deliberately do not: the state that
+ * This file owns everything the UI modules deliberately do not: the state that
  * outlives a keystroke, the worker, the clipboard, the keyboard shortcuts, the share
  * link and the service worker. The modules under `src/ui/` build the page and report
  * user actions; this decides what those actions mean.
@@ -37,6 +37,7 @@ import type { BusyState, Controls, DiagnosticsPanel, Panes, Toaster } from './ui
 import { initControls } from './ui/controls';
 import { initDiagnostics } from './ui/diagnostics';
 import { initPanes } from './ui/panes';
+import { initSheets } from './ui/sheets';
 import { initToast } from './ui/toast';
 import type { ConversionResult, Diagnostic } from './worker/protocol';
 
@@ -167,6 +168,16 @@ function registerServiceWorker(toast: Toaster): void {
 async function start(): Promise<void> {
   const toast = initToast(mountPoint('toast-mount'));
   const about = initAbout();
+  // About and Install are dialogs over the tool (§6.8). A modal makes everything
+  // behind it inert, so the disclosure has to be told to put itself away first —
+  // otherwise it is still open, and still open when the sheet closes.
+  initSheets({
+    onOpen() {
+      controls.close();
+      state.ui.moreOpen = false;
+      persistence.ui(state.ui);
+    },
+  });
   registerServiceWorker(toast);
 
   const storage = browserStorage();
@@ -375,9 +386,6 @@ async function start(): Promise<void> {
         toast.show({ message: 'Every display font is cached for offline use.' });
       });
     },
-    onShare() {
-      void share();
-    },
   });
 
   /* --------------------------------------------------------- the status strip */
@@ -416,35 +424,6 @@ async function start(): Promise<void> {
   function shareUrl(fragment: string): string {
     const { origin, pathname, search } = window.location;
     return `${origin}${pathname}${search}${fragment}`;
-  }
-
-  async function copyLink(fragment: string, success: string): Promise<void> {
-    const copied = await copyText(shareUrl(fragment));
-    toast.show(
-      copied
-        ? { message: success }
-        : { message: 'Could not reach the clipboard.', tone: 'alert' },
-    );
-  }
-
-  /** Build the fragment, write the clipboard, say so — and only then (§6.4). */
-  async function share(): Promise<void> {
-    const fragment = await encodeShare({ v: 1, doc: state.doc, opts: state.opts });
-    if (fragment.length <= SHARE_LENGTH_LIMIT) {
-      await copyLink(fragment, 'Link copied — it carries the document and the options.');
-      return;
-    }
-    const settingsOnly = await encodeShareSettingsOnly(state.opts);
-    toast.show({
-      message: 'This document makes a link longer than most chat clients will carry.',
-      timeoutMs: 10_000,
-      action: {
-        label: 'Copy settings only',
-        onSelect: () => {
-          void copyLink(settingsOnly, 'Settings link copied — it carries no document.');
-        },
-      },
-    });
   }
 
   /** Loading an example throws work away, so it comes with one level of undo (§6.7). */

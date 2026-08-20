@@ -13,10 +13,10 @@ answered; the root [`PLAN.md`](../PLAN.md) is normative for the library.
 
 ```
 web/
-  index.html      the shell: header, four mount points, the below-the-fold prose
+  index.html      the shell: header, the mount points, and the two sheets' prose
   src/            the app (TypeScript, no framework)
   crate/          the wasm binding — a standalone cargo package, not a rust/ member
-  fonts/          five unsubsetted woff2 faces and their licences, committed
+  fonts/          six unsubsetted woff2 faces and their licences, committed
   public/         icons and the social card, generated and committed
   tools/          dev-only Python: font packaging, glyph coverage, icons
   test/           vitest over the pure logic
@@ -113,7 +113,7 @@ browser engine that is not Blink, still have to be done by hand.
 
 | # | Check | Status |
 |---|---|---|
-| 1 | Desktop: type, wrap, switch fonts, share-link round trip | **Chromium: passes.** A link is 183 characters for a document plus two changed options and reproduces the session in a fresh profile. **Firefox and Safari still to do by hand.** |
+| 1 | Desktop: type, wrap, switch fonts, incoming share link | **Chromium: passes.** A link is 183 characters for a document plus two changed options and reproduces the session in a fresh profile. **Firefox and Safari still to do by hand.** |
 | 2 | iOS Safari: install to the Home Screen, launch offline, keyboard up, copy works | **By hand — needs a device.** |
 | 3 | Android Chrome: install, offline, share link from the share sheet | **By hand — needs a device.** The `share_target` itself is verified: a `?text=` visit wins over the stored document and converts on arrival. |
 | 4 | DevTools offline reload after a cold cache | **Passes.** Service worker installs, and a reload with the network off serves the app and converts. |

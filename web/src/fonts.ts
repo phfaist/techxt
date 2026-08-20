@@ -11,7 +11,7 @@
  * chain therefore ends in a system stack that covers CJK and emoji.
  *
  * Loading is the browser's own laziness (§8.3): the `@font-face` rules in
- * `styles.css` declare all five faces, and a declared face that nothing applies is
+ * `styles.css` declare all five display faces, and a declared face that nothing applies is
  * never fetched. There is no loader here beyond `document.fonts.load`, which exists
  * only so the pane header can say "loading font…".
  */
@@ -116,6 +116,22 @@ export const FONTS: readonly FontEntry[] = [
     licenceFile: null,
   },
 ];
+
+/**
+ * The face the app's own chrome is set in (§8.7).
+ *
+ * It is **not** a display font and deliberately not part of {@link FONTS}: it never
+ * renders converted text, it is not offered in the selector, and no state ever names
+ * it. It is here only because the credit in the About sheet should come from the same
+ * place as the others rather than be typed into the prose and left to rot.
+ */
+export const INTERFACE_FONT = {
+  /** The `@font-face` family `styles.css` declares for it. */
+  family: 'Commissioner Web',
+  credit: 'Commissioner by Kostas Bartsokas',
+  licence: 'SIL Open Font License 1.1',
+  licenceFile: 'Commissioner-OFL.txt',
+} as const;
 
 /** The default face: a monospace grid is what the layout engine's columns assume. */
 export const DEFAULT_FONT: FontId = 'julia';

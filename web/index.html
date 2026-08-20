@@ -9,8 +9,8 @@
       content="Convert LaTeX-like markup to readable plain unicode text, entirely in your browser. No upload, no server, works offline."
     />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#16151a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f0f2ee" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#161918" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta property="og:title" content="techxt — LaTeX-like markup to plain text" />
@@ -26,14 +26,20 @@
   <body>
     <!--
       The shell. Everything interactive is built by the modules under src/ui/ into the
-      four mounts below; this file holds only the frame and the prose (web/PLAN.md §6.1).
+      mounts below; this file holds only the frame and the prose (web/PLAN.md §6.1).
+
+      The page itself never scrolls: the tool is exactly one viewport tall, and the
+      two prose panels are dialogs over it rather than a page below it (§6.8).
     -->
     <header class="site-header">
-      <h1 class="site-name"><a href="#about">techxt</a></h1>
+      <h1 class="site-name">techxt</h1>
       <p class="site-tagline">LaTeX-like markup → plain text</p>
-      <nav class="site-links">
-        <a href="#about">About</a>
-        <a href="https://github.com/phfaist/techxt" rel="noopener">GitHub</a>
+      <nav class="site-links" aria-label="About this app">
+        <button class="site-link" type="button" data-sheet="about">About</button>
+        <button class="site-link" type="button" data-sheet="install">Install</button>
+        <a class="site-link" href="https://github.com/phfaist/techxt" target="_blank" rel="noopener"
+          >GitHub</a
+        >
       </nav>
     </header>
 
@@ -43,9 +49,17 @@
       <div id="status-mount"></div>
     </main>
 
-    <section class="below" id="about" aria-labelledby="about-heading">
-      <div class="below-inner">
-        <h2 id="about-heading">What this is</h2>
+    <!-- ------------------------------------------------------------- About -->
+
+    <dialog class="sheet" id="sheet-about" aria-labelledby="sheet-about-title">
+      <div class="sheet-head">
+        <h2 class="sheet-title" id="sheet-about-title">About techxt</h2>
+        <button class="btn sheet-close" type="button" data-close-sheet aria-label="Close">
+          <span aria-hidden="true">✕</span>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <h3>What this is</h3>
         <p>
           <strong>techxt</strong> converts documents written in a LaTeX-like language into
           readable plain text: <code>\emph{hi}</code> becomes <span class="sample">ℎ𝑖</span>,
@@ -62,14 +76,14 @@
           same reports the command-line program prints.
         </p>
 
-        <h2 id="privacy">Your document stays here</h2>
+        <h3 id="privacy">Your document stays here</h3>
         <p class="privacy">
           Everything runs in your browser. No document is ever uploaded, and the page makes no
-          third-party network requests at all — no CDN, no analytics, no error reporting. Install
-          it from your browser’s menu and it works with the network off.
+          third-party network requests at all — no CDN, no analytics, no error reporting.
+          Install it and it works with the network off.
         </p>
 
-        <h2>Get it</h2>
+        <h3>Get it</h3>
         <p>The Rust library:</p>
         <pre class="snippet" tabindex="0"><code>[dependencies]
 techxt = { git = "https://github.com/phfaist/techxt", rev = "..." }</code></pre>
@@ -77,37 +91,157 @@ techxt = { git = "https://github.com/phfaist/techxt", rev = "..." }</code></pre>
         <pre class="snippet" tabindex="0"><code>cd rust
 cargo run --bin techxt -- --wrap 78 paper.tex -o paper.txt</code></pre>
 
-        <h2>Links</h2>
+        <h3>Links</h3>
         <ul class="links">
-          <li><a href="https://github.com/phfaist/techxt" rel="noopener">Repository</a></li>
           <li>
-            <a href="https://github.com/phfaist/techxt/blob/main/CHANGELOG.md" rel="noopener"
+            <a href="https://github.com/phfaist/techxt" target="_blank" rel="noopener"
+              >Repository</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/phfaist/techxt/blob/main/CHANGELOG.md"
+              target="_blank"
+              rel="noopener"
               >Changelog</a
             >
           </li>
           <li>
-            <a href="https://github.com/phfaist/techxt/blob/main/PLAN.md" rel="noopener"
+            <a
+              href="https://github.com/phfaist/techxt/blob/main/PLAN.md"
+              target="_blank"
+              rel="noopener"
               >Design notes</a
             >
           </li>
           <li>
-            <a href="https://github.com/phfaist/techxt/blob/main/web/PLAN.md" rel="noopener"
+            <a
+              href="https://github.com/phfaist/techxt/blob/main/web/PLAN.md"
+              target="_blank"
+              rel="noopener"
               >This app’s design notes</a
             >
           </li>
         </ul>
 
-        <h2>Fonts</h2>
+        <h3>Fonts</h3>
+        <p class="credits-lead">The display faces, offered in the bar:</p>
         <ul class="credits" id="font-credits"></ul>
+        <p class="credits-lead">The interface itself is set in:</p>
+        <ul class="credits" id="ui-font-credit"></ul>
 
-        <footer class="colophon">
-          <p>
-            techxt <span id="techxt-version">—</span> · MIT licensed ·
-            © Philippe Faist
-          </p>
-        </footer>
+        <p class="colophon">
+          techxt <span id="techxt-version">—</span> · MIT licensed · © Philippe Faist
+        </p>
       </div>
-    </section>
+    </dialog>
+
+    <!-- ----------------------------------------------------------- Install -->
+
+    <dialog class="sheet" id="sheet-install" aria-labelledby="sheet-install-title">
+      <div class="sheet-head">
+        <h2 class="sheet-title" id="sheet-install-title">Install techxt</h2>
+        <button class="btn sheet-close" type="button" data-close-sheet aria-label="Close">
+          <span aria-hidden="true">✕</span>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <p>
+          techxt is a progressive web app: install it and it gets its own window and its own
+          icon, starts without a browser bar, and keeps working with the network off. Nothing
+          is uploaded when you install it — the whole converter is already in this page.
+        </p>
+
+        <!-- Shown only where the browser has offered us its own install prompt. -->
+        <p class="install-action" id="install-action" hidden>
+          <button class="btn btn-accent" type="button" id="install-now">Install techxt</button>
+          <span class="install-note" id="install-result"></span>
+        </p>
+
+        <!-- Shown only when the app is already running as an installed app. -->
+        <p class="install-done" id="install-done" hidden>
+          You are already running the installed app.
+        </p>
+
+        <div id="install-steps">
+          <section class="steps" data-platform="ios" hidden>
+            <h3>On iPhone and iPad</h3>
+            <ol>
+              <li>Open this page in Safari — other iOS browsers cannot install it.</li>
+              <li>Tap the <strong>Share</strong> button in the toolbar.</li>
+              <li>Choose <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li>
+            </ol>
+          </section>
+
+          <section class="steps" data-platform="android" hidden>
+            <h3>On Android</h3>
+            <ol>
+              <li>Open the browser menu (<strong>⋮</strong>).</li>
+              <li>
+                Choose <strong>Install app</strong>, or <strong>Add to Home screen</strong> where
+                that is what it is called.
+              </li>
+            </ol>
+          </section>
+
+          <section class="steps" data-platform="chromium" hidden>
+            <h3>On a desktop, in Chrome or Edge</h3>
+            <ol>
+              <li>
+                Click the install icon at the right of the address bar — a screen with an arrow.
+              </li>
+              <li>
+                Or open the browser menu and choose <strong>Install techxt</strong> (under
+                <strong>Cast, save and share</strong> in recent Chrome).
+              </li>
+            </ol>
+          </section>
+
+          <section class="steps" data-platform="safari" hidden>
+            <h3>On a Mac, in Safari</h3>
+            <ol>
+              <li>Open the <strong>File</strong> menu.</li>
+              <li>Choose <strong>Add to Dock</strong> (Safari 17 and later).</li>
+            </ol>
+          </section>
+
+          <section class="steps" data-platform="firefox" hidden>
+            <h3>In Firefox</h3>
+            <p>
+              Firefox on the desktop does not install web apps. The page still works offline
+              once you have opened it, and bookmarking it is enough to come back without a
+              network. On Android, use <strong>Add to Home screen</strong> in the menu.
+            </p>
+          </section>
+
+          <section class="steps" data-platform="generic" hidden>
+            <h3>In this browser</h3>
+            <p>
+              Look for <strong>Install</strong> or <strong>Add to Home screen</strong> in the
+              browser’s menu. If neither is there, the page still works offline once it has been
+              opened, and a bookmark is enough to return to it.
+            </p>
+          </section>
+        </div>
+
+        <details class="install-other" id="install-other">
+          <summary>Other devices</summary>
+          <div id="install-other-body"></div>
+        </details>
+
+        <h3>What an installed copy adds</h3>
+        <ul class="links">
+          <li>It opens in its own window, without a browser bar.</li>
+          <li>It starts with the network off, converter and all.</li>
+          <li>It can open a <code>.tex</code> file straight from the file manager.</li>
+          <li>On Android it appears in the share sheet, so selected LaTeX can be sent to it.</li>
+        </ul>
+        <p class="install-fonts">
+          Display fonts are fetched as you choose them. <strong>Keep all fonts offline</strong>,
+          in More options, fetches all five now so they work with the network off too.
+        </p>
+      </div>
+    </dialog>
 
     <div id="toast-mount"></div>
   </body>

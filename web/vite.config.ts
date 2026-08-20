@@ -44,8 +44,8 @@ export default defineConfig({
         scope: BASE,
         display: 'standalone',
         orientation: 'any',
-        background_color: '#fbfaf8',
-        theme_color: '#fbfaf8',
+        background_color: '#f0f2ee',
+        theme_color: '#f0f2ee',
         categories: ['productivity', 'utilities'],
         icons: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
@@ -78,10 +78,16 @@ export default defineConfig({
         } as Record<string, unknown>),
       },
       workbox: {
-        // The app only: shell, styles, glue and the engine. Deliberately no font —
-        // an unsubsetted face is several hundred KB and the page fetches the one it
-        // needs anyway (§9, §8.3).
-        globPatterns: ['**/*.{html,js,css,wasm,png,svg,webmanifest}'],
+        // The app only: shell, styles, glue and the engine. Deliberately no *display*
+        // font — an unsubsetted face is several hundred KB and the page fetches the
+        // one it needs anyway (§9, §8.3). The interface face is the exception: it is
+        // part of the shell, applied to every screen, so an installed copy should not
+        // have to draw its own chrome in a fallback the first time it opens with the
+        // network off (§8.7).
+        globPatterns: [
+          '**/*.{html,js,css,wasm,png,svg,webmanifest}',
+          'fonts/Commissioner-Variable-*.woff2',
+        ],
         // The wasm module is ~890 KB today. Set the cap explicitly so future growth
         // fails the build loudly instead of silently dropping the engine from the
         // precache.

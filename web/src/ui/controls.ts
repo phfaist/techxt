@@ -49,7 +49,6 @@ const DEFAULTS: Record<LibKey, string | boolean> = {
 const DEFAULT_CUSTOM_COLUMNS = 72;
 const MIN_CUSTOM_COLUMNS = 20;
 const MAX_CUSTOM_COLUMNS = 400;
-const ISSUE_URL = 'https://github.com/phfaist/techxt/issues/new';
 
 interface Choice {
   value: string;
@@ -144,7 +143,7 @@ export function initControls(init: ControlsInit): Controls {
   const fontRow = el('div', 'font-row');
   fontRow.append(fontSelect, sizeLabel, sizeInput, sizeOut);
   const fontField = field('opt-font', 'Display font', fontRow, {
-    hint: 'CSS only — changes how the text looks, never what it says.',
+    hint: 'CSS only — how the converted text is drawn, never what it says.',
     className: 'field-font',
     bar: true,
   });
@@ -267,29 +266,13 @@ export function initControls(init: ControlsInit): Controls {
 
   moreGrid.append(layout, math, parsing);
 
-  const shareButton = el('button', 'btn btn-accent');
-  shareButton.type = 'button';
-  shareButton.id = 'opt-share';
-  shareButton.textContent = 'Copy link';
-  shareButton.addEventListener('click', () => init.onShare());
-
+  // The panel's one line of chrome: which techxt these options are being given to.
   const versionLine = el('p', 'more-note');
   const versionCode = el('code', 'more-version', init.version || '—');
-  versionLine.append(
-    document.createTextNode('techxt '),
-    versionCode,
-    document.createTextNode(' · '),
-  );
-  const issueLink = el('a', 'more-link', 'report a bug');
-  issueLink.href = ISSUE_URL;
-  issueLink.rel = 'noopener';
-  versionLine.append(
-    issueLink,
-    document.createTextNode(' — copy the link first, so the report carries the document.'),
-  );
+  versionLine.append(document.createTextNode('techxt '), versionCode);
 
   const moreFoot = el('div', 'more-foot');
-  moreFoot.append(shareButton, versionLine);
+  moreFoot.append(versionLine);
   moreBody.append(moreGrid, moreFoot);
   more.append(summary, moreBody);
 
