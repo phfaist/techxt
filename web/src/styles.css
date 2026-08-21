@@ -1902,8 +1902,23 @@ select.control {
   }
 }
 
-/* Touch targets of at least 44 px (§6.6). */
+/*
+ * Touch targets of at least 44 px (§6.6), and — just as much a touch-input concern —
+ * no text-entry field under 16 px. Below that threshold iOS Safari zooms the whole
+ * page in on focus and never zooms back out on blur, which on this one-viewport,
+ * no-scroll app (§6.6) reads as the field itself deforming into an oversized strip.
+ * The fix is scoped to touch so the desktop reading size (`--code-size`) is untouched.
+ */
 @media (pointer: coarse) {
+  .pane-input {
+    font-size: max(16px, var(--code-size));
+  }
+
+  .control-text,
+  .control-number {
+    font-size: max(16px, 0.85rem);
+  }
+
   .btn,
   .control,
   .status-toggle,
