@@ -1822,9 +1822,19 @@ select.control {
     max-height: 72dvh;
   }
 
-  /* With the keyboard up there is no room to insist on 38dvh a pane. */
+  /*
+   * With the keyboard up there is no room to insist on 38dvh a pane, and splitting
+   * what little is left between two panes leaves the one being typed into a sliver.
+   * The output pane isn't reachable behind the keyboard anyway, so it collapses out
+   * of the grid — same rule the Focus button applies by hand (§6.6) — and the source
+   * pane takes the row on its own.
+   */
   .kbd-up .panes {
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .kbd-up .pane-out > .pane-body {
+    display: none;
   }
 
   .kbd-up .site-header {
