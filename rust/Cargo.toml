@@ -60,7 +60,7 @@ techy = { git = "https://github.com/phfaist/techy", rev = "aa71c83" }
 # so the two pins move in lockstep.
 #
 # TEMP: path dependency while the pinned revision awaits its push to GitHub; flip to
-#   techy-xp = { git = "https://github.com/phfaist/techy-xp", rev = "9869be0" }
+#   techy-xp = { git = "https://github.com/phfaist/techy-xp", rev = "a57ce04" }
 # as soon as that rev is public. A committed manifest must use the git form.
 techy-xp = { path = "../../techy-xp" }
 # East-Asian-width-aware display width of the rendered text, for the layout engine's
