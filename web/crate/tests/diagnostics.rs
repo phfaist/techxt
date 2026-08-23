@@ -5,7 +5,7 @@
 //! than techxt's conversion, which `rust/` tests for itself.
 
 use techxt_web::diag::{convert_native, ConversionResultDto, SeverityDto, SpanDto};
-use techxt_web::options::{self, OptionsDto, RecoveryDto};
+use techxt_web::options::{self, MacroDefinitionsDto, OptionsDto, RecoveryDto};
 
 /// Convert `latex` with the library's defaults.
 fn convert(latex: &str) -> ConversionResultDto {
@@ -70,6 +70,65 @@ fn an_unknown_macro_is_one_warning_selecting_exactly_the_macro() {
     assert_eq!(selection(latex, span), "\\undefinedmacro");
     assert_eq!(span.line, 1);
     assert_eq!(span.column, 3);
+    // The span is the diagnostic's own, so the panel shows the position plainly.
+    assert!(!diagnostic.approx);
+}
+
+/// §4.5 as amended for M9: a diagnostic raised inside an expansion points into the
+/// macro's body, which the textarea cannot select — so the app gets the invocation
+/// instead, marked `approx`.
+///
+/// This is the routine case rather than an exotic one, and it is the case with *no*
+/// trace frames at all: the fallback that answers it is the source's provenance chain.
+#[test]
+fn a_diagnostic_from_an_expansion_points_at_the_invocation() {
+    // No trailing newline: an invocation's span runs to the end of the whitespace TeX
+    // skips after a control word, and `\a\n` would be a less legible assertion below.
+    let latex = "\\newcommand{\\a}{x \\nope}\\a";
+    let result = convert(latex);
+
+    assert!(result.ok);
+    assert_eq!(result.text, "x\n");
+    assert_eq!(result.diagnostics.len(), 1);
+    let diagnostic = &result.diagnostics[0];
+    assert_eq!(diagnostic.identifier, "techxt.unknown-macro");
+    assert!(diagnostic.message.contains("nope"), "{diagnostic:?}");
+    // The trace is empty, so this is the provenance chain's answer and not a frame's.
+    assert!(diagnostic.frames.is_empty(), "{diagnostic:?}");
+
+    let span = diagnostic.span.expect("the invocation is in the document");
+    assert!(diagnostic.approx, "{diagnostic:?}");
+    assert_eq!(selection(latex, span), "\\a");
+    assert_eq!(span.line, 1);
+    assert_eq!(span.column, 25);
+}
+
+/// With the definers only *declared* the same document has no expansion in it at all,
+/// so the diagnostic is about `\a` itself and its span is exact.
+#[test]
+fn declared_only_definitions_leave_nothing_approximate() {
+    // No trailing newline: an invocation's span runs to the end of the whitespace TeX
+    // skips after a control word, and `\a\n` would be a less legible assertion below.
+    let latex = "\\newcommand{\\a}{x \\nope}\\a";
+    let dto = OptionsDto {
+        macro_definitions: Some(MacroDefinitionsDto::Declared),
+        ..OptionsDto::default()
+    };
+    let converter = options::build(&dto).expect("the definitions build");
+    let result = convert_native(&converter, latex);
+
+    // Nothing is defined and nothing expands, so `\a` renders as the default
+    // `UnknownMacroPolicy::Skip` renders it: nothing at all.
+    assert_eq!(result.text, "");
+    assert_eq!(result.diagnostics.len(), 1);
+    let diagnostic = &result.diagnostics[0];
+    assert_eq!(diagnostic.identifier, "techxt.unknown-macro");
+    assert!(diagnostic.message.contains("\\a"), "{diagnostic:?}");
+    assert!(!diagnostic.approx);
+    assert_eq!(
+        selection(latex, diagnostic.span.expect("in the document")),
+        "\\a",
+    );
 }
 
 /// The offsets are UTF-16 code units, so an astral character before the macro shifts

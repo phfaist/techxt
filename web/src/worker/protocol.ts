@@ -38,6 +38,13 @@ export type UnknownSpecialsPolicy = 'emit-chars' | 'skip';
 export type Recovery = 'tolerant' | 'strict';
 
 /**
+ * `techxt::convert::MacroDefinitions`: whether a `\newcommand` in the document defines
+ * a macro that later uses expand (`'honored'`, the library's default), or is read and
+ * dropped so a later use is an unknown command (`'declared'`).
+ */
+export type MacroDefinitions = 'honored' | 'declared';
+
+/**
  * `techxt::convert::FontStyle`: `'off'` is `Disabled`, `'default'` is `Default`, and
  * every other value is `Style(FontStyleKind::…)` — the Unicode alphabet a letter is
  * mapped into. Nothing here has anything to do with the display font of §8.
@@ -85,6 +92,7 @@ export interface OptionsPayload {
   /** What `\today` renders as; `null`/absent leaves the library's `<today>`. */
   today?: string | null;
   recovery?: Recovery;
+  macroDefinitions?: MacroDefinitions;
 }
 
 /** The keys of {@link OptionsPayload}, for exhaustive iteration in the state codec. */
@@ -122,8 +130,20 @@ export interface Diagnostic {
   message: string;
   /** `Diagnostic::render()` — the same text `techxt-cli` prints. */
   rendered: string;
-  /** `null` when the span points at a source that is not the current input (§4.5). */
+  /**
+   * Where to select in the input, or `null` when neither this diagnostic nor anything
+   * it came from is in the document that was converted (§4.5).
+   */
   span: Span | null;
+  /**
+   * Whether {@link span} is the diagnostic's own position (`false`) or the nearest
+   * enclosing macro invocation in the typed document (`true`).
+   *
+   * A diagnostic raised inside an expansion points into the macro's *body*, which is
+   * not a place the textarea can select, so the binding substitutes the invocation
+   * that expanded it and says so here (§4.5). Always `false` when `span` is `null`.
+   */
+  approx: boolean;
   frames: TraceFrame[];
 }
 

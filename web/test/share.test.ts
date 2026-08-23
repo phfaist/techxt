@@ -52,6 +52,7 @@ const EVERY_OPTION: AppOptions = {
   unknownEnv: 'skip',
   unknownSpecials: 'skip',
   recovery: 'strict',
+  macroDefinitions: 'declared',
   wrap: 'off',
   todayMode: 'custom',
   todayCustom: 'March 3, 1999',

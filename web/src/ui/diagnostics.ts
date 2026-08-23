@@ -10,7 +10,10 @@
  *   is not a distinction everyone can make;
  * - `identifier` in monospace, because it is a stable name a bug report can quote;
  * - `line:column`, and a jump into the textarea for the spans that point at the
- *   document the user typed — the ones that do not say so instead of misleading;
+ *   document the user typed — including a diagnostic raised inside a macro expansion,
+ *   whose position is the *call* and is labelled `via macro` rather than passed off as
+ *   the message's own place (§4.5); a row with no position at all says so instead of
+ *   misleading;
  * - and, behind a per-row expander, techy's own `rendered` text with its caret line
  *   and trace frames: the same thing `techxt-cli` prints, so a screenshot from this
  *   app is directly comparable to a terminal report.
@@ -33,7 +36,19 @@ const PLURAL: Record<Severity, [string, string]> = {
   note: ['note', 'notes'],
 };
 
-const NO_SPAN_REASON = 'this diagnostic points outside the document you typed';
+/**
+ * Why a row cannot be clicked (§4.5). The binding already substitutes the macro call
+ * for a diagnostic raised inside an expansion, so what is left here is the residue:
+ * something with no position in the document at all.
+ */
+const NO_SPAN_REASON = 'this arose inside an expansion with no call in your document to point at';
+
+/** Marks a position that is the macro call rather than the message's own place. */
+const APPROX_MARK = 'via macro';
+
+/** The same fact, in a sentence, above techy's own report. */
+const APPROX_REASON =
+  'The position above is where the macro is used; the report below is positioned inside its expansion.';
 
 const ANNOUNCE_DELAY = 400;
 
@@ -51,10 +66,19 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
   let announced = '';
   let flashTimer = 0;
   const showing: Record<Severity, boolean> = { error: true, warning: true, note: true };
-  /** Which rows have their `rendered` detail open, kept across re-renders. */
-  const expanded = new Set<string>();
-  /** The row for each currently-rendered diagnostic, so {@link reveal} can find one. */
-  const rowElements = new Map<string, HTMLLIElement>();
+  /**
+   * Which rows have their `rendered` detail open, by position in the list.
+   *
+   * Position rather than content: two rows can carry the same identifier, message and
+   * (since M9, routinely) the same substituted span, and a content key would collapse
+   * them into one — one expander then opening both details, and {@link reveal} landing
+   * on whichever was rendered last.
+   */
+  const expanded = new Set<number>();
+  /** The rows now on screen, in the order {@link renderList} appended them. */
+  let rows: HTMLLIElement[] = [];
+  /** What those rows are showing, so {@link reveal} can find one by identity. */
+  let showingRows: readonly Diagnostic[] = [];
 
   /* ------------------------------------------------------------------ DOM */
 
@@ -201,13 +225,14 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
     }
     listDirty = false;
     list.replaceChildren();
-    rowElements.clear();
+    rows = [];
 
     const diagnostics = result?.diagnostics ?? [];
     const visible = diagnostics.filter((d) => showing[d.severity]);
+    showingRows = visible;
     for (const [index, diagnostic] of visible.entries()) {
       const item = row(diagnostic, index);
-      rowElements.set(rowKey(diagnostic), item);
+      rows.push(item);
       list.append(item);
     }
 
@@ -232,13 +257,17 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
     const item = el('li', 'diag-row');
     item.dataset.sev = diagnostic.severity;
 
+    // An `approx` row is as clickable as any other: it *has* a span — the macro call
+    // the expansion came from — and only the position column says which (§4.5).
     const jumpable = diagnostic.span !== null;
     const main = document.createElement(jumpable ? 'button' : 'div');
     main.className = jumpable ? 'drow-main' : 'drow-main is-inert';
     if (main instanceof HTMLButtonElement) {
       main.type = 'button';
       main.addEventListener('click', () => init.onSelect(diagnostic));
-      main.title = 'Select this in the source';
+      main.title = diagnostic.approx
+        ? 'Select the macro call this came from'
+        : 'Select this in the source';
     }
 
     main.append(
@@ -247,26 +276,26 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
       el('code', 'drow-id', diagnostic.identifier),
       el('span', 'drow-message', diagnostic.message),
     );
-    const where = diagnostic.span
-      ? `${diagnostic.span.line}:${diagnostic.span.column}`
-      : 'no position';
+    const at = diagnostic.span ? `${diagnostic.span.line}:${diagnostic.span.column}` : null;
+    const where = at === null ? 'no position' : diagnostic.approx ? `${at} (${APPROX_MARK})` : at;
     main.append(el('span', 'drow-where', where));
     if (!jumpable) {
       main.append(el('span', 'drow-why', NO_SPAN_REASON));
     }
 
-    const key = rowKey(diagnostic);
     const detailId = `diag-detail-${index}`;
-    const detail = el('pre', 'drow-detail');
+    const detail = el('div', 'drow-detail');
     detail.id = detailId;
+    if (diagnostic.approx) detail.append(el('p', 'drow-detail-note', APPROX_REASON));
+    const report = el('pre', 'drow-report', diagnostic.rendered);
     // The full report scrolls sideways, so it has to be reachable by keyboard.
-    detail.tabIndex = 0;
-    detail.textContent = diagnostic.rendered;
-    detail.hidden = !expanded.has(key);
+    report.tabIndex = 0;
+    detail.append(report);
+    detail.hidden = !expanded.has(index);
 
     const expander = el('button', 'drow-expander');
     expander.type = 'button';
-    expander.setAttribute('aria-expanded', String(expanded.has(key)));
+    expander.setAttribute('aria-expanded', String(expanded.has(index)));
     expander.setAttribute('aria-controls', detailId);
     const expanderCaret = el('span', 'caret');
     expanderCaret.setAttribute('aria-hidden', 'true');
@@ -276,8 +305,8 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
       const next = detail.hidden;
       detail.hidden = !next;
       expander.setAttribute('aria-expanded', String(next));
-      if (next) expanded.add(key);
-      else expanded.delete(key);
+      if (next) expanded.add(index);
+      else expanded.delete(index);
     });
 
     item.append(main, expander, detail);
@@ -345,7 +374,9 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
         listDirty = true;
       }
       setOpen(true); // also renders the list, if `listDirty` made that necessary
-      const li = rowElements.get(rowKey(diagnostic));
+      // By identity: the gutter marker was painted from this very object, and two
+      // diagnostics can otherwise be indistinguishable field for field.
+      const li = rows[showingRows.indexOf(diagnostic)];
       if (!li) return;
       li.scrollIntoView({ block: 'nearest' });
       window.clearTimeout(flashTimer);
@@ -366,11 +397,6 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
 }
 
 /* ---------------------------------------------------------------- helpers */
-
-function rowKey(diagnostic: Diagnostic): string {
-  const start = diagnostic.span ? diagnostic.span.start : -1;
-  return `${diagnostic.identifier}|${start}|${diagnostic.message}`;
-}
 
 /** The severity chip: a tinted shape carrying a letter, never colour alone. */
 function mark(severity: Severity): HTMLSpanElement {

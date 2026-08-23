@@ -555,7 +555,12 @@ export function initPanes(init: PanesInit): Panes {
       const button = el('button', 'gutter-marker');
       button.type = 'button';
       button.dataset.sev = diagnostic.severity;
-      const where = diagnostic.span ? ` (line ${diagnostic.span.line})` : '';
+      // `via macro` for a span the binding substituted for one inside an expansion
+      // (§4.5): the marker sits at the macro call, and says so rather than implying the
+      // message was raised there.
+      const line = diagnostic.span ? `line ${diagnostic.span.line}` : '';
+      const via = diagnostic.approx ? ', via macro' : '';
+      const where = line ? ` (${line}${via})` : '';
       button.title = `${diagnostic.severity}${where}: ${diagnostic.message}`;
       button.setAttribute('aria-label', button.title);
       button.addEventListener('click', () => init.onMarkerSelect(diagnostic));

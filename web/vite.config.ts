@@ -88,9 +88,9 @@ export default defineConfig({
           '**/*.{html,js,css,wasm,png,svg,webmanifest}',
           'fonts/Commissioner-Variable-*.woff2',
         ],
-        // The wasm module is ~890 KB today. Set the cap explicitly so future growth
-        // fails the build loudly instead of silently dropping the engine from the
-        // precache.
+        // The wasm module is ~1.07 MiB today (it was ~890 KB before M9 linked techy-xp
+        // in). Set the cap explicitly so future growth fails the build loudly instead of
+        // silently dropping the engine from the precache.
         maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         navigateFallback: `${BASE}index.html`,

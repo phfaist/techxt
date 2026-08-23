@@ -12,16 +12,25 @@
 
 name: Web
 
+# `rust/Cargo.toml` and `rust/Cargo.lock` are in the filters because `web/crate` depends
+# on `techxt` by path and inherits the workspace's dependency pins through it: since M9
+# that includes techy-xp, whose revision can move without a byte of `rust/techxt/**`
+# changing. A build the app's own gates never saw is exactly what the filters exist to
+# prevent.
 on:
   push:
     paths:
       - "web/**"
       - "rust/techxt/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
       - ".github/workflows/web.yml"
   pull_request:
     paths:
       - "web/**"
       - "rust/techxt/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
       - ".github/workflows/web.yml"
   workflow_dispatch:
 
@@ -42,6 +51,12 @@ env:
   # The gzip ceiling is set at 400 KB deliberately: that is the number §4.7 names as
   # the point to drop to `opt-level = "s"`, so CI fails exactly when the plan says the
   # size/speed trade should be revisited — not before.
+  #
+  # M9 measurement, unchanged budgets: linking techy-xp in took the module to
+  # 1 120 513 B raw / 398 525 B gzipped (§14) — 29 KB and **1.4 KB** of headroom. The
+  # gzip ceiling is therefore about to do exactly what it was set up to do, and the
+  # answer when it does is §4.7's first response (`opt-level = "s"`, measured at
+  # 343 KB gzipped), not a larger number on the line below.
   WASM_MAX_BYTES: 1150000
   WASM_MAX_GZIP_BYTES: 400000
 

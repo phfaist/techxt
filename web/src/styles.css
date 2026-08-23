@@ -1372,16 +1372,30 @@ select.control {
   transform: rotate(90deg);
 }
 
-/* techy's own rendering, caret line and trace frames included — unedited (§7). */
+/* The per-row detail: techy's own rendering, and — for a diagnostic that came out of a
+ * macro expansion — one line saying so above it (§4.5, §7). */
 .drow-detail {
   grid-column: 1 / -1;
   margin: 0 0.35rem 0.4rem;
   padding: 0.7rem 0.85rem;
+  background: var(--bg-inset);
+  border-radius: var(--r-sm);
+}
+
+/* Why the row's position is the macro call and not the report's own place. */
+.drow-detail-note {
+  margin: 0 0 0.55rem;
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--fg-faint);
+}
+
+/* techy's own rendering, caret line and trace frames included — unedited (§7). */
+.drow-report {
+  margin: 0;
   overflow-x: auto;
   white-space: pre;
   tab-size: 8;
-  background: var(--bg-inset);
-  border-radius: var(--r-sm);
   color: var(--fg-muted);
   font-family: var(--mono);
   font-size: 0.78rem;

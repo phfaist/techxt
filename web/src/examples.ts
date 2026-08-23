@@ -1,11 +1,13 @@
 /**
- * The five sample documents of web/PLAN.md §6.7, inlined as string constants so they
+ * The six sample documents of web/PLAN.md §6.7, inlined as string constants so they
  * cost no fetch and work offline.
  *
- * Each is at most about fifteen lines — a demo, not a corpus — and each was run
- * through `cargo run -q --bin techxt` before being pasted here: all five convert with
- * exit code 0 and **no diagnostics at all**, which is the point. A sample that greets
- * a first-time visitor with a warning is teaching the wrong thing about the tool.
+ * Each is at most about fifteen lines — a demo, not a corpus — and each was converted
+ * with the library's own defaults before being pasted here: all six convert with **no
+ * diagnostics at all**, which is the point. A sample that greets a first-time visitor
+ * with a warning is teaching the wrong thing about the tool. (The first five were run
+ * through `cargo run -q --bin techxt`; the sixth, added at M9, through the binding's
+ * own `convert_native`, which is the same conversion the page performs.)
  *
  * `String.raw` is what keeps a LaTeX source readable in a TypeScript file: `\\` in the
  * `tabular` below is a LaTeX row break, not an escaped backslash.
@@ -51,6 +53,32 @@ and a rotation by $\theta$ acts as
   R(\theta) = \begin{pmatrix} \cos\theta & -\sin\theta \\
                               \sin\theta & \cos\theta \end{pmatrix}
 \]
+`;
+
+/**
+ * A preamble's worth of shorthands, and what they expand to (§5, "Macro definitions").
+ *
+ * The one example whose point is the *parse* rather than the rendering: `\newcommand`
+ * and `\newenvironment` written in the document take effect, so `\ket{0}` is `|0⟩` and
+ * the `aside` environment is a quote block. Switching the option the aside names turns
+ * every one of them back into an unknown command, which is the fastest way to see what
+ * the setting does.
+ */
+const MACROS = String.raw`\section{A preamble of one's own}
+
+\newcommand{\ket}[1]{|#1\rangle}
+\newcommand{\braket}[2]{\langle #1 | #2 \rangle}
+\newcommand{\Hilb}{\mathcal{H}}
+\newenvironment{aside}{\begin{quote}\emph{Aside:} }{\end{quote}}
+
+Definitions written in the document are expanded where they are used, so a qubit
+lives in $\Hilb = \mathbb{C}^{2}$, is spanned by $\ket{0}$ and $\ket{1}$, and is
+normalized when $\braket{\psi}{\psi} = 1$.
+
+\begin{aside}
+  Switch \textbf{Macro definitions} to \emph{read and dropped} in More options and
+  every shorthand above becomes an unknown command again.
+\end{aside}
 `;
 
 /** Nested lists, and a `tabular` whose columns line up in the output. */
@@ -112,6 +140,12 @@ export const EXAMPLES: readonly ExampleDoc[] = [
     title: 'Mathematics',
     blurb: 'Sums with limits, fractions, roots, Greek letters and a display matrix.',
     source: MATH,
+  },
+  {
+    id: 'macros',
+    title: 'Macros of your own',
+    blurb: '\\newcommand and \\newenvironment, expanded where they are used.',
+    source: MACROS,
   },
   {
     id: 'lists',

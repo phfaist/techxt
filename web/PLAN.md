@@ -166,9 +166,14 @@ runtime dependencies (root PLAN §2), which the `rust/` CI continues to enforce.
 
 Two properties the mapping must have, both unit-testable natively (no wasm needed):
 
-- **Total.** Every field of `techxt::convert::Options` is either mapped or listed in
-  a `// not exposed:` comment with the reason. A new library option should make this
-  file's reviewer notice.
+- **Total.** *(Amended for M9: the scope is the builder, not only `Options`.)* Every
+  field of `techxt::convert::Options` **and every parse-time setter of
+  `ConverterBuilder`** is either mapped or listed in a `// not exposed:` comment with
+  the reason. The original wording named `Options` alone, which was already inexact —
+  `recovery` is a builder setter and not a field — and M9 made it wrong: it added
+  three setters (`macro_definitions`, `expansion_depth_limit`, `expansion_count_limit`)
+  that exist nowhere in `Options`, and a totality rule that never looked at the builder
+  would have let all three through without a reviewer noticing.
 - **Defaults are the library's.** An absent field means "whatever `Options::default()`
   says", never a value re-typed here. The UI sends only what the user changed.
 
@@ -189,15 +194,23 @@ interface Diagnostic {
   identifier: string;       // e.g. "techxt.unknown-macro"
   message: string;
   rendered: string;         // Diagnostic::render() — the CLI's full text, for details
-  span: null | {            // null when the span is not in the current input (§4.5)
+  span: null | {            // null when nothing it came from is in the input (§4.5)
     start: number;          // UTF-16 code-unit offset — see §4.4
     end: number;
     line: number;           // 1-based
     column: number;         // 1-based, in characters
   };
+  approx: boolean;          // added at M9 — see §4.5
   frames: { title: string; span: Span | null }[];   // the include/expansion trace
 }
 ```
+
+**Amended for M9: `approx`.** `false` means `span` is the diagnostic's own position;
+`true` means it is the nearest enclosing macro invocation in the typed document,
+substituted because the diagnostic's own position is inside an expansion (§4.5). It is
+`false` whenever `span` is `null` — there is then nothing for it to qualify — so a panel
+that ignores the field renders exactly what it rendered before, only pointed at the
+macro call.
 
 Diagnostics are emitted in `Diagnostics::sorted_by_position()` order so the panel
 matches reading order. `Diagnostics::DEFAULT_LIMIT` is 1000; beyond that techy counts
@@ -222,11 +235,54 @@ prefix.
 
 ### 4.5 Spans that are not in the buffer
 
+**Rewritten for M9.** The rule below is the one this section always had, and the reason
+for it has not moved; what changed is how often it fires and what the binding does after
+it does.
+
 A diagnostic's span points into a `Source`, which need not be the document the user
-typed — a synthesized source, or (in principle) an `\input`ed one. The binding
-compares the span's source against the one it created for this call and emits
-`span: null` otherwise, so the panel never scrolls the textarea to a meaningless
-offset. Those diagnostics still show their message and `rendered` text.
+typed — a synthesized source, or (in principle) an `\input`ed one. The binding compares
+the span's source against the one it created for this call, by content (Appendix A), and
+a span that is not in the buffer is not one the textarea can select.
+
+- **Minted sources are now routine, not hypothetical.** The parse reads through
+  techy-xp, so a `\newcommand` in the document defines a macro and a use of it is
+  *expanded*: the body becomes a synthesized source, and every diagnostic raised while
+  reading it points into that body. `\newcommand{\a}{x \nope}\a` reports its
+  `techxt.unknown-macro` at an offset in `"x \nope"` — a document a person might
+  plausibly type, producing what used to be an unreachable case. Before M9 the binding
+  exposed no `source_resolver` and techxt's own definitions synthesized nothing, so
+  every span a browser conversion produced was in the buffer and the `null` branch was
+  dead code.
+- **So the binding substitutes the invocation** rather than dropping the position. For a
+  span it cannot accept it looks for the nearest enclosing position that *is* in the
+  typed document, and reports it with `approx: true` (§4.3) so the panel can say the
+  position is the macro call and not the message's own place. Two chains are searched,
+  in this order:
+  1. the diagnostic's **trace frames**, innermost first — a frame is a construct the
+     parse descended into, and the innermost one that is in the buffer is the most
+     precise answer available;
+  2. the source's **provenance chain** — every synthesized source records the span that
+     triggered it, which for an expansion is the invocation being expanded, and each hop
+     lands in an older source, so the walk reaches the primary source in a few steps.
+
+  > **The second step is the one that earns its keep, and measurement is why it is
+  > here.** The M9 design for this section named the frames alone, and stopped there.
+  > Measured against the real converter,
+  > the routine expansion diagnostic has *no frames at all*: `techxt.unknown-macro`
+  > raised inside a macro body arrives with an empty trace, and so do
+  > `techy-xp.expand.*-budget-exceeded` and `core.groups.unclosed-group` from inside a
+  > body. Frames answer only the minority of shapes that were mid-descent when the
+  > diagnostic was raised (`\newcommand{\a}{$x^}\a` is one). With frames alone the
+  > commonest case would still have rendered as an inert row, which is the thing this
+  > work exists to fix. The provenance chain is reachable through `techxt::convert`
+  > without naming `techy` — `span.source().provenance_chain()` — so it costs the
+  > binding no new dependency and `rust/` no change.
+- **`span: null` is the residue.** It survives for a span with no accepted frame and no
+  triggering location — nothing this app can produce today, since every synthesized
+  source records where it came from and the chain ends at the primary source, but the
+  panel keeps its inert row and now says *why* in terms of expansion rather than of
+  "outside the document" (§7). Those diagnostics still show their message and `rendered`
+  text.
 
 ### 4.6 Recursion, stack and panics
 
@@ -272,6 +328,32 @@ offset. Those diagnostics still show their message and `rendered` text.
   converts an ordinary document correctly afterwards — which is checklist item 6 of
   §13. If the margin ever looks thin, lower the limit: the stack cannot be raised at
   all here, so the margin is the whole of the safety.
+- **Amended for M9: expansion multiplies descents per typed level, and the guard is
+  still the one that counts.** A macro whose body nests constructs contributes those
+  constructs' descents at every level the document nests the macro, so a
+  macro-expanding document reaches 300 descents at a *shallower* typed depth than the
+  raw construct would — which is the safe direction: the guard counts descents, so the
+  margin under the engine's stack limit measured above is unchanged, and the only thing
+  that moves is how deep a document may be written before it is refused. Measured
+  natively through this binding's own converter (`depth_limit(300)`, the library's
+  expansion budgets), searching for the shallowest depth that refuses:
+
+  | document, nested *n* deep | refuses at | condition |
+  |---|---|---|
+  | `\textbf{…}` | 100 | `core.constructs.descent-limit-exceeded` |
+  | `{…}` | 150 | `core.constructs.descent-limit-exceeded` |
+  | `\w{…}`, `\w` defined as `\textbf{#1}` | 65 | `techy-xp.expand.expansion-depth-budget-exceeded` |
+  | `\w{…}`, `\w` defined as `\textbf{\textbf{#1}}` | 50 | `core.constructs.descent-limit-exceeded` |
+  | `\m0 → \m1 → … → x`, a chain of *n* definitions | no refusal at 500 | — |
+
+  The first two rows reproduce the browser figures of the table above exactly, which is
+  the depth limit being engine-independent as claimed. The third shows techy-xp's own
+  64-deep expansion budget refusing first when each level is one live expansion; the
+  fourth shows the descent guard refusing first when the body nests two constructs
+  (six descents per level instead of three). The last is the shape that does *not* nest
+  — each frame is popped before the next is pushed — and is the count budget's business,
+  not this one. Every refusal is a diagnostic and the parse continues, which is checklist
+  item 6 of §13 with a macro in it.
 - A panic — or a genuine overflow — leaves the wasm instance unusable. The worker
   catches it, posts `{type: 'fatal'}`, and the client discards and respawns the worker
   (§6.2). `console_error_panic_hook` is installed in all builds: a panic report from a
@@ -309,6 +391,20 @@ Native `cargo test` in `web/crate` (the mapping and offset code is ordinary Rust
 - Diagnostics: an `\undefinedmacro` document yields one `techxt.unknown-macro`
   warning whose span selects exactly `\undefinedmacro` in the input.
 - Strict mode: a malformed document yields `ok: false` with one error diagnostic.
+
+**Added for M9**, all native too:
+
+- Options DTO: `macroDefinitions` deserializes both spellings and reaches the builder,
+  observed through what it does (`declared` leaves `\greet` an unknown macro); an absent
+  field still expands, which is the library's own default and not one re-typed here; and
+  neither expansion budget is a field the app can send.
+- Diagnostics, the §4.5 substitution: `\newcommand{\a}{x \nope}\a` — whose diagnostic
+  has an empty trace — comes back with the span of the `\a`, `approx: true`; the same
+  document under `macroDefinitions: 'declared'` comes back exact, with `approx: false`;
+  an accepted frame is preferred to the provenance chain when there is one; and a span
+  with neither stays `null` with `approx: false`.
+- The `OurSource` unit tests keep testing the comparison itself, but their premise is
+  now the opposite of what it was: the reject path is what an ordinary document takes.
 
 Plus one `wasm-bindgen-test` smoke test that `Session::convert` round-trips through
 `JsValue` under `wasm-pack test --headless --firefox`, run locally rather than in CI
@@ -348,16 +444,31 @@ mapped into — and have nothing to do with the display font of the primary bar,
 is CSS and changes nothing about the text. The labels keep them apart: **display
 font** versus **text/math char styles**.
 
-*Parsing*: unknown macros (`unknown_macro`, 4 values) · unknown environments
-(`unknown_env`, 3) · unknown specials (`unknown_specials`, 2) · strict
-(`recovery(Recovery::Strict)`).
+*Parsing*: **macro definitions** (`macro_definitions`, 2 values — added at M9) ·
+unknown macros (`unknown_macro`, 4 values) · unknown environments (`unknown_env`, 3) ·
+unknown specials (`unknown_specials`, 2) · strict (`recovery(Recovery::Strict)`).
+
+**Macro definitions** is labelled in the user's words rather than the library's:
+*Expanded where they are used* (`MacroDefinitions::Honored`, the default) and *Read and
+dropped* (`Declared`). `Honored`/`Declared` is precise and means nothing to a reader,
+while what the two settings *do* — a `\newcommand` written in the document either takes
+effect or does not — is one line of copy. It sits in *Parsing* because that is where it
+happens: the definers are read by the token reader under the parser, not applied by a
+rendering rule (Appendix A). Example 3 of §6.7 is the fastest way to see the difference.
 
 **Not exposed**, each with a comment in `options.rs` saying so: `list_style` (two
 arrays of strings — a UI in itself, and rarely the thing someone came to change),
 `unknown_macro_resolution` (subtle interaction with `recovery`; the "strict" checkbox
 covers the observable case), `descent_guard` (a safety limit, not a preference),
 `source_resolver` (no filesystem in a browser), `override_*` and custom definitions
-(an extension API, not an option).
+(an extension API, not an option), and — **added at M9** — `expansion_depth_limit` and
+`expansion_count_limit`. The two budgets are `descent_guard`'s case exactly: a safety
+limit rather than a preference, and a page that could raise one would be a page a
+one-line document can hang. They differ from `descent_guard` in one way that saves this
+file some work: the library's defaults (64, 2 000) are *already* the conservative
+choice — techxt lowers techy-xp's own count budget fiftyfold precisely because it
+converts documents it did not write, which is this page's situation — so unlike the
+descent guard there is nothing for the binding to set, and it sets nothing.
 
 `\today` deserves its one line of code: the browser *has* a clock, so the app can
 send a real date where the no_std library must render `<today>`. Format matches
@@ -493,19 +604,29 @@ An empty output pane is a bad first impression and a bad demo, so a first visit 
 fragment, no stored document) loads example 1 with the library defaults, converted
 before the user touches anything.
 
-`src/examples.ts` holds five short documents, inlined as string constants so they
-cost no fetch and work offline. Each is at most ~15 lines — a demo, not a corpus:
+`src/examples.ts` holds **six** short documents (five until M9), inlined as string
+constants so they cost no fetch and work offline. They are listed here in the order the
+Load menu shows them, and each is at most ~15 lines — a demo, not a corpus:
 
 1. **A paper fragment** (the default): `\section`, `\emph`, an accent, an inline
    formula, a `\footnote`, a `\cite`. Shows the headline behaviours in one screen.
 2. **Mathematics**: sums with limits, a fraction, a square root, Greek, a `matrix`,
    a display equation — the case for `math_mode` and for the display fonts.
-3. **Lists and tables**: nested `itemize`/`enumerate` and a `tabular` that aligns.
-4. **Accents and symbols**: `\"o`, `\'e`, `\c{c}`, `\ss`, dashes, quotes,
+3. **Macros of your own** *(added at M9)*: a small preamble — `\newcommand{\ket}`,
+   `\braket`, a `\newenvironment` — used in the paragraph below it, so M9's headline
+   behaviour is visible in one screen. Its aside names the *Macro definitions* control
+   of §5, which makes the example its own demonstration of what that setting does. It
+   sits third rather than last because a behaviour this central should not be at the
+   bottom of a menu.
+4. **Lists and tables**: nested `itemize`/`enumerate` and a `tabular` that aligns.
+5. **Accents and symbols**: `\"o`, `\'e`, `\c{c}`, `\ss`, dashes, quotes,
    `\alpha…\omega`, arrows — the long tail, and a font stress test.
-5. **Unicode passthrough**: a paragraph mixing LaTeX markup with CJK, Hebrew and an
+6. **Unicode passthrough**: a paragraph mixing LaTeX markup with CJK, Hebrew and an
    emoji — the case the fallback chains of §8.2 exist for, and the one a reviewer
    should look at before believing them.
+
+The invariant is unchanged and was re-verified for all six at M9 — every one converts
+with no diagnostics at all, the new one included, under a parse that now expands macros.
 
 A **Load ▾** menu in the input pane header offers them; choosing one replaces the
 document (with a single-level undo via the toast, since it discards work).
@@ -557,11 +678,31 @@ Collapsed by default, summarised in the status bar as
 
 Expanded, each row is: severity chip · `identifier` in monospace · message ·
 `line:column`. Clicking a row focuses the textarea and
-`setSelectionRange(start, end)`s the span (§4.4), scrolling it into view; rows whose
-`span` is `null` are not clickable and say why. An expander per row reveals techy's
-own `rendered` form, which carries the caret line and the trace frames — the same
-text `techxt-cli` prints, which makes a screenshot from the web app directly
-comparable to a terminal report.
+`setSelectionRange(start, end)`s the span (§4.4), scrolling it into view. An expander
+per row reveals techy's own `rendered` form, which carries the caret line and the trace
+frames — the same text `techxt-cli` prints, which makes a screenshot from the web app
+directly comparable to a terminal report.
+
+**Amended for M9**, two rows that used to be one:
+
+- A diagnostic with `approx: true` (§4.5) is clickable, gutter-painted and treated like
+  any other — it *has* a span. Only its position column says which span: `12:5 (via
+  macro)`, and its expanded detail opens with one line saying that the position is where
+  the macro is used while the report below it is positioned inside the expansion. The
+  alternative — showing an expansion's position as if it were the document's — is the
+  one thing §4.5 exists to prevent.
+- A row whose `span` is `null` is still not clickable and still says why, but the
+  sentence is about expansion rather than about the document: *"this arose inside an
+  expansion with no call in your document to point at"*. After M9 that is the residual
+  case rather than the whole of the story.
+
+One more thing that had to change with them: a row is keyed by its **position in the
+list**, not by `identifier|start|message`. Two rows can now be identical field for field
+— the same unknown macro raised twice inside the same expansion carries the same
+substituted span — and a content key would collapse them, so one expander would open
+both details and a gutter click would land on whichever was rendered last. `reveal`
+finds its row by object identity instead, which is what the gutter marker was painted
+from.
 
 Filter chips (errors / warnings / notes) with counts, defaulting to showing
 everything. When `truncated`, a final row reads "and N more (retention limit)".
@@ -765,7 +906,8 @@ chrome rather than content:
   each, and precaching even one would put it on the install path twice (the page
   fetches it anyway). Fonts are served by a `CacheFirst` runtime route on
   `/fonts/*.woff2` (max 8 entries, one-year expiry), so the face in use lands in the
-  cache on first paint and works offline from then on (§8.3). The wasm module (~890 KB) is under Workbox's default 2 MiB per-file
+  cache on first paint and works offline from then on (§8.3). The wasm module (~1.07 MiB
+  since M9; ~890 KB when this was written) is under Workbox's default 2 MiB per-file
   precache cap; the cap is set explicitly anyway, so future growth fails the build
   loudly instead of silently skipping the engine.
 - **Offline**: the app — shell, engine, worker — is precached, so a cold offline start
@@ -938,6 +1080,29 @@ JuliaMono 1 347, Libertinus Math 1 245, STIX Two Math 1 241, Latin Modern Math 9
 Fira Math 834. See §8.1 for what the two gaps in the default face are and §8.5 for what
 the others mean.
 
+### Measured at M9 — the binding with techy-xp linked in
+
+The parse now goes through techy-xp's `LatexlikeXp` (root PLAN M9), and the expansion
+machinery is in the module whether a document defines a macro or not:
+
+| Quantity | Value |
+|---|---|
+| wasm as shipped, before M9 (W7 figure above) | 939 287 B raw · 333 KB gzip |
+| wasm as shipped, at M9 (`opt-level = 3` + LTO + `wasm-opt -O3`) | **1 120 513 B raw · 398 525 B gzip** |
+| CI budget (§11) | 1 150 000 B raw · 400 000 B gzip |
+| headroom | 29 487 B raw (2.6 %) · **1 475 B gzip (0.4 %)** |
+| the same build at `opt-level = "s"` (`wasm-opt -O3` unchanged) | 895 214 B raw · 343 435 B gzip |
+
+**The gzip budget is now a tripwire rather than a ceiling.** 1 475 bytes is one
+`String::from` away from red, and the number that matters is the one §4.7 names as the
+decision point: "if the module grows past roughly 400 KB gzipped … drop to `"s"` first".
+This build is at 398.5 KB. The budgets are deliberately left where they are — raising
+one is how a size budget stops meaning anything — and the last row is here so the trade
+can be made on evidence: `opt-level = "s"` buys 55 KB gzipped back, at a speed cost this
+file has still never measured — the paragraph below has said so since W1, and it is the
+measurement to take before the trade, not after. It is a decision for the owner
+(Appendix D), not something to slip into a commit that was only meant to make CI green.
+
 The three build profiles differ by 106 KB gzipped between the fastest and the
 smallest. `opt-level = 3` takes the speed; the other two rows are here so the trade
 can be reversed on evidence rather than re-measured from scratch (§4.7). The speed
@@ -1047,6 +1212,21 @@ with exactly one newline unless it is empty.
 | `recovery` | `Recovery::{Tolerant, Strict}` | `Tolerant` |
 | `unknown_macro_resolution` | `UnknownMacroResolution::{FollowRecovery, Accept, Reject}` | `FollowRecovery` |
 | `descent_guard` | `StdDescentGuardInit` | `fixed_stack_budget(250 KiB)`, unconfigured |
+| `macro_definitions` *(M9)* | `MacroDefinitions::{Honored, Declared}`, `#[non_exhaustive]` | `Honored` |
+| `expansion_depth_limit` *(M9)* | `usize` | `ConverterBuilder::DEFAULT_EXPANSION_DEPTH_LIMIT` = 64 |
+| `expansion_count_limit` *(M9)* | `usize` | `ConverterBuilder::DEFAULT_EXPANSION_COUNT_LIMIT` = 2 000 |
+
+Of the three M9 setters the app exposes **`macro_definitions` only** (§5): the two
+budgets are safety limits whose library defaults are already the conservative ones, and
+`options.rs` carries the `// not exposed:` comment that says so. `MacroDefinitions` is
+`#[non_exhaustive]`, so the DTO keeps its own closed copy of the two variants rather
+than mirroring the enum.
+
+New diagnostic identifier families a user can now see, all of them ordinary rows in the
+panel: `techy-xp.expand.*` (the two budgets, errors), `techy-xp.define.*` and
+`techy-xp.constructs.*` (a definition techy-xp will not accept), and
+`techy-xp.presets.*-unsupported` (`\expandafter` and the TeX conditionals, which reach
+the caller demoted to warnings).
 
 `FontStyleKind`: `Bold, Italic, BoldItalic, Script, BoldScript, Fraktur, DoubleStruck,
 BoldFraktur, SansSerif, SansSerifBold, SansSerifItalic, SansSerifBoldItalic, Monospace,
@@ -1072,10 +1252,28 @@ Diagnostic::frames()     -> &[TraceFrame<O>]               // .title(), .span()
 Diagnostic::render()     -> String                         // the CLI's full rendering
 
 SourceSpan::{start, end, range, len, content, source}      // start/end are UTF-8 BYTE offsets
-Source::content() -> &str                                  // identity-compare to find "our" source
+Source::content() -> &str                                  // content-compare to find "our" source
 
 ParseError::{identifier, message, span, frames, render}    // same shape, for the Err case
 ```
+
+**Amended for M9: content identity is no longer the only mechanism.** It is still how
+the binding decides whether a span is in the buffer, but a span that fails the test is
+no longer simply dropped (§4.5) — the binding then asks the diagnostic's frames and the
+source's provenance where the expansion was *invoked*:
+
+```rust
+Source::provenance_chain() -> impl Iterator<Item = &SourceProvenance>
+    // this source's provenance, then each triggering source's, ending at Primary
+SourceProvenance::triggered_at() -> Option<&SourceSpan>
+    // where a Synthesized (macro expansion) or Resolved (\input) source came from
+Source::including_sources() -> impl Iterator<Item = &Source>   // the sibling iterator
+```
+
+`SourceProvenance` is techy's, and `techxt::convert` does **not** re-export it — but
+none of the three lines above needs to name it, since a method call on a value does not
+require the type in scope. So the binding uses them while still depending on `techxt`
+alone, and `rust/` needs no change to make the panel able to point at a macro call.
 
 **Reference implementation.** `rust/techxt-cli/src/main.rs` (~200 lines) is a complete
 embedder: builder wiring, diagnostic filtering by severity, `render_all`, exit codes.
@@ -1092,6 +1290,15 @@ installed — wasm-pack supplies both.
 
 - **`techy` is a git dependency** pinned to rev `aa71c83`, so a cold build needs
   network. `web/crate/Cargo.lock` is committed to pin it for deploys.
+- **`techy-xp` joins it at M9**, pinned the same way and to a revision that itself pins
+  the *same* techy revision — cargo cannot unify two revs of one git dependency, so the
+  two pins move together. It reaches `web/crate` through `techxt`, which is why
+  `.github/workflows/web.yml` now watches `rust/Cargo.toml` and `rust/Cargo.lock` as
+  well as `rust/techxt/**`: the revision can move without a byte of the crate's own
+  sources changing. **`web/crate/Cargo.lock` must be regenerated whenever it does**, and
+  again — with a diff to review rather than a rubber stamp — when the workspace flips
+  the temporary `techy-xp = { path = … }` entry to its git form: a lock recorded against
+  a path dependency pins nothing for a deploy.
 - **`wasm-opt` fails out of the box.** wasm-pack's bundled binaryen is version 117,
   which rejects the bulk-memory operations rustc 1.97 emits:
   `[wasm-validator error] Bulk memory operations require bulk memory`. The fix is the

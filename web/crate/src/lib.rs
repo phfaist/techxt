@@ -39,7 +39,7 @@ use crate::options::OptionsDto;
 /// optimisation rather than a necessary one — but it makes typing under fixed options
 /// cost exactly one `latex_to_text` call.
 ///
-/// The options are kept in full rather than hashed. They are fourteen small fields, the
+/// The options are kept in full rather than hashed. They are fifteen small fields, the
 /// comparison is over as soon as one differs, and an exact fingerprint cannot collide —
 /// which a hash could, and the symptom would be output that silently ignores an option
 /// the user just changed.

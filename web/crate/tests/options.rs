@@ -23,7 +23,7 @@ use techxt_web::options::{self, OptionsDto};
 ///
 /// One type per call because a serde map is homogeneous in its value type; every field
 /// of the DTO is reachable with `&str`, `bool` or `usize`, so a handful of calls covers
-/// all fourteen.
+/// all fifteen.
 fn dto<'de, V>(fields: impl IntoIterator<Item = (&'de str, V)>) -> Result<OptionsDto, Error>
 where
     V: IntoDeserializer<'de, Error>,
@@ -137,6 +137,7 @@ fn every_mapped_field_reaches_its_option() {
         ("unknownSpecials", "skip"),
         ("today", "August 20, 2026"),
         ("recovery", "strict"),
+        ("macroDefinitions", "declared"),
     ])
     .expect("valid");
     let converter = options::build(&strings).expect("builds");
@@ -169,6 +170,30 @@ fn every_mapped_field_reaches_its_option() {
             .options()
             .keep_comments
     );
+
+    // `macroDefinitions` is a parse-time setting too, and is observed the same way: with
+    // the definers only *declared*, `\greet` is an unknown macro that takes no arguments,
+    // so its `{world}` group is all that survives.
+    let latex = r"\newcommand{\greet}[1]{Hello #1!}\greet{world}";
+    let declared = dto([("macroDefinitions", "declared")]).expect("valid");
+    assert_eq!(
+        options::build(&declared)
+            .expect("builds")
+            .latex_to_text(latex)
+            .expect("tolerant")
+            .text,
+        "world\n",
+    );
+    // The absent field is the library's own answer — `Honored` — rather than one this
+    // crate re-types.
+    assert_eq!(
+        options::build(&dto::<&str>([]).expect("valid"))
+            .expect("builds")
+            .latex_to_text(latex)
+            .expect("tolerant")
+            .text,
+        "Hello world!\n",
+    );
 }
 
 /// Every enum spelling `web/src/worker/protocol.ts` lists is accepted, and the one it
@@ -192,6 +217,7 @@ fn every_enum_string_round_trips() {
         ("unknownEnv", &["render-body", "skip", "keep-source"]),
         ("unknownSpecials", &["emit-chars", "skip"]),
         ("recovery", &["tolerant", "strict"]),
+        ("macroDefinitions", &["honored", "declared"]),
         (
             "textFont",
             &[
@@ -245,6 +271,10 @@ fn an_unknown_enum_string_is_a_clean_error() {
     assert!(dto([("headingStyle", "numbered_underlined")]).is_err());
     // Nor is a `MathWrapDelims::Custom`, which the DTO deliberately cannot say.
     assert!(dto([("mathExpressionIn", "custom")]).is_err());
+    // `MacroDefinitions` is `#[non_exhaustive]` in the library; the DTO is closed, and a
+    // variant nobody has added to it yet is not sayable over the wire.
+    let error = dto([("macroDefinitions", "expanded")]).expect_err("not a spelling");
+    assert!(error.to_string().contains("honored"), "{error}");
 }
 
 /// An unknown *field* is refused rather than ignored, so a typo in the app is a visible
@@ -255,4 +285,8 @@ fn an_unknown_field_is_rejected() {
     assert!(error.to_string().contains("wrapWith"), "{error}");
     // snake_case is the Rust spelling, not the wire spelling.
     assert!(dto([("math_mode", "plain")]).is_err());
+    assert!(dto([("macro_definitions", "declared")]).is_err());
+    // Neither expansion budget is exposed (§4.6), so neither is a field the app can send.
+    assert!(dto([("expansionDepthLimit", 8usize)]).is_err());
+    assert!(dto([("expansionCountLimit", 8usize)]).is_err());
 }

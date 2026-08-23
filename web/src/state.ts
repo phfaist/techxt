@@ -159,6 +159,7 @@ const OPTION_VALIDATORS: Record<keyof AppOptions, Validator> = {
   unknownEnv: oneOf(['render-body', 'skip', 'keep-source']),
   unknownSpecials: oneOf(['emit-chars', 'skip']),
   recovery: oneOf(['tolerant', 'strict']),
+  macroDefinitions: oneOf(['honored', 'declared']),
   wrap: wrapMode,
   todayMode: oneOf(['browser', 'library', 'custom']),
   todayCustom: str,

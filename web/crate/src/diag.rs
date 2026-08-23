@@ -14,13 +14,23 @@
 //! getting surrogate pairs wrong at least once, so [`OffsetMap`] does it in one pass
 //! over the document for every offset any diagnostic needs.
 //!
-//! # Why a span can be `null`
+//! # Why a span can be approximate, and why it can still be `null`
 //!
 //! A diagnostic's span points into a `Source`, which need not be the document the user
-//! typed: a macro expansion synthesizes one, and an `\input` would resolve one. Only a
-//! span into *this* document can be selected in the textarea, so the binding compares
-//! the two and everything else comes back with `span: null` — message and `rendered`
-//! text intact, but not clickable (§4.5).
+//! typed: a macro expansion synthesizes one, and an `\input` would resolve one. Since
+//! M9 the parse reads through techy-xp, so `\newcommand`, `\def` and friends expand at
+//! token-reading time and a diagnostic raised *inside* an expansion carries a span into
+//! the macro's body — a source the textarea cannot select any offset of. That is now
+//! routine rather than hypothetical: `\newcommand{\a}{x \nope}\a` reports its unknown
+//! macro at an offset in `"x \nope"`.
+//!
+//! So the binding does not simply drop such a span. It substitutes the nearest
+//! enclosing position that *is* in the typed document — the invocation the expansion
+//! came from — and marks the diagnostic
+//! [`approx`](DiagnosticDto::approx) so the panel can say the position is the macro
+//! call rather than the message's own place. [`invocation`] is the whole of that
+//! search. Only when nothing in the chain lands in the buffer does the span stay
+//! `null`, with the message and `rendered` text intact but nothing to click (§4.5).
 
 use std::sync::Arc;
 
@@ -67,9 +77,14 @@ pub struct DiagnosticDto {
     /// `Diagnostic::render()`: the full text `techxt-cli` prints, caret line and
     /// traceback included, for the panel's per-row detail view.
     pub rendered: String,
-    /// Where it is, or `null` when the span is not in the document that was converted
-    /// (§4.5).
+    /// Where it is, or `null` when neither it nor anything it came from is in the
+    /// document that was converted (§4.5).
     pub span: Option<SpanDto>,
+    /// Whether [`span`](Self::span) is the diagnostic's own position (`false`) or the
+    /// nearest enclosing invocation in the typed document (`true`) — see [`invocation`].
+    ///
+    /// Always `false` when `span` is `null`: there is nothing for it to qualify.
+    pub approx: bool,
     /// The include/expansion trace behind it, outermost frame last (techy stores them
     /// innermost first, and they are passed through in that order).
     pub frames: Vec<TraceFrameDto>,
@@ -198,6 +213,7 @@ struct RawDiagnostic {
     message: String,
     rendered: String,
     span: Option<(usize, usize)>,
+    approx: bool,
     frames: Vec<(String, Option<(usize, usize)>)>,
 }
 
@@ -219,15 +235,27 @@ impl RawDiagnostic {
         ours: &mut OurSource<'_>,
         wanted: &mut Vec<usize>,
     ) -> RawDiagnostic {
+        let own = byte_span(span, ours, wanted);
+        let frames: Vec<(String, Option<(usize, usize)>)> = frames
+            .map(|(title, span)| (title.to_string(), byte_span(span, ours, wanted)))
+            .collect();
+        // §4.5: a span the textarea cannot select is replaced by the invocation it came
+        // from, if that is in the buffer, and the substitution is declared.
+        let (span, approx) = match own {
+            Some(range) => (Some(range), false),
+            None => match invocation(span, &frames, ours, wanted) {
+                Some(range) => (Some(range), true),
+                None => (None, false),
+            },
+        };
         RawDiagnostic {
             severity,
             identifier: identifier.to_string(),
             message,
             rendered,
-            span: byte_span(span, ours, wanted),
-            frames: frames
-                .map(|(title, span)| (title.to_string(), byte_span(span, ours, wanted)))
-                .collect(),
+            span,
+            approx,
+            frames,
         }
     }
 
@@ -239,6 +267,7 @@ impl RawDiagnostic {
             message: self.message,
             rendered: self.rendered,
             span: self.span.map(|range| map.span(range)),
+            approx: self.approx,
             frames: self
                 .frames
                 .into_iter()
@@ -264,6 +293,43 @@ fn byte_span(
     wanted.push(span.start());
     wanted.push(span.end());
     Some((span.start(), span.end()))
+}
+
+/// The byte range of the nearest enclosing *invocation* of `span` that is in the
+/// converted document, for a `span` that is not itself in it (§4.5).
+///
+/// Two chains are walked, in this order, and both are asked the same question: is this
+/// position one the textarea can select?
+///
+/// 1. **The trace frames**, innermost first — the order techy stores them in. A frame is
+///    a construct the parse descended into (`argument #1 of ‘^’`, `environment
+///    ‘itemize’`), and the innermost one that is in the buffer is the most precise
+///    answer there is. `frames` is the already-mapped list, so an accepted frame costs
+///    nothing further.
+/// 2. **The source's provenance chain.** Every synthesized source records the span that
+///    triggered it — for an expansion, the invocation being expanded — and that span
+///    lies in an older source, so following the chain arrives at the primary source in
+///    a few hops. This is the one that answers the routine case: a diagnostic raised in
+///    a macro body usually carries *no* frames at all (measured: `\newcommand{\a}{x
+///    \nope}\a` reports `techxt.unknown-macro` with an empty trace), and without this
+///    step the panel would show an inert row for the commonest expansion diagnostic
+///    there is.
+///
+/// The chain is finite by construction — a triggering location always lies in an older
+/// source — so the walk terminates without a hop count of its own.
+fn invocation(
+    span: &SourceSpan,
+    frames: &[(String, Option<(usize, usize)>)],
+    ours: &mut OurSource<'_>,
+    wanted: &mut Vec<usize>,
+) -> Option<(usize, usize)> {
+    if let Some(range) = frames.iter().find_map(|(_, range)| *range) {
+        return Some(range);
+    }
+    span.source()
+        .provenance_chain()
+        .filter_map(|provenance| provenance.triggered_at())
+        .find_map(|span| byte_span(span, ours, wanted))
 }
 
 /// Decides whether a span points into the document this call converted (§4.5).
@@ -427,12 +493,12 @@ fn as_u32(value: usize) -> u32 {
 mod tests {
     use super::*;
 
-    /// §4.5's reject path, which no document can reach from outside: the binding
-    /// exposes no `source_resolver` and techxt's own definitions synthesize no source,
-    /// so every span a browser conversion produces is in the buffer. The comparison
-    /// still has to be right the day one is not — a panel that scrolls the textarea to
-    /// an offset in some other string is worse than one that says "not in this
-    /// document".
+    /// §4.5's reject path, which since M9 an ordinary document reaches every time it
+    /// defines a macro: the parse reads through techy-xp, an expansion synthesizes a
+    /// source, and a diagnostic raised in the macro's body points into it rather than
+    /// into the buffer. The comparison has to be right — a panel that scrolls the
+    /// textarea to an offset in some other string is worse than one that says nothing —
+    /// and what happens *after* a reject is [`invocation`]'s business, tested below.
     #[test]
     fn a_span_in_another_source_is_not_ours() {
         let latex = "the document";
@@ -459,7 +525,8 @@ mod tests {
     }
 
     /// A span that is ours contributes its two offsets to the single pass; one that is
-    /// not contributes nothing and comes back `None`, which serializes as `span: null`.
+    /// not contributes nothing and comes back `None` — which is the question
+    /// [`invocation`] is then asked, and only after that a `span: null`.
     #[test]
     fn only_our_spans_are_collected() {
         let latex = "the document";
@@ -481,5 +548,103 @@ mod tests {
             None,
         );
         assert_eq!(wanted, vec![4, 12]);
+    }
+
+    /// One diagnostic, collected and mapped, for the fallback tests below.
+    ///
+    /// `\newcommand{\a}{x \nope}\a` is the shape they are all about: a body that becomes
+    /// a synthesized source, and the `\a` at the end of the document that expanded it.
+    fn expansion_diagnostic<'a>(
+        latex: &str,
+        span: &SourceSpan,
+        frames: impl Iterator<Item = (&'a str, &'a SourceSpan)>,
+    ) -> DiagnosticDto {
+        let mut matcher = OurSource::new(latex);
+        let mut wanted = Vec::new();
+        let raw = RawDiagnostic::collect(
+            SeverityDto::Warning,
+            "techxt.unknown-macro",
+            String::from("no text rule for the macro ‘\\nope’"),
+            String::from("warning: …"),
+            span,
+            frames,
+            &mut matcher,
+            &mut wanted,
+        );
+        raw.resolve(&OffsetMap::build(latex, wanted))
+    }
+
+    /// The M9 case, and the reason [`invocation`] exists: the diagnostic's own span is
+    /// in the macro body, no frame is available at all, and the provenance chain leads
+    /// back to the `\a` that expanded it — which is what the panel selects, marked
+    /// `approx`.
+    #[test]
+    fn an_expansion_diagnostic_takes_the_invocations_span() {
+        let latex = r"\newcommand{\a}{x \nope}\a";
+        let ours: Arc<Source> = Arc::new(Source::new(latex));
+        let body: Arc<Source> = Arc::new(Source::synthesized(
+            r"x \nope",
+            "macro expansion",
+            SourceSpan::new(&ours, 24..26),
+        ));
+
+        let dto = expansion_diagnostic(latex, &SourceSpan::new(&body, 2..7), std::iter::empty());
+        let span = dto.span.expect("the invocation is in the document");
+        assert!(
+            dto.approx,
+            "the span is the invocation's, not the message's"
+        );
+        assert_eq!((span.start, span.end), (24, 26));
+        assert_eq!(&latex[24..26], r"\a");
+        assert_eq!((span.line, span.column), (1, 25));
+    }
+
+    /// A frame that is in the document is more precise than the invocation the whole
+    /// expansion came from, so the innermost accepted frame wins — and a frame that is
+    /// itself inside the expansion is passed over rather than trusted.
+    #[test]
+    fn the_innermost_frame_in_the_document_wins() {
+        let latex = r"\newcommand{\a}{x \nope}\a";
+        let ours: Arc<Source> = Arc::new(Source::new(latex));
+        let body: Arc<Source> = Arc::new(Source::synthesized(
+            r"x \nope",
+            "macro expansion",
+            // Deliberately not the `\a`: if the answer were the provenance chain's, this
+            // test could not tell the two apart.
+            SourceSpan::new(&ours, 0..11),
+        ));
+        let inner = SourceSpan::new(&body, 0..1);
+        let outer = SourceSpan::new(&ours, 24..26);
+
+        let dto = expansion_diagnostic(
+            latex,
+            &SourceSpan::new(&body, 2..7),
+            [("group ‘{’", &inner), ("callable ‘\\a’", &outer)].into_iter(),
+        );
+        let span = dto.span.expect("the outer frame is in the document");
+        assert!(dto.approx);
+        assert_eq!((span.start, span.end), (24, 26));
+        // The frames themselves are passed through untouched, mapped or `null`.
+        assert_eq!(dto.frames.len(), 2);
+        assert_eq!(dto.frames[0].span, None);
+        assert!(dto.frames[1].span.is_some());
+    }
+
+    /// The residual `span: null`: a source with nothing pointing back into the buffer —
+    /// no accepted frame, and a provenance chain that ends where it started. No document
+    /// this app converts reaches it (every synthesized source records the invocation
+    /// that triggered it), but the panel's inert row is what happens if one ever does.
+    #[test]
+    fn a_span_with_no_way_back_to_the_document_stays_null() {
+        let latex = "the document";
+        let elsewhere: Arc<Source> = Arc::new(Source::new("an expansion"));
+
+        let dto = expansion_diagnostic(
+            latex,
+            &SourceSpan::new(&elsewhere, 0..2),
+            std::iter::empty(),
+        );
+        assert_eq!(dto.span, None);
+        assert!(!dto.approx, "there is no span for `approx` to qualify");
     }
 }

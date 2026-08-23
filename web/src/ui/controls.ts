@@ -44,6 +44,7 @@ const DEFAULTS: Record<LibKey, string | boolean> = {
   unknownEnv: 'render-body',
   unknownSpecials: 'emit-chars',
   recovery: 'tolerant',
+  macroDefinitions: 'honored',
 };
 
 const DEFAULT_CUSTOM_COLUMNS = 72;
@@ -230,6 +231,17 @@ export function initControls(init: ControlsInit): Controls {
   /* Parsing */
   const parsing = group('Parsing');
   parsing.append(
+    field(
+      'opt-macro-defs',
+      'Macro definitions',
+      registerSelect('macroDefinitions', 'opt-macro-defs', [
+        { value: 'honored', label: 'Expanded where they are used (default)' },
+        { value: 'declared', label: 'Read and dropped — a use stays unknown' },
+      ]),
+      {
+        hint: 'Whether a \\newcommand, \\def or \\newenvironment written in the document actually defines anything.',
+      },
+    ),
     field(
       'opt-unknown-macro',
       'Unknown macros',

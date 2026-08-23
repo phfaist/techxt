@@ -9,9 +9,13 @@
 //! Two properties this module is written to have, both tested natively in
 //! `tests/options.rs`:
 //!
-//! - **Total.** Every field of [`techxt::convert::Options`] is either mapped by
-//!   [`build`] or carries a `// not exposed:` comment there saying why. A field the
-//!   library gains later has neither, and its reviewer should notice.
+//! - **Total.** Every field of [`techxt::convert::Options`] — *and* every parse-time
+//!   setting of [`ConverterBuilder`](techxt::convert::ConverterBuilder), which are not
+//!   `Options` fields but change the answer just as surely — is either mapped by
+//!   [`build`] or carries a `// not exposed:` comment there saying why. A setting the
+//!   library gains later has neither, and its reviewer should notice. (M9's
+//!   `macro_definitions` and its two expansion budgets are the reason this rule now
+//!   says "builder" and not only "options": they arrived on the builder alone.)
 //! - **Defaults are the library's.** Every DTO field is an [`Option`], and a `None` one
 //!   never reaches a setter: the library's own default stands. The app sends only what
 //!   the user changed (PLAN §6.4), so a default that changes in techxt is picked up
@@ -23,8 +27,9 @@
 use serde::Deserialize;
 
 use techxt::convert::{
-    FontStyle, FontStyleKind, FootnoteStyle, HeadingStyle, MathMode, MathWrapDelims, MatrixDelims,
-    Recovery, StdDescentGuardInit, UnknownEnvPolicy, UnknownMacroPolicy, UnknownSpecialsPolicy,
+    FontStyle, FontStyleKind, FootnoteStyle, HeadingStyle, MacroDefinitions, MathMode,
+    MathWrapDelims, MatrixDelims, Recovery, StdDescentGuardInit, UnknownEnvPolicy,
+    UnknownMacroPolicy, UnknownSpecialsPolicy,
 };
 use techxt::Converter;
 
@@ -90,6 +95,11 @@ pub struct OptionsDto {
     /// checkbox of PLAN §5.
     #[serde(default)]
     pub recovery: Option<RecoveryDto>,
+    /// [`techxt::convert::ConverterBuilder::macro_definitions`] — parse-time too, and
+    /// the M9 addition: whether a `\newcommand` in the document defines a macro that
+    /// later uses expand, or is merely read and dropped.
+    #[serde(default)]
+    pub macro_definitions: Option<MacroDefinitionsDto>,
 }
 
 /// The descent limit, in engine *descents* (web/PLAN.md §4.6).
@@ -214,6 +224,17 @@ pub fn build(dto: &OptionsDto) -> Result<Converter, String> {
     if let Some(value) = dto.recovery {
         builder = builder.recovery(value.into());
     }
+    if let Some(value) = dto.macro_definitions {
+        builder = builder.macro_definitions(value.into());
+    }
+    // not exposed: `expansion_depth_limit`, `expansion_count_limit` — the same reason
+    // `descent_guard` is set here rather than offered (§4.6): they are safety limits and
+    // not preferences, and a page that could raise one would be a page a one-line
+    // document can hang. The library's own defaults (64 nested expansions, 2 000
+    // expansions per parse) are already the conservative ones — techxt lowers techy-xp's
+    // count budget fiftyfold precisely because it converts documents it did not write,
+    // which is this page's situation exactly — so there is nothing to re-type here
+    // either (PLAN §4.6, §5).
     // not exposed: `unknown_macro_resolution` — its interaction with `recovery` is
     // subtle (it decouples "unknown command" from "strict"), and the strict checkbox
     // already covers the observable case (PLAN §5).
@@ -423,6 +444,32 @@ impl From<RecoveryDto> for Recovery {
         match dto {
             RecoveryDto::Tolerant => Recovery::Tolerant,
             RecoveryDto::Strict => Recovery::Strict,
+        }
+    }
+}
+
+/// `techxt::convert::MacroDefinitions`.
+///
+/// The library's enum is `#[non_exhaustive]`, so it may gain a variant; this one is the
+/// app's own closed copy of the two spellings `protocol.ts` lists. A third variant is
+/// then something a person adds here and to the select in `controls.ts` deliberately,
+/// rather than a value the wire form silently already accepts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MacroDefinitionsDto {
+    /// The library default: `\newcommand`, `\def` and their relatives define macros,
+    /// and a later use of one expands.
+    Honored,
+    /// The definers are read and dropped — their arguments consumed so a body cannot
+    /// leak into the text — and a later use is an unknown macro like any other.
+    Declared,
+}
+
+impl From<MacroDefinitionsDto> for MacroDefinitions {
+    fn from(dto: MacroDefinitionsDto) -> MacroDefinitions {
+        match dto {
+            MacroDefinitionsDto::Honored => MacroDefinitions::Honored,
+            MacroDefinitionsDto::Declared => MacroDefinitions::Declared,
         }
     }
 }

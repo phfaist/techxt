@@ -93,6 +93,7 @@ describe('resolveOptions: what reaches the worker', () => {
     unknownEnv: 'keep-source',
     unknownSpecials: 'skip',
     recovery: 'strict',
+    macroDefinitions: 'declared',
     wrap: 40,
     todayMode: 'custom',
     todayCustom: 'the first of Never',
@@ -120,6 +121,7 @@ describe('resolveOptions: what reaches the worker', () => {
       unknownEnv: 'keep-source',
       unknownSpecials: 'skip',
       recovery: 'strict',
+      macroDefinitions: 'declared',
       wrapWidth: 40,
       today: 'the first of Never',
     });
