@@ -32,6 +32,7 @@ use techy::latexlike::{
 use techy::serialize::SerializableObject;
 use techy::source::SourceResolver;
 use techy_xp::lang::{LatexlikeXp, DEFAULT_GLOBAL_SCOPE_NAME, DEFAULT_LOCAL_SCOPE_NAME};
+use techy_xp::presets::RefusalSpec;
 
 use crate::convert::MacroDefinitions;
 use crate::render::ListKind;
@@ -448,6 +449,21 @@ impl EnvironmentBehavior<LatexlikeXp> for TechxtEnvironmentBehavior {
             BodyBehavior::Verbatim(verbatim) => verbatim.make_body_parser(invocation),
         }
     }
+}
+
+/// Whether this node is one of techy-xp's **refusals** — `\expandafter`, `\ifx`,
+/// `\catcode`, `\setcounter` and the rest of `techy-xp.refusals` (PLAN.md §16 M9).
+///
+/// The same downcast as [`embedded_rule`] above, asking the opposite question: not
+/// *"does this spec carry a techxt rule?"* but *"is this spec techy-xp's answer for a
+/// feature it declined?"*. A refusal reaches the renderer as a foreign spec with no rule,
+/// so without this it would land in the unknown-construct policy and be reported a second
+/// time, under a name that says less than the first report did — see
+/// [`rules::unknown`](crate::render). What it *renders* as is unchanged: the policy still
+/// decides that.
+pub(crate) fn is_refusal(node: NodeRef<'_, LatexlikeXp>) -> bool {
+    node.spec()
+        .is_some_and(|spec| (&**spec as &dyn Any).is::<RefusalSpec<LatexlikeXp>>())
 }
 
 /// The techxt rule embedded in a callable node's spec, if it has one (PLAN.md §10.3

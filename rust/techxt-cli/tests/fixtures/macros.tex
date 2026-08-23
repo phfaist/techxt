@@ -1,0 +1,15 @@
+\documentclass{article}
+
+\newcommand{\pkg}[1]{\emph{#1}}
+\newcommand{\ket}[1]{\lvert #1 \rangle}
+\def\tool{techxt}
+\newenvironment{aside}{Aside: }{ (end of aside)}
+
+\begin{document}
+The \tool{} converter honours \pkg{amsmath} definitions, so a state
+written $\ket{\psi}$ is expanded before it is rendered.
+
+\begin{aside}
+a definition made in the document is a definition the converter keeps.
+\end{aside}
+\end{document}

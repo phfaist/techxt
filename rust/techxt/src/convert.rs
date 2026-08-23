@@ -37,8 +37,14 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use techy::error::{DiagnosticData, DiagnosticInfo};
 use techy::latexlike::LatexlikeDriver;
 use techy_xp::lang::XpDriver;
+use techy_xp::presets::{
+    CategoryCodeChangeUnsupported, ConditionalUnsupported, CounterCommandUnsupported,
+    CsNameUnsupported, ExpandAfterUnsupported, NoExpandUnsupported, RegisterAllocationUnsupported,
+    RegisterUnsupported,
+};
 
 use crate::def::{
     BuiltDefinitions, CallableKind, DefinitionSet, RuleTable, ScopeFrame, SpecBuildCx,
@@ -288,6 +294,9 @@ impl core::fmt::Debug for Converter {
 /// moves the counters alone. The pushed values are unobservable — that is the whole
 /// point of pushing them past the cap — so what matters about each is its severity,
 /// which is what keeps the error count exact.
+///
+/// Rebuilding the collection is also where each entry passes through
+/// [`at_techxt_severity`], which is what makes a techy-xp refusal a warning.
 fn merge(
     first: &Diagnostics<Option<String>>,
     second: &Diagnostics<Option<String>>,
@@ -304,16 +313,31 @@ fn merge(
         retained
     };
     let mut merged = Diagnostics::with_limit(limit);
+    // Demotions are counted because the replay below reasons from error *counts*: a
+    // refusal that arrived as an error and is retained as a warning would otherwise look
+    // like an error the cap ate, and be replayed as one.
+    let mut demoted = 0;
     for diagnostic in first.iter().chain(second.iter()) {
-        merged.push(diagnostic.clone());
+        let entry = at_techxt_severity(diagnostic);
+        if entry.severity() != diagnostic.severity() {
+            demoted += 1;
+        }
+        merged.push(entry);
     }
 
     if suppressed > 0 {
         // How many of the suppressed entries were errors: the two collections counted
         // every error they were given, retained or not, so the difference is exactly
-        // the errors that were dropped.
-        let errors_lost =
-            (first.error_count() + second.error_count()).saturating_sub(merged.error_count());
+        // the errors that were dropped — once the demotions above are given back, since
+        // those errors were not lost but reclassified.
+        //
+        // A *suppressed* refusal cannot be reclassified: the cap kept its severity and
+        // threw away its identity, so it is replayed as the error it was recorded as.
+        // Past the retention cap, then, a document made entirely of refusals can still
+        // report errors; that is the price of a surplus techy no longer holds.
+        let errors_lost = (first.error_count() + second.error_count())
+            .saturating_sub(demoted)
+            .saturating_sub(merged.error_count());
         // A span is needed to build a diagnostic at all; any of them will do, and there
         // is at least one because a collection only suppresses after it has filled up.
         // (`limit == 0` is the exception, and then `retained == 0` and there is nothing
@@ -335,6 +359,72 @@ fn merge(
         }
     }
     merged
+}
+
+/// A parse diagnostic as techxt reports it: techy-xp's **refusals** demoted from error
+/// severity to warning, everything else exactly as techy raised it (PLAN.md §10.6, as
+/// amended for M9 phase 3).
+///
+/// # Why techxt overrules the severity techy-xp chose
+///
+/// A refusal is techy-xp saying *"this command is `\ifx`, and I do not implement
+/// conditionals"*. It raises it through techy's recovery entry point, which under
+/// [`Recovery::Strict`] must abort — so at the raise site it can only be an error, and
+/// techy-xp is right to make it one: for a host expanding macros in earnest, a document
+/// reaching a refusal has not been understood.
+///
+/// techxt is not that host. Its severity convention ([`diag`](crate::diag)) calls a
+/// construct it has never heard of a **warning**: the document converted, one construct
+/// in it did not. A command techxt understands well enough to *refuse by name* cannot
+/// rank worse than one it has never heard of — that would make `\expandafter` fail a
+/// conversion that `\qqq` passes, and would put a document whose text is entirely correct
+/// behind a non-zero CLI exit code. So the identifier and the message are kept exactly as
+/// techy-xp wrote them, and only the severity is techxt's.
+///
+/// This is the *refusals* boundary alone — the eight conditions of
+/// [`Refusal`](techy_xp::presets::Refusal), one per recovery. The expansion budgets
+/// (`techy-xp.expand.*-budget-exceeded`) stay errors deliberately: a budget is not a
+/// missing feature, it is a document that was cut off, and the text really is incomplete.
+///
+/// # What the rebuild costs
+///
+/// techy has no public way to restamp a diagnostic's severity, so the demoted entry is a
+/// new one built from the same condition payload, and the **traceback frames do not
+/// survive** — the payload, the identifier, the message and the span all do. What is lost
+/// is measurable and small: a refusal carries exactly one frame, titled *"unsupported
+/// ‘\ifx’"*, which says what the message already says.
+fn at_techxt_severity(diagnostic: &Diagnostic<Option<String>>) -> Diagnostic<Option<String>> {
+    if diagnostic.severity() != Severity::Error {
+        return diagnostic.clone();
+    }
+    let data = diagnostic.data();
+    let span = diagnostic.span();
+    // One arm per refusal condition, matched by *type* rather than by identifier string
+    // (techy's rule, [`diag`](crate::diag)): the downcast is what makes the payload
+    // available to rebuild with, and a techy-xp condition that is renamed or retyped
+    // fails to compile here instead of quietly staying an error.
+    // `defs_macros::every_refusal_condition_is_demoted` pins the list against techy-xp's
+    // own `REFUSED_COMMANDS` table, so a refusal added upstream fails a test rather than
+    // slipping through.
+    as_warning::<CategoryCodeChangeUnsupported>(data, span)
+        .or_else(|| as_warning::<ExpandAfterUnsupported>(data, span))
+        .or_else(|| as_warning::<NoExpandUnsupported>(data, span))
+        .or_else(|| as_warning::<CsNameUnsupported>(data, span))
+        .or_else(|| as_warning::<RegisterUnsupported>(data, span))
+        .or_else(|| as_warning::<RegisterAllocationUnsupported>(data, span))
+        .or_else(|| as_warning::<CounterCommandUnsupported>(data, span))
+        .or_else(|| as_warning::<ConditionalUnsupported>(data, span))
+        .unwrap_or_else(|| diagnostic.clone())
+}
+
+/// The condition behind `data` as a warning, if `data` is a `T` at all (see
+/// [`at_techxt_severity`]).
+fn as_warning<T: DiagnosticInfo>(
+    data: &dyn DiagnosticData,
+    span: &SourceSpan<Option<String>>,
+) -> Option<Diagnostic<Option<String>>> {
+    data.downcast_ref::<T>()
+        .map(|condition| Diagnostic::new(Severity::Warning, condition.clone(), span.clone()))
 }
 
 /// The condition of a diagnostic pushed only to be counted (see [`merge`]).
@@ -403,14 +493,14 @@ impl Default for ConverterBuilder {
 
 impl ConverterBuilder {
     /// The default of [`expansion_depth_limit`](Self::expansion_depth_limit): 64 nested
-    /// expansions, where techy-xp's own default is 256. See that method for the
-    /// measurement behind the number.
+    /// expansions, where techy-xp's own default is 256.
     pub const DEFAULT_EXPANSION_DEPTH_LIMIT: usize = 64;
 
-    /// The default of [`expansion_count_limit`](Self::expansion_count_limit): 20 000
-    /// expansions per parse, where techy-xp's own default is 100 000. See that method for
-    /// the measurement behind the number.
-    pub const DEFAULT_EXPANSION_COUNT_LIMIT: usize = 20_000;
+    /// The default of [`expansion_count_limit`](Self::expansion_count_limit): 2 000
+    /// expansions per parse, where techy-xp's own default is 100 000. That method carries
+    /// the measurement the number comes from — and the reason a library converting
+    /// untrusted input cannot use the upstream one.
+    pub const DEFAULT_EXPANSION_COUNT_LIMIT: usize = 2_000;
 
     /// A builder with the shipped definitions, [`Options::default`], and tolerant
     /// recovery.
@@ -622,13 +712,88 @@ impl ConverterBuilder {
         self
     }
 
-    /// TODO-BUDGET-DEPTH
+    /// How deeply one expansion may nest inside another before the reader refuses
+    /// (PLAN.md §16 M9). Default
+    /// [`DEFAULT_EXPANSION_DEPTH_LIMIT`](Self::DEFAULT_EXPANSION_DEPTH_LIMIT), 64.
+    ///
+    /// A macro whose body invokes a macro whose body invokes a macro is three frames
+    /// deep. Reaching the limit costs *that* expansion and nothing else: the reader
+    /// reports `techy-xp.expand.expansion-depth-budget-exceeded` — an **error**, naming
+    /// the macro — and the invocation stays in the document unexpanded, which then reads
+    /// as an unknown macro. The parse continues.
+    ///
+    /// This budget is what catches a runaway that *nests* — `\def\a{\b x}\def\b{\a y}\a`,
+    /// where each body has something left to serve after the invocation it names, so its
+    /// frame is still live when the next one is pushed.
+    /// [`expansion_count_limit`](Self::expansion_count_limit) catches the flat ones: a
+    /// body that ends in its own invocation (`\def\a{\a}\a`, and mutual recursion spelled
+    /// the same way) has its frame popped before the successor is pushed, and never grows
+    /// the stack at all. techy-xp does no cycle detection; the two budgets are what
+    /// replace it.
+    ///
+    /// 64 is enough for any nesting a document writes on purpose — the deepest macro
+    /// chains in real preambles are a handful of frames — and techy-xp's own 256 is one
+    /// call away for a document that needs it. Note that it does *not* bound the runaways
+    /// [`expansion_count_limit`](Self::expansion_count_limit) describes: those are the
+    /// count budget's business, and measurably indifferent to this one.
     pub fn expansion_depth_limit(mut self, limit: usize) -> ConverterBuilder {
         self.expansion_depth_limit = limit;
         self
     }
 
-    /// TODO-BUDGET-COUNT
+    /// How many expansions one parse may start before the reader refuses (PLAN.md §16
+    /// M9). Default
+    /// [`DEFAULT_EXPANSION_COUNT_LIMIT`](Self::DEFAULT_EXPANSION_COUNT_LIMIT), 2 000.
+    ///
+    /// One macro invocation is one expansion, so this is a ceiling on how much expanded
+    /// text a document may produce — a *memory* bound as much as a time one, since a
+    /// rewindable reader reclaims no frame it has entered. Reaching it reports
+    /// `techy-xp.expand.expansion-count-budget-exceeded` — an **error** — and every
+    /// later invocation is left unexpanded rather than the parse being abandoned. The
+    /// budget is per *reader*, so an `\input`ed file gets an allowance of its own.
+    ///
+    /// ```
+    /// use techxt::Converter;
+    ///
+    /// // A runaway definition is stopped by the budget rather than by cycle detection,
+    /// // which techy-xp deliberately does not do.
+    /// let converter = Converter::builder().expansion_count_limit(50).build()?;
+    /// let conversion = converter.latex_to_text(r"\def\x{\x}\x")?;
+    /// assert!(conversion.diagnostics.has_errors());
+    /// # Ok::<(), Box<dyn core::error::Error>>(())
+    /// ```
+    ///
+    /// # Why the default is a fiftieth of techy-xp's
+    ///
+    /// techy-xp defaults to 100 000, which is the right number for a host that trusts
+    /// its input. techxt converts documents it did not write, and at that allowance two
+    /// one-line documents are a denial of service — measured through this converter, in
+    /// an unoptimized build, on a 2 MiB thread stack:
+    ///
+    /// | document | at 2 000 | at 100 000 |
+    /// |---|---|---|
+    /// | `\def\x{\x}\x` (flat loop) | 0.09 s | over three minutes |
+    /// | `\def\x{\x\x}\x` (doubling) | 0.23 s | **the process aborts** |
+    /// | `\def\x{\x\x\x}\x` | 0.35 s | **the process aborts** |
+    ///
+    /// The first is upstream's known quadratic cost in position canonicalization (7.4 s
+    /// at 20 000, and it grows with the square). The other two are worse than slow: the
+    /// structure they build is dropped recursively, and the drop overflows the stack —
+    /// which no guard catches, because [`descent_guard`](Self::descent_guard) bounds
+    /// parsing and folding, not destruction. The abort threshold scales with the
+    /// thread's stack, at roughly three thousand expansions per MiB (aborting between
+    /// 6 000 and 8 000 on a 2 MiB stack, and between 3 000 and 4 000 on a 1 MiB one), so
+    /// **2 000 is chosen to clear it on a small-stack thread**, not just on a generous
+    /// one, and to keep every shape above well under a second even unoptimized.
+    ///
+    /// # It is a working ceiling too, and that is the cost
+    ///
+    /// 2 000 expansions is a document with two thousand macro invocations in it — a
+    /// long, macro-heavy paper reaches that, and then converts with its remaining
+    /// invocations unexpanded and an error in its diagnostics. That is the deliberate
+    /// trade: a default that is safe on input nobody vouched for, and a knob for a caller
+    /// who *does* vouch for it. Raising it to techy-xp's own 100 000 is one call, and
+    /// costs what the table above says on a document that abuses it.
     pub fn expansion_count_limit(mut self, limit: usize) -> ConverterBuilder {
         self.expansion_count_limit = limit;
         self
@@ -1139,6 +1304,10 @@ pub enum UnknownMacroResolution {
 /// It also decides whether techy-xp's **refusals** are registered. They are the reason
 /// `\expandafter` reports *"techy-xp does not implement expansion control"* instead of
 /// being an unknown command, and they never shadow a name techxt declares itself.
+/// techxt reports each of them as a **warning**, and reports it once — in place of the
+/// `techxt.unknown-macro` the same construct would otherwise also earn, since the refusal
+/// names the missing feature and the unknown-macro warning would only say that techxt has
+/// no rule for it (PLAN.md §10.6).
 ///
 /// # What stays out either way
 ///

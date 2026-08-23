@@ -11,9 +11,10 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 use techxt::convert::{
-    FootnoteStyle, HeadingStyle, MathMode, MathWrapDelims, MatrixDelims, Options,
+    FootnoteStyle, HeadingStyle, MacroDefinitions, MathMode, MathWrapDelims, MatrixDelims, Options,
     UnknownMacroPolicy,
 };
+use techxt::ConverterBuilder;
 
 // `about` and `version` take their text from the manifest (`CARGO_PKG_DESCRIPTION`,
 // `CARGO_PKG_VERSION`) so that the help banner cannot drift from what was built. clap
@@ -80,6 +81,22 @@ pub struct Cli {
     #[arg(long)]
     pub strict: bool,
 
+    /// Read \newcommand, \def and their relatives without honouring them: nothing is
+    /// defined, and a later use of the macro is an unknown command.
+    #[arg(long)]
+    pub no_macro_definitions: bool,
+
+    /// Refuse an expansion nested deeper than this in another. Catches a macro pair that
+    /// expands into each other for ever.
+    #[arg(long, value_name = "N", default_value_t = ConverterBuilder::DEFAULT_EXPANSION_DEPTH_LIMIT)]
+    pub expansion_depth_limit: usize,
+
+    /// Refuse to expand more than this many macros in one document. Catches a macro that
+    /// expands into itself, and bounds what any document may expand to; raise it for a
+    /// long document whose macros the conversion reports having run out of budget on.
+    #[arg(long, value_name = "N", default_value_t = ConverterBuilder::DEFAULT_EXPANSION_COUNT_LIMIT)]
+    pub expansion_count_limit: usize,
+
     // -q and -v are the two directions from the default verbosity, so asking for both at
     // once is a contradiction rather than a precedence puzzle: clap rejects it.
     /// Print no diagnostics at all. The exit code still reports them.
@@ -115,6 +132,18 @@ impl Cli {
         // renders a date here rather than the library's `<today>` placeholder.
         options.today = Some(today.into_boxed_str());
         options
+    }
+
+    /// Whether the defining commands are honoured or only declared (PLAN.md §16 M9).
+    ///
+    /// A method rather than a bare field read, so that the flag's *meaning* — the
+    /// library value it selects — is stated once and tested here rather than in `main`.
+    pub fn macro_definitions(&self) -> MacroDefinitions {
+        if self.no_macro_definitions {
+            MacroDefinitions::Declared
+        } else {
+            MacroDefinitions::Honored
+        }
     }
 
     /// Which diagnostics reach standard error.
@@ -304,6 +333,19 @@ mod tests {
         // The one deliberate difference: the library has no clock, the CLI does.
         assert_eq!(defaults.today, None);
         assert!(cli.today.is_some());
+
+        // The builder settings, which are not `Options` fields: the two expansion budgets
+        // and the definer switch (PLAN.md §13 as amended for M9 phase 3).
+        let cli = Cli::parse_from(["techxt"]);
+        assert_eq!(
+            cli.expansion_depth_limit,
+            ConverterBuilder::DEFAULT_EXPANSION_DEPTH_LIMIT
+        );
+        assert_eq!(
+            cli.expansion_count_limit,
+            ConverterBuilder::DEFAULT_EXPANSION_COUNT_LIMIT
+        );
+        assert_eq!(cli.macro_definitions(), MacroDefinitions::default());
     }
 
     #[test]
@@ -325,7 +367,15 @@ mod tests {
             "inline",
             "--unknown-macro",
             "keep-source",
+            "--no-macro-definitions",
+            "--expansion-depth-limit",
+            "8",
+            "--expansion-count-limit",
+            "99",
         ]);
+        assert_eq!(cli.macro_definitions(), MacroDefinitions::Declared);
+        assert_eq!(cli.expansion_depth_limit, 8);
+        assert_eq!(cli.expansion_count_limit, 99);
         let options = cli.options("May 1, 2001".into());
         assert_eq!(options.math_mode, MathMode::Plain);
         assert_eq!(options.math_expression_in, MathWrapDelims::Braces);

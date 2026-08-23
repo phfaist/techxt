@@ -118,7 +118,7 @@ use techy::recompose::{ConcatPieces, Recompose, RecomposeContext, Recomposer};
 use techy_xp::lang::LatexlikeXp;
 
 use crate::convert::{FootnoteStyle, Options};
-use crate::def::{embedded_rule, CallableKind, RuleTable};
+use crate::def::{embedded_rule, is_refusal, CallableKind, RuleTable};
 use crate::diag::{RenderAborted, TechxtCondition};
 use crate::flow::{display_width, BlockKind, Flow, FlowItem};
 
@@ -384,10 +384,13 @@ impl<'a> TextRenderer<'a> {
             .or_else(|| embedded_rule(node))
             .or_else(|| kind.and_then(|kind| config.fallback.get(kind, name)));
 
+        // Step 4 (PLAN.md §10.6): no rule, so the unknown-construct policy decides — and
+        // says so, unless the parse has already named this construct better than
+        // `techxt.unknown-macro` could. A techy-xp refusal is exactly that case.
         let mut render_cx = RenderCx::new(self, cx, node, state);
         let flow = match rule {
             Some(rule) => rules::execute(rule, &mut render_cx),
-            None => rules::unknown(kind, &mut render_cx),
+            None => rules::unknown(kind, !is_refusal(node), &mut render_cx),
         };
         Recompose::Emit(flow)
     }

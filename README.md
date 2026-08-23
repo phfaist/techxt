@@ -83,8 +83,16 @@ techxt [OPTIONS] [FILE]        # FILE or stdin → stdout (or -o FILE)
       --unknown-macro <skip|render-args|keep-source|placeholder>
       --input-dir <DIR>       # sandboxed \input resolution, rooted here
       --strict
+      --no-macro-definitions  # read \newcommand and \def without honouring them
+      --expansion-depth-limit <N>   # default 64
+      --expansion-count-limit <N>   # default 2000
   -q / -v                     # -q: no diagnostics; default: warnings; -v: notes too
 ```
+
+The two expansion budgets are what bound a runaway definition — techy-xp detects no
+cycles — and they default well below techy-xp's own (256 / 100 000) because techxt
+converts documents it did not write. Raise them for a long document that reports
+having run out of budget.
 
 Diagnostics go to standard error. Exit code 0 means the document converted and
 nothing was wrong with it, 1 that it converted but the diagnostics contain errors,

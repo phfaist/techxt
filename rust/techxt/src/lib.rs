@@ -302,6 +302,12 @@
 //! [`ConverterBuilder::macro_definitions`](convert::ConverterBuilder::macro_definitions)
 //! turns the whole of it off. See [`defs::preamble`].
 //!
+//! Expansion is bounded rather than cycle-detected, by two budgets a caller may raise:
+//! [`expansion_depth_limit`](convert::ConverterBuilder::expansion_depth_limit) and
+//! [`expansion_count_limit`](convert::ConverterBuilder::expansion_count_limit). Both
+//! default lower than techy-xp's own, because a converter pointed at documents it did
+//! not write cannot afford what a runaway definition costs at the upstream allowance.
+//!
 //! Mathematics is complete too, in all three
 //! [modes](convert::MathMode): the atom model with TeX's spacing classes, sub- and
 //! superscripts through unicode's script characters, `\frac` and `\sqrt`, the display

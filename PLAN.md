@@ -865,6 +865,26 @@ Every unknown hit emits its diagnostic regardless of policy; `KeepSource` uses
 Parse-level techy diagnostics (when techxt drives parsing) are merged ahead of render
 diagnostics in the returned collection.
 
+**Amended for M9 (phase 3):** techxt reports techy-xp's **refusals** as *warnings*.
+The eight `techy-xp.presets.*-unsupported` conditions (`\expandafter`, the
+conditionals, category codes, registers, allocators, counter commands, `\csname`,
+`\noexpand`) are raised upstream at error severity — they must be, since a strict
+parse has to abort on one — and `convert::at_techxt_severity` restamps them as the
+merge above rebuilds the collection, keeping identifier, message and payload and
+losing only the one traceback frame techy has no public way to carry over. The reason
+is this table's own philosophy: an unknown construct is a warning here, so a construct
+techxt refuses *by name* cannot rank worse than one it has never heard of, and a
+document whose text is entirely correct must not sit behind a non-zero exit code. The
+budgets (`techy-xp.expand.*-budget-exceeded`) stay errors: a budget is not a missing
+feature, it is a document that was cut off. Past the retention cap a *suppressed*
+refusal cannot be reclassified — its identity is gone — and is still counted as the
+error it arrived as.
+
+The same phase removes the double report: a refusal reaching the renderer with no rule
+is rendered by the unknown-construct policy above but **not** diagnosed a second time
+as `techxt.unknown-macro` (dispatch step 4 recognizes techy-xp's `RefusalSpec`). One
+occurrence, one diagnostic — the one that names the missing feature.
+
 ---
 
 ## 11. Public API (`techxt::convert`)
@@ -908,6 +928,12 @@ layout.
 `override_macro/environment/specials(name, TextRule)`,
 `source_resolver(impl techy IntoSourceResolver)`, `recovery(Recovery)` (default
 `Tolerant`), `build() -> Result<Converter, BuildError>`.
+
+**Amended for M9 (phase 3):** plus `macro_definitions(MacroDefinitions)` (default
+`Honored`) and the two expansion budgets — `expansion_depth_limit(usize)` and
+`expansion_count_limit(usize)`, defaulting to the associated constants
+`ConverterBuilder::DEFAULT_EXPANSION_{DEPTH,COUNT}_LIMIT` (64 and 2 000), which are
+techxt's own rather than techy-xp's for the reason §13's amendment states.
 
 ### 11.3 Options (complete, with defaults)
 
@@ -1000,6 +1026,21 @@ Diagnostics → stderr via techy `Diagnostics::render_all()`. Exit codes: 0 clea
 1 conversion completed but diagnostics contain errors, 2 hard parse (strict) or I/O
 error. `Options::today` set from the system clock formatted as English
 `"August 19, 2026"` (hand-rolled month-name table; no chrono).
+
+**Amended for M9 (phase 3):** three flags for the macro definitions (§16 M9), each
+mapping to the `ConverterBuilder` setting of the same name rather than to an `Options`
+field:
+```
+      --no-macro-definitions        # MacroDefinitions::Declared: read the definers,
+                                    # honour none of them (techxt 0.1.0's behaviour)
+      --expansion-depth-limit <N>   # default 64      (techy-xp's own default: 256)
+      --expansion-count-limit <N>   # default 2000    (techy-xp's own default: 100000)
+```
+The two budget defaults are the library's, and lower than techy-xp's on purpose:
+techxt converts untrusted input, and at the upstream allowance `\def\x{\x}\x` runs for
+minutes while `\def\x{\x\x}\x` overflows the stack outright.
+`ConverterBuilder::expansion_count_limit` carries the measurement; the flags reach the
+upstream numbers for a caller who vouches for the input.
 
 ---
 
@@ -1123,12 +1164,14 @@ conditionals, category codes, registers and counters are reported, not acted on.
 
 Three things phase 2 leaves for later, each documented where a reader meets it:
 
-- **The expansion budgets are not configurable.** They stay at techy-xp's defaults
-  (256 deep, 100 000 expansions per reader). A self-referential macro is bounded only
-  by the count budget, which takes tens of seconds to reach, and a macro whose body
-  names itself twice (`\def\x{\x\x}`) builds a tree deep enough to overflow the stack
-  when it is dropped. Both are upstream properties — techy-xp's own presets do the
-  same — and a `ConverterBuilder` knob for the two budgets is the answer.
+- ~~**The expansion budgets are not configurable.**~~ **Done in phase 3:**
+  `ConverterBuilder::expansion_depth_limit` / `expansion_count_limit`, defaulting to
+  64 and 2 000 rather than techy-xp's 256 and 100 000 for exactly the two hazards this
+  bullet named — the flat loop that ran for minutes, and the doubling body whose
+  structure overflowed the stack as it was dropped. Both are measured on the
+  `expansion_count_limit` doc comment. What is left is upstream's: the quadratic cost
+  of reaching the count budget, and a drop that recurses with the size of what was
+  expanded.
 - **`\input` is state-transparent**, so a definition made inside an included file does
   not survive it (`defs::inputs`). LaTeX's `\input` persists; making it a choice needs
   the rest of techy's `persist_state` consequences thought through.

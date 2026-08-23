@@ -1,14 +1,21 @@
-//! Macro definitions honoured end to end (PLAN.md §16 M9, phase 2).
+//! Macro definitions honoured end to end (PLAN.md §16 M9, phases 2 and 3).
 //!
 //! techxt parses through techy-xp's expanding token reader and seeds techy-xp's definers
 //! into [`defs::preamble`](techxt::defs::preamble), so a `\newcommand` in a document
-//! defines a macro and a later use of it expands. This file pins that, the scope
+//! defines a macro and a later use of it expands. This file pins that wiring: the scope
 //! semantics that come with it, the refusal diagnostics techy-xp raises for what it
-//! declines, the shape of the provider stack the whole thing rests on, and the runtime
+//! declines and the severity techxt reports them at, the expansion budgets that bound a
+//! runaway, the shape of the provider stack the whole thing rests on, and the runtime
 //! switch that turns all of it off.
+//!
+//! What each definer *shape* does — `\newcommand*`, xparse's argument codes, nested and
+//! recursive definitions, definitions meeting math and the renderer — is the subject of
+//! `defs_definers.rs`, one file over.
 
-use techxt::convert::{MacroDefinitions, MapResolver, UnknownMacroResolution};
-use techxt::Converter;
+use techxt::convert::{MacroDefinitions, MapResolver, Severity, UnknownMacroResolution};
+use techxt::{Converter, ConverterBuilder};
+use techy_xp::lang::{DEFAULT_EXPANSION_COUNT_LIMIT, DEFAULT_EXPANSION_DEPTH_LIMIT};
+use techy_xp::presets::{RefusedArgument, REFUSED_COMMANDS};
 
 /// The house helper: convert with the shipped definitions and default options.
 fn text(latex: &str) -> String {
@@ -147,15 +154,113 @@ fn a_refused_command_is_diagnosed_by_name_rather_than_left_unknown() {
     // signature and says which feature is missing. The node then reaches the renderer
     // carrying a *foreign* spec, so techxt's dispatch misses at step 2 (downcast) and at
     // step 3 (the name table has no entry for a name techxt never declared), and the
-    // unknown-construct policy of PLAN.md §10.6 decides what it looks like: nothing, plus
-    // a `techxt.unknown-macro` warning.
+    // unknown-construct policy of PLAN.md §10.6 decides what it looks like: nothing.
+    //
+    // It does *not* also report `techxt.unknown-macro`. Step 4 recognizes the refusal
+    // spec (`def::is_refusal`) and leaves the reporting to the parse, which named the
+    // missing feature — one occurrence, one diagnostic.
     assert_eq!(text(r"a\expandafter b"), "ab\n");
     assert_eq!(
         diagnostics(r"a\expandafter b"),
-        [
-            "techy-xp.presets.expandafter-unsupported",
-            "techxt.unknown-macro"
-        ]
+        ["techy-xp.presets.expandafter-unsupported"]
+    );
+}
+
+#[test]
+fn a_refusal_is_reported_as_a_warning_and_does_not_fail_the_conversion() {
+    // PLAN.md §10.6 as amended for M9 phase 3: techxt's severity convention calls a
+    // construct it has never heard of a warning, so a construct it refuses *by name*
+    // cannot rank worse. techy-xp raises these at error severity — it must, since a
+    // strict parse has to abort on one — and techxt restamps them on the way out.
+    for latex in [r"a\expandafter b", r"\ifx x\fi", r"\noexpand x"] {
+        let conversion = Converter::standard().latex_to_text(latex).expect("parses");
+        assert!(!conversion.diagnostics.has_errors(), "{latex:?}");
+        for diagnostic in conversion.diagnostics.iter() {
+            assert_eq!(diagnostic.severity(), Severity::Warning, "{latex:?}");
+            // The identifier and the message are techy-xp's, untouched: only the
+            // severity is techxt's.
+            assert!(
+                diagnostic.identifier().starts_with("techy-xp.presets."),
+                "{latex:?}: {}",
+                diagnostic.identifier()
+            );
+            assert!(!diagnostic.message().is_empty());
+        }
+    }
+}
+
+#[test]
+fn every_refusal_condition_is_demoted() {
+    // The demotion in `convert::at_techxt_severity` lists the refusal conditions one by
+    // one, and a refusal techy-xp adds later would silently keep error severity. techy-xp
+    // ships its refusal table as data, so the list can be checked against it: every
+    // command in `REFUSED_COMMANDS`, invoked, must report at warning severity.
+    let converter = Converter::standard();
+    for refused in REFUSED_COMMANDS {
+        // Written the way the refusal declares itself, so that what is measured is the
+        // refusal and not a malformed invocation: a command-name argument gets a command
+        // name, a mandatory one a group, and an optional one is left out.
+        let mut latex = format!("A\\{}", refused.name);
+        for argument in refused.arguments {
+            match argument {
+                RefusedArgument::CommandName => latex.push_str("\\foo"),
+                RefusedArgument::Optional => {}
+                _ => latex.push_str("{alpha}"),
+            }
+        }
+        latex.push_str(" Z");
+        let conversion = converter.latex_to_text(&latex).expect("parses");
+        let reported: Vec<&str> = conversion
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.identifier())
+            .collect();
+        // Some refused names are claimed by techxt itself and never reach the refusal at
+        // all (`\setcounter`, `\makeatletter`, …) — those report nothing, which is
+        // `a_name_techxt_declares_itself_wins_over_the_refusal_of_the_same_name`'s
+        // subject. What must never happen, for any of them, is an error.
+        assert!(
+            !conversion.diagnostics.has_errors(),
+            "\\{} reported {reported:?} as an error",
+            refused.name
+        );
+        for diagnostic in conversion.diagnostics.iter() {
+            assert_eq!(
+                diagnostic.severity(),
+                Severity::Warning,
+                "\\{}: {}",
+                refused.name,
+                diagnostic.identifier()
+            );
+        }
+    }
+}
+
+#[test]
+fn a_malformed_refusal_invocation_is_still_an_error() {
+    // The demotion is about the *refusal* conditions, and nothing else techy-xp raises.
+    // A register allocator reads a command name — `\newcount\foo` — so `\newcount{alpha}`
+    // has no name to read, and techy-xp reports a malformed invocation. That is not a
+    // feature it declined to implement, it is a document it could not read, and it stays
+    // an error.
+    let conversion = Converter::standard()
+        .latex_to_text(r"\newcount{alpha}")
+        .expect("parses");
+    assert!(conversion.diagnostics.has_errors());
+    let reported: Vec<&str> = conversion
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.identifier())
+        .collect();
+    assert_eq!(reported[0], "techy-xp.constructs.expected-command-name");
+    // Written as LaTeX writes it, the same command is a warning like any other refusal.
+    let conversion = Converter::standard()
+        .latex_to_text(r"\newcount\foo")
+        .expect("parses");
+    assert!(!conversion.diagnostics.has_errors());
+    assert_eq!(
+        diagnostics(r"\newcount\foo"),
+        ["techy-xp.presets.register-allocation-unsupported"]
     );
 }
 
@@ -165,7 +270,7 @@ fn a_refusal_reached_through_an_expansion_draws_no_second_parse_error() {
     // `core.specs.unresolvable-command`. Inside techxt's stack it does not, and the
     // reason is techxt's own outermost catch-all provider: every name resolves to
     // *something*, so nothing is ever unresolvable. Measured, not assumed — all three
-    // routes to a refusal report exactly one techy-xp condition and one techxt warning.
+    // routes to a refusal report exactly one techy-xp condition and nothing else.
     for latex in [
         r"a\expandafter b",
         r"\def\x{\expandafter}a\x b",
@@ -184,7 +289,7 @@ fn a_refusal_reached_through_an_expansion_draws_no_second_parse_error() {
                 .any(|id| id == "core.specs.unresolvable-command"),
             "{latex:?} reported {reported:?}"
         );
-        assert_eq!(reported.len(), 2, "{latex:?} reported {reported:?}");
+        assert_eq!(reported.len(), 1, "{latex:?} reported {reported:?}");
     }
 }
 
@@ -208,15 +313,18 @@ fn a_name_techxt_declares_itself_wins_over_the_refusal_of_the_same_name() {
 fn a_refusal_changes_what_is_reported_and_not_what_is_rendered() {
     // Registering the refusals is the one part of this phase that a document defining no
     // macro can notice, and this is the whole of what it notices: the *text* is what it
-    // always was, and the diagnostic is a techy-xp condition at **error** severity where
-    // it used to be a `techxt.unknown-macro` warning. That severity is what a caller
-    // reading `Conversion::diagnostics.has_errors()` — the CLI's exit code among them —
-    // now sees for a document that reaches one.
+    // always was, and the diagnostic is a techy-xp condition naming the missing feature
+    // where it used to be a `techxt.unknown-macro` saying only that techxt had no rule.
+    // Both are warnings, so neither costs a caller reading
+    // `Conversion::diagnostics.has_errors()` — the CLI's exit code among them — anything.
     let declared = Converter::builder()
         .macro_definitions(MacroDefinitions::Declared)
         .build()
         .expect("builds");
-    for name in ["expandafter", "ifx", "fi", "catcode", "count", "newcount"] {
+    // `\newcount` is deliberately not in this list: it reads a command *name*, so
+    // `\newcount{alpha}` is malformed rather than merely refused — see
+    // `a_malformed_refusal_invocation_is_still_an_error`.
+    for name in ["expandafter", "ifx", "fi", "catcode", "count", "noexpand"] {
         // Bare, and with two groups after it, so that a refusal declaring the wrong
         // arity would show up as a text difference.
         for latex in [
@@ -226,10 +334,116 @@ fn a_refusal_changes_what_is_reported_and_not_what_is_rendered() {
             let honored = Converter::standard().latex_to_text(&latex).expect("parses");
             let plain = declared.latex_to_text(&latex).expect("parses");
             assert_eq!(honored.text, plain.text, "{latex:?} rendered differently");
-            assert!(honored.diagnostics.has_errors(), "{latex:?}");
+            assert!(!honored.diagnostics.has_errors(), "{latex:?}");
             assert!(!plain.diagnostics.has_errors(), "{latex:?}");
+            // One report either way — the honoured stack names the feature, the declared
+            // one says the macro is unknown.
+            let reported: Vec<&str> = honored
+                .diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.identifier())
+                .collect();
+            assert_eq!(reported.len(), 1, "{latex:?} reported {reported:?}");
+            assert!(reported[0].starts_with("techy-xp.presets."), "{latex:?}");
+            assert_eq!(plain.diagnostics.len(), 1, "{latex:?}");
         }
     }
+}
+
+// --------------------------------------------------------------- expansion budgets
+
+#[test]
+fn a_runaway_definition_stops_at_the_count_budget() {
+    // techy-xp does no cycle detection: `\def\x{\x}\x` expands for ever, and the count
+    // budget is what ends it. The budget here is deliberately tiny so that the test costs
+    // milliseconds — the cost of reaching one grows with the *square* of the budget, which
+    // is why techxt's default is 2 000 and not techy-xp's 100 000
+    // (`ConverterBuilder::expansion_count_limit` carries the measurement).
+    let converter = Converter::builder()
+        .expansion_count_limit(100)
+        .build()
+        .expect("builds");
+    let conversion = converter.latex_to_text(r"\def\x{\x}\x").expect("parses");
+    let reported: Vec<&str> = conversion
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.identifier())
+        .collect();
+    assert!(
+        reported.contains(&"techy-xp.expand.expansion-count-budget-exceeded"),
+        "{reported:?}"
+    );
+    // A budget is not a refusal: the document really was cut off, so it stays an error
+    // and the CLI exits non-zero on it.
+    assert!(conversion.diagnostics.has_errors());
+}
+
+#[test]
+fn a_nesting_runaway_stops_at_the_depth_budget() {
+    // The other shape of runaway — each step nests one frame deeper instead of looping
+    // flat — and the other budget that catches it.
+    //
+    // What makes it nest is the `x` and the `y`: a frame with nothing left to serve is
+    // popped *before* its successor is pushed, so the obvious `\def\a{\b}\def\b{\a}\a`
+    // does not stack frames at all and is caught by the count budget instead. Measured,
+    // not assumed — with the trailing characters the depth budget is what fires.
+    let converter = Converter::builder()
+        .expansion_depth_limit(8)
+        .build()
+        .expect("builds");
+    let conversion = converter
+        .latex_to_text(r"\def\a{\b x}\def\b{\a y}\a")
+        .expect("parses");
+    let reported: Vec<&str> = conversion
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.identifier())
+        .collect();
+    assert!(
+        reported.contains(&"techy-xp.expand.expansion-depth-budget-exceeded"),
+        "{reported:?}"
+    );
+}
+
+#[test]
+fn the_default_budgets_are_techxts_own_and_the_knobs_reach_techy_xps() {
+    // The numbers are stated in three places — here, on the two constants, and in the
+    // CLI's `--help` — so a test says they agree. techxt's are lower on purpose: it
+    // converts documents it did not write.
+    assert_eq!(ConverterBuilder::DEFAULT_EXPANSION_DEPTH_LIMIT, 64);
+    assert_eq!(ConverterBuilder::DEFAULT_EXPANSION_COUNT_LIMIT, 2_000);
+    const {
+        assert!(ConverterBuilder::DEFAULT_EXPANSION_DEPTH_LIMIT < DEFAULT_EXPANSION_DEPTH_LIMIT);
+        assert!(ConverterBuilder::DEFAULT_EXPANSION_COUNT_LIMIT < DEFAULT_EXPANSION_COUNT_LIMIT);
+    }
+
+    // And the knobs reach upstream's own defaults for a caller who vouches for the input.
+    let upstream = Converter::builder()
+        .expansion_depth_limit(DEFAULT_EXPANSION_DEPTH_LIMIT)
+        .expansion_count_limit(DEFAULT_EXPANSION_COUNT_LIMIT)
+        .build()
+        .expect("builds");
+    assert_eq!(
+        upstream
+            .latex_to_text(r"\newcommand\greet[1]{Hello #1!}\greet{world}")
+            .expect("parses")
+            .text,
+        "Hello world!\n"
+    );
+}
+
+#[test]
+fn an_ordinary_document_is_nowhere_near_the_budget() {
+    // One expansion per invocation: the budget is a runaway threshold, not a per-macro
+    // one. A hundred uses of two macros is a hundred and ninety-nine expansions below the
+    // default and reports nothing.
+    let mut latex = String::from(r"\newcommand\kw[1]{\emph{#1}}\newcommand\ket[1]{|#1>}");
+    for _ in 0..100 {
+        latex.push_str(r"A \kw{term} and \ket{\psi}. ");
+    }
+    let conversion = Converter::standard().latex_to_text(&latex).expect("parses");
+    assert!(conversion.diagnostics.is_empty());
+    assert!(conversion.text.contains("𝑡𝑒𝑟𝑚"));
 }
 
 // -------------------------------------------------------------- the provider stack

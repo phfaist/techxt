@@ -174,12 +174,26 @@ fn arguments_in_order(cx: &mut RenderCx<'_, '_>) -> Flow {
 ///
 /// The diagnostic is raised whatever the policy says: the policy decides what the
 /// reader sees, not whether the problem is reported.
-pub(crate) fn unknown(kind: Option<CallableKind>, cx: &mut RenderCx<'_, '_>) -> Flow {
+///
+/// `diagnose` is the one exception, and it is about a construct that has **already** been
+/// reported by name. techy-xp's refusals — `\expandafter`, `\ifx`, `\catcode` — reach the
+/// renderer as foreign specs carrying no rule, so they arrive here; but the parse has
+/// already said *"techy-xp does not implement conditionals"*, which is everything
+/// `techxt.unknown-macro` would say and more. The caller passes `false` for those (see
+/// [`is_refusal`](crate::def::is_refusal)) and the construct renders exactly as the
+/// policy says, silently.
+pub(crate) fn unknown(
+    kind: Option<CallableKind>,
+    diagnose: bool,
+    cx: &mut RenderCx<'_, '_>,
+) -> Flow {
     let node = cx.node();
     let name = String::from(node.name().unwrap_or(""));
     match kind {
         Some(CallableKind::Macro) => {
-            cx.report(UnknownMacro::new(name.clone()));
+            if diagnose {
+                cx.report(UnknownMacro::new(name.clone()));
+            }
             match cx.options().unknown_macro {
                 UnknownMacroPolicy::Skip => Flow::new(),
                 UnknownMacroPolicy::RenderArgs => arguments_in_order(cx),
@@ -188,7 +202,9 @@ pub(crate) fn unknown(kind: Option<CallableKind>, cx: &mut RenderCx<'_, '_>) -> 
             }
         }
         Some(CallableKind::Environment) => {
-            cx.report(UnknownEnvironment::new(name));
+            if diagnose {
+                cx.report(UnknownEnvironment::new(name));
+            }
             match cx.options().unknown_env {
                 UnknownEnvPolicy::RenderBody => match cx.body() {
                     Ok(body) => body,
@@ -202,7 +218,9 @@ pub(crate) fn unknown(kind: Option<CallableKind>, cx: &mut RenderCx<'_, '_>) -> 
             }
         }
         Some(CallableKind::Specials) => {
-            cx.report(UnknownSpecials::new(name.clone()));
+            if diagnose {
+                cx.report(UnknownSpecials::new(name.clone()));
+            }
             match cx.options().unknown_specials {
                 UnknownSpecialsPolicy::EmitChars => Flow::from_plain_text(&name),
                 UnknownSpecialsPolicy::Skip => Flow::new(),

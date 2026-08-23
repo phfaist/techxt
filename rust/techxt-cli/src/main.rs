@@ -89,6 +89,9 @@ fn build_converter(cli: &Cli) -> Result<Converter, String> {
     let mut builder = Converter::builder()
         .options(cli.options(today::today()))
         .descent_guard(descent_guard())
+        .macro_definitions(cli.macro_definitions())
+        .expansion_depth_limit(cli.expansion_depth_limit)
+        .expansion_count_limit(cli.expansion_count_limit)
         .recovery(if cli.strict {
             Recovery::Strict
         } else {

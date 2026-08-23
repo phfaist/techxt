@@ -349,6 +349,115 @@ fn the_today_option_is_set_from_the_clock() {
     assert!(matches!(year.parse::<i32>(), Ok(2020..=2200)), "{date:?}");
 }
 
+// ----------------------------------------------------- macro definitions (§16 M9)
+
+/// What `macros.tex` converts to with its definitions honoured — the default.
+const MACROS_EXPANDED: &str = concat!(
+    "The techxt converter honours 𝑎𝑚𝑠𝑚𝑎𝑡ℎ definitions, so a state written |ψ⟩ is ",
+    "expanded before it is rendered.\n",
+    "\n",
+    "Aside: a definition made in the document is a definition the converter keeps. ",
+    "(end of aside)\n",
+);
+
+#[test]
+fn a_documents_own_definitions_are_honoured_by_default() {
+    // Three macros and an environment, defined and used as a paper defines and uses them:
+    // `\pkg` renders through techxt's own `\emph`, `\ket` builds a formula, `\tool`
+    // substitutes a word, and the `aside` environment wraps its body in both halves of
+    // its definition. Nothing is reported — a definition is a construct techxt
+    // understands, and an expansion is text like any other.
+    assert_run(&[&fixture("macros.tex")], MACROS_EXPANDED, "", 0);
+}
+
+#[test]
+fn the_no_macro_definitions_flag_reads_the_definers_without_honouring_them() {
+    // techxt 0.1.0's behaviour, on the same document: the definitions are consumed so
+    // that no body leaks into the text, and every use of what they defined is an unknown
+    // construct. `\tool` and `\pkg` render as nothing (their `{amsmath}` is an ordinary
+    // group and survives), `\ket` likewise inside the formula, and the `aside`
+    // environment cannot even be resolved — which techy reports as an error, so the run
+    // exits 1 where the honoured one exits 0.
+    let result = run(&[&fixture("macros.tex"), "--no-macro-definitions"]);
+    assert_eq!(
+        result.stdout,
+        concat!(
+            "The converter honours amsmath definitions, so a state written |ψ⟩ is ",
+            "expanded before it is rendered.\n",
+            "\n",
+            "a definition made in the document is a definition the converter keeps.\n",
+        )
+    );
+    assert!(
+        result.stderr.contains("unknown environment ‘aside’"),
+        "{:?}",
+        result.stderr
+    );
+    assert_eq!(result.code, 1);
+}
+
+#[test]
+fn a_small_expansion_count_budget_stops_a_runaway() {
+    // techy-xp detects no cycles; the count budget is what ends `\def\x{\x}\x`. The
+    // budget here is a fiftieth of the default so that the test costs milliseconds — the
+    // cost of reaching one grows with the square of the budget.
+    let result = run_with_stdin(&["--expansion-count-limit", "50"], r"\def\x{\x}\x");
+    assert_eq!(result.stdout, "\\x\n", "the invocation is left unexpanded");
+    assert!(
+        result.stderr.contains("past the budget of 50"),
+        "{:?}",
+        result.stderr
+    );
+    assert!(result.stderr.contains("error: "), "{:?}", result.stderr);
+    assert_eq!(
+        result.code, 1,
+        "a document cut off by a budget is not clean"
+    );
+}
+
+#[test]
+fn a_small_expansion_depth_budget_stops_a_nesting_runaway() {
+    // The other budget and the other runaway: two macros that expand into each other with
+    // something left over each time, so the frames stack instead of looping flat.
+    let result = run_with_stdin(
+        &["--expansion-depth-limit", "4"],
+        r"\def\a{\b x}\def\b{\a y}\a",
+    );
+    assert!(
+        result.stderr.contains("stack 5 expansion frames"),
+        "{:?}",
+        result.stderr
+    );
+    assert_eq!(result.code, 1);
+}
+
+#[test]
+fn a_refused_command_is_a_warning_shown_at_the_default_verbosity() {
+    // PLAN.md §10.6 as amended for M9 phase 3. techy-xp raises its refusals as errors —
+    // it must, since a strict parse aborts on one — and techxt reports them as warnings,
+    // because a command it refuses *by name* cannot rank worse than one it has never
+    // heard of. So the document converts, the reader is told exactly which TeX feature
+    // was not acted on, and the exit code stays 0.
+    let result = run_with_stdin(&[], r"A \expandafter B and \ifx C\fi D");
+    assert_eq!(result.stdout, "A B and CD\n");
+    assert_eq!(result.stderr.matches("warning: ").count(), 3);
+    assert!(!result.stderr.contains("error: "), "{:?}", result.stderr);
+    assert!(
+        result
+            .stderr
+            .contains("‘\\expandafter’ reorders the token stream"),
+        "the message is techy-xp's own: {:?}",
+        result.stderr
+    );
+    assert_eq!(result.code, 0);
+
+    // And `-q` still silences the report without changing the outcome.
+    let quiet = run_with_stdin(&["-q"], r"A \expandafter B and \ifx C\fi D");
+    assert_eq!(quiet.stdout, "A B and CD\n");
+    assert_eq!(quiet.stderr, "");
+    assert_eq!(quiet.code, 0);
+}
+
 // ------------------------------------------------------ diagnostics and exit codes
 
 #[test]
@@ -494,6 +603,16 @@ fn help_and_version_are_answered_without_reading_anything() {
     assert_eq!(help.code, 0);
     assert!(help.stdout.contains("--math-mode"), "{}", help.stdout);
     assert!(help.stdout.contains("--input-dir"), "{}", help.stdout);
+    assert!(
+        help.stdout.contains("--no-macro-definitions"),
+        "{}",
+        help.stdout
+    );
+    assert!(
+        help.stdout.contains("--expansion-count-limit"),
+        "{}",
+        help.stdout
+    );
     assert!(help.stderr.is_empty());
 
     let version = run(&["--version"]);

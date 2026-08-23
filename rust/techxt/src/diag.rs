@@ -57,6 +57,25 @@
 //! (`core.specs.unresolvable-command`, `latexlike.environments.unknown-environment`, …);
 //! when techxt drives the parse itself they are merged into the returned collection
 //! ahead of the render diagnostics.
+//!
+//! # The one severity techxt overrules
+//!
+//! techy-xp's **refusals** — `\expandafter`, the TeX conditionals, category codes,
+//! registers, counter commands, the `techy-xp.presets.*-unsupported` family — are raised
+//! upstream at *error* severity, because a strict parse has to abort on one.
+//! [`Converter::latex_to_text`](crate::Converter::latex_to_text) restamps them as
+//! **warnings** while merging, keeping the identifier, the message and the payload
+//! exactly as techy-xp wrote them (the traceback frame is the one casualty: techy has no
+//! public way to carry it onto a rebuilt diagnostic).
+//!
+//! The reason is the table above. An unknown construct is a warning here, so a construct
+//! techxt refuses *by name* — a construct it understands better than one it has never
+//! heard of — must not rank worse. The expansion budgets
+//! (`techy-xp.expand.*-budget-exceeded`) are **not** covered: a budget means the document
+//! was cut off, and the text really is incomplete.
+//!
+//! A refusal also suppresses the [`UnknownMacro`] it would otherwise earn on its way
+//! through the renderer, so one refused command is one diagnostic (PLAN.md §10.6).
 
 use alloc::string::String;
 
