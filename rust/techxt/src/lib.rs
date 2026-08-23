@@ -167,7 +167,7 @@
 //! ```
 //! use std::sync::Arc;
 //!
-//! use techxt::convert::{Latexlike, NodeRef};
+//! use techxt::convert::{LatexlikeXp, NodeRef};
 //! use techxt::def::{Category, MacroDef, TextHandler, TextRule};
 //! use techxt::flow::{Flow, FlowItem};
 //! use techxt::render::{RenderCx, RenderError};
@@ -180,7 +180,7 @@
 //! impl TextHandler for Twice {
 //!     fn render(
 //!         &self,
-//!         _node: NodeRef<'_, Latexlike>,
+//!         _node: NodeRef<'_, LatexlikeXp>,
 //!         cx: &mut RenderCx<'_, '_>,
 //!     ) -> Result<Flow, RenderError> {
 //!         // Rendering the argument through the context is what makes `\twice{\emph{x}}`
@@ -244,18 +244,21 @@
 //! `\input`, writing the result — belongs to the embedder; the `techxt` command-line
 //! program in the `techxt-cli` crate is one such embedder.
 //!
-//! **Minimal dependencies:** the runtime dependencies are exactly [`techy`] (the parser)
-//! and [`unicode-width`](https://docs.rs/unicode-width) (display width of the rendered
-//! text, for column accounting in the layout engine). There are no cargo features: the
+//! **Minimal dependencies:** the runtime dependencies are exactly [`techy`] (the parser),
+//! [`techy_xp`] (techy's latexlike preset carrying macro expansion, PLAN.md §16 M9) and
+//! [`unicode-width`](https://docs.rs/unicode-width) (display width of the rendered
+//! text, for column accounting in the layout engine). techy-xp adds no crate to the tree
+//! that techy had not already put there. There are no cargo features: the
 //! definition library is plain Rust modules that a user references explicitly, so a
 //! build that never mentions a module drops it through dead-code elimination.
 //!
-//! **One dependency for an embedder:** every techy type that appears in techxt's public
-//! API — [`Diagnostics`](convert::Diagnostics), [`Severity`](convert::Severity),
+//! **One dependency for an embedder:** every upstream type that appears in techxt's
+//! public API — [`Diagnostics`](convert::Diagnostics), [`Severity`](convert::Severity),
 //! [`Recovery`](convert::Recovery), [`SourceResolver`](convert::SourceResolver),
-//! [`NodeRef`](convert::NodeRef), [`TreeRecomposer`](convert::TreeRecomposer) and the
-//! rest — is re-exported from [`convert`]. They are techy's own types, not wrappers, so
-//! naming `techy` directly stays exactly equivalent.
+//! [`NodeRef`](convert::NodeRef), [`TreeRecomposer`](convert::TreeRecomposer), techy-xp's
+//! [`LatexlikeXp`](convert::LatexlikeXp) and the rest — is re-exported from [`convert`].
+//! They are the upstream crates' own types, not wrappers, so naming `techy` or
+//! `techy_xp` directly stays exactly equivalent.
 //!
 //! **No-panic policy:** this library never panics on document input, no matter how
 //! malformed. A caller contract violation (for instance an out-of-range index passed to
@@ -291,15 +294,23 @@
 //! links, graphics, titling, the preamble and the `document` environment, `\input` with
 //! a caller-supplied resolver, and the generated ~1000-entry symbol table.
 //!
+//! **Macro definitions are honoured** (PLAN.md §16 M9): `\newcommand`, `\renewcommand`,
+//! `\providecommand`, `\newenvironment`, `\renewenvironment`, `\def`, `\gdef`, `\let`,
+//! `\edef`, `\xdef` and `\NewDocumentCommand` define, and a later use of the defined
+//! macro expands, through [`techy_xp`]'s token reader. Definitions are scoped as TeX
+//! scopes them, and
+//! [`ConverterBuilder::macro_definitions`](convert::ConverterBuilder::macro_definitions)
+//! turns the whole of it off. See [`defs::preamble`].
+//!
 //! Mathematics is complete too, in all three
 //! [modes](convert::MathMode): the atom model with TeX's spacing classes, sub- and
 //! superscripts through unicode's script characters, `\frac` and `\sqrt`, the display
 //! environments, and matrices — inline, and as multi-line boxes with delimiters drawn
 //! to height.
 //!
-//! **Not published to crates.io**, and not publishable while [`techy`] is a git
-//! dependency: a release on crates.io cannot carry one. Publication waits for techy's
-//! own release.
+//! **Not published to crates.io**, and not publishable while [`techy`] and [`techy_xp`]
+//! are git dependencies: a release on crates.io cannot carry one. Publication waits for
+//! their own releases.
 //!
 //! ## Deliberate omissions
 //!
@@ -309,9 +320,11 @@
 //! - **Label and reference resolution.** `\ref`, `\eqref` and `\cite` render markers
 //!   (`<ref>`, `<cit.>`) rather than numbers: resolving them needs a second pass over
 //!   the document, and citations need the bibliography besides. See [`defs::refs`].
-//! - **`\newcommand` expansion.** A user-defined macro's body is parsed and dropped,
-//!   and a later use of the macro is an unknown command. Expansion needs a TeX mouth.
-//!   See [`defs::preamble`].
+//! - **TeX's conditionals, category codes, registers and counters.** `\ifx`, `\catcode`,
+//!   `\count` and `\setcounter` are read and reported rather than acted on — techy-xp
+//!   declines them by design, and a document reaching one is told which feature is
+//!   missing rather than left to guess. `\DeclareMathOperator` is likewise declared and
+//!   dropped: the operator it names is not defined. See [`defs::preamble`].
 //! - **Numbering beyond headings.** Theorems, figures, tables and equations are not
 //!   numbered, and counters (`\arabic{page}`) render as nothing; heading numbers are
 //!   the one exception. See [`defs::theorems`].
@@ -330,8 +343,9 @@
 //!   [`NodeSlice`](convert::NodeSlice): techy's recomposer takes a whole tree, and its
 //!   context has no public constructor. Convert the tree, or drive the renderer
 //!   yourself as shown above.
-//! - **Generalization over the language.** Every type here is concrete over techy's
-//!   `Latexlike` preset and over the `()` tree annotation.
+//! - **Generalization over the language.** Every type here is concrete over techy-xp's
+//!   `LatexlikeXp` — techy's latexlike preset plus the expanding reader the definers of
+//!   [`defs::preamble`] write into — and over the `()` tree annotation.
 //! - **Python and JavaScript bindings.** Planned as sibling folders (`python/`, `js/`)
 //!   of the repository root; the module-based organization of [`defs`] was chosen with
 //!   wasm dead-code elimination in mind.

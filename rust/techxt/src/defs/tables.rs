@@ -35,7 +35,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use techy::core::node::NodeRef;
-use techy::latexlike::{CallableType, Latexlike};
+use techy::latexlike::CallableType;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{Category, EnvDef, MacroDef, Template, TextHandler, TextRule};
 use crate::diag::UnsupportedIgnored;
@@ -130,7 +131,7 @@ struct Tabular;
 impl TextHandler for Tabular {
     fn render(
         &self,
-        node: NodeRef<'_, Latexlike>,
+        node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let alignments = parse_alignments(&colspec_source(node, cx));
@@ -160,7 +161,7 @@ struct Rule;
 impl TextHandler for Rule {
     fn render(
         &self,
-        node: NodeRef<'_, Latexlike>,
+        node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let mut flow = Flow::new();
@@ -182,7 +183,7 @@ impl TextHandler for Rule {
 /// The ancestor walk is what makes the count "one per table" exact rather than
 /// approximate: a `tabular` nested in a cell of another owns its own spans, and the
 /// outer table must not report them a second time.
-fn spans_a_column(node: NodeRef<'_, Latexlike>) -> bool {
+fn spans_a_column(node: NodeRef<'_, LatexlikeXp>) -> bool {
     node.descendants().any(|descendant| {
         descendant.callable_type() == Some(CallableType::Macro)
             && descendant.name() == Some(MULTICOLUMN)
@@ -191,7 +192,7 @@ fn spans_a_column(node: NodeRef<'_, Latexlike>) -> bool {
 }
 
 /// The innermost table environment `node` sits in, if any.
-fn enclosing_table(node: NodeRef<'_, Latexlike>) -> Option<NodeRef<'_, Latexlike>> {
+fn enclosing_table(node: NodeRef<'_, LatexlikeXp>) -> Option<NodeRef<'_, LatexlikeXp>> {
     let mut current = node.parent();
     while let Some(ancestor) = current {
         if ancestor.callable_type() == Some(CallableType::Environment)
@@ -224,7 +225,7 @@ enum Align {
 /// Answers an empty specification for a table with no `colspec` argument at all — a
 /// tree parsed against a different definition set — which reads as "every column is
 /// left-aligned", the same default an over-short specification gets.
-fn colspec_source(node: NodeRef<'_, Latexlike>, cx: &RenderCx<'_, '_>) -> String {
+fn colspec_source(node: NodeRef<'_, LatexlikeXp>, cx: &RenderCx<'_, '_>) -> String {
     let Ok(Some(nodes)) = node.argument_content_nodes_named("colspec") else {
         return String::new();
     };

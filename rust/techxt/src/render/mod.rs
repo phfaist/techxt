@@ -113,8 +113,9 @@ use techy::core::constructs::DescentLimitApproaching;
 use techy::core::node::{NodeKind, NodeRef};
 use techy::core::DescentWarning;
 use techy::error::{Diagnostic, Diagnostics, Severity};
-use techy::latexlike::{GroupType, Latexlike, MathGroupForm};
+use techy::latexlike::{GroupType, MathGroupForm};
 use techy::recompose::{ConcatPieces, Recompose, RecomposeContext, Recomposer};
+use techy_xp::lang::LatexlikeXp;
 
 use crate::convert::{FootnoteStyle, Options};
 use crate::def::{embedded_rule, CallableKind, RuleTable};
@@ -188,7 +189,7 @@ impl<'a> TextRenderer<'a> {
     /// Note a document-wide span, so that a diagnostic with no node to point at still
     /// has a position. Called by the converter before the fold, and by the fold itself
     /// on the first node it sees.
-    pub(crate) fn note_document_span(&mut self, node: NodeRef<'_, Latexlike>) {
+    pub(crate) fn note_document_span(&mut self, node: NodeRef<'_, LatexlikeXp>) {
         if self.run.document_span.is_none() {
             self.run.document_span = Some(node.span().clone());
         }
@@ -207,7 +208,7 @@ impl<'a> TextRenderer<'a> {
     // ------------------------------------------------------------------ per kind
 
     /// Characters (PLAN.md §9.1).
-    fn chars(&self, node: NodeRef<'_, Latexlike>, state: &RenderState) -> Flow {
+    fn chars(&self, node: NodeRef<'_, LatexlikeXp>, state: &RenderState) -> Flow {
         // `chars()` reads the node's own payload, resolved against the node's own
         // source: the one text-reading operation that is safe on any tree (PLAN.md
         // §1.6). `span_content()` would be wrong on a transformed tree, silently.
@@ -270,7 +271,7 @@ impl<'a> TextRenderer<'a> {
     /// By default a comment renders as *nothing at all* — not even the newline that
     /// ends it, which is exactly what LaTeX does and why `A% note` followed by `B` is
     /// one word `AB`.
-    fn comment(&self, node: NodeRef<'_, Latexlike>) -> Flow {
+    fn comment(&self, node: NodeRef<'_, LatexlikeXp>) -> Flow {
         if !self.config.options.keep_comments {
             return Flow::new();
         }
@@ -294,7 +295,7 @@ impl<'a> TextRenderer<'a> {
     /// A group (PLAN.md §9.1).
     fn group(
         &mut self,
-        node: NodeRef<'_, Latexlike>,
+        node: NodeRef<'_, LatexlikeXp>,
         state: &RenderState,
     ) -> Recompose<Flow, RenderState> {
         match node.group_type() {
@@ -342,7 +343,7 @@ impl<'a> TextRenderer<'a> {
     /// environment is another — and all of them have to answer alike.
     fn math_group(
         &mut self,
-        node: NodeRef<'_, Latexlike>,
+        node: NodeRef<'_, LatexlikeXp>,
         state: &RenderState,
         form: MathGroupForm,
     ) -> Recompose<Flow, RenderState> {
@@ -367,9 +368,9 @@ impl<'a> TextRenderer<'a> {
     /// A callable: find its rule (PLAN.md §10.3), then run it (PLAN.md §10.4).
     fn callable(
         &mut self,
-        node: NodeRef<'_, Latexlike>,
+        node: NodeRef<'_, LatexlikeXp>,
         state: &RenderState,
-        cx: &mut RecomposeContext<'_, Latexlike, ()>,
+        cx: &mut RecomposeContext<'_, LatexlikeXp, ()>,
     ) -> Recompose<Flow, RenderState> {
         // Read the configuration *out* of `self` first: it is a shared reference with
         // the converter's lifetime, so the rule it yields outlives the mutable borrow
@@ -406,7 +407,7 @@ impl RendererOps for TextRenderer<'_> {
     }
 }
 
-impl Recomposer<Latexlike, ()> for TextRenderer<'_> {
+impl Recomposer<LatexlikeXp, ()> for TextRenderer<'_> {
     type State = RenderState;
     type Piece = Flow;
     /// The fold itself never fails: a rule that cannot render its construct becomes a
@@ -417,9 +418,9 @@ impl Recomposer<Latexlike, ()> for TextRenderer<'_> {
 
     fn recompose_node(
         &mut self,
-        node: NodeRef<'_, Latexlike, ()>,
+        node: NodeRef<'_, LatexlikeXp, ()>,
         state: &RenderState,
-        cx: &mut RecomposeContext<'_, Latexlike, ()>,
+        cx: &mut RecomposeContext<'_, LatexlikeXp, ()>,
     ) -> Result<Recompose<Flow, RenderState>, Infallible> {
         self.note_document_span(node);
         Ok(match node.kind() {
@@ -456,7 +457,7 @@ impl Recomposer<Latexlike, ()> for TextRenderer<'_> {
 ///
 /// The structural test is the reliable one: techy parses `\verb|x_1|` into a group of
 /// class [`GroupType::Verbatim`] holding one characters node.
-fn in_verbatim_group(node: NodeRef<'_, Latexlike>) -> bool {
+fn in_verbatim_group(node: NodeRef<'_, LatexlikeXp>) -> bool {
     node.parent()
         .and_then(|parent| parent.group_type())
         .is_some_and(|group_type| group_type == GroupType::Verbatim)
@@ -467,7 +468,7 @@ fn in_verbatim_group(node: NodeRef<'_, Latexlike>) -> bool {
 /// Asked of the environment's definition rather than guessed from the text: a techxt
 /// environment records what its body is (`EnvBodyKind::Verbatim`), which is the whole
 /// point of one definition serving both parsing and rendering.
-fn in_verbatim_body(node: NodeRef<'_, Latexlike>) -> bool {
+fn in_verbatim_body(node: NodeRef<'_, LatexlikeXp>) -> bool {
     let Some(body_list) = node.parent() else {
         return false;
     };
@@ -526,7 +527,7 @@ mod tests {
     use crate::def::{TextHandler, TextRule};
     use crate::layout::{render, LayoutOptions};
 
-    fn parse(converter: &Converter, latex: &str) -> NodeTree<Latexlike> {
+    fn parse(converter: &Converter, latex: &str) -> NodeTree<LatexlikeXp> {
         converter.language().parse(latex).expect("parses").tree
     }
 
@@ -537,7 +538,7 @@ mod tests {
     impl TextHandler for EnterFigure {
         fn render(
             &self,
-            _node: NodeRef<'_, Latexlike>,
+            _node: NodeRef<'_, LatexlikeXp>,
             cx: &mut RenderCx<'_, '_>,
         ) -> Result<Flow, RenderError> {
             let derived = RenderState {
@@ -555,7 +556,7 @@ mod tests {
     impl TextHandler for ReportFloat {
         fn render(
             &self,
-            _node: NodeRef<'_, Latexlike>,
+            _node: NodeRef<'_, LatexlikeXp>,
             cx: &mut RenderCx<'_, '_>,
         ) -> Result<Flow, RenderError> {
             Ok(Flow::text(match cx.state().float {
@@ -606,16 +607,16 @@ mod tests {
         inner: TextRenderer<'a>,
     }
 
-    impl Recomposer<Latexlike, ()> for ShoutingWrapper<'_> {
+    impl Recomposer<LatexlikeXp, ()> for ShoutingWrapper<'_> {
         type State = RenderState;
         type Piece = Flow;
         type Error = Infallible;
 
         fn recompose_node(
             &mut self,
-            node: NodeRef<'_, Latexlike, ()>,
+            node: NodeRef<'_, LatexlikeXp, ()>,
             state: &RenderState,
-            cx: &mut RecomposeContext<'_, Latexlike, ()>,
+            cx: &mut RecomposeContext<'_, LatexlikeXp, ()>,
         ) -> Result<Recompose<Flow, RenderState>, Infallible> {
             if let Some(text) = node.chars() {
                 return Ok(Recompose::Emit(Flow::from_plain_text(&text.to_uppercase())));
@@ -690,16 +691,16 @@ mod tests {
         inner: TextRenderer<'a>,
     }
 
-    impl Recomposer<Latexlike, ()> for StarWrapper<'_> {
+    impl Recomposer<LatexlikeXp, ()> for StarWrapper<'_> {
         type State = RenderState;
         type Piece = Flow;
         type Error = Infallible;
 
         fn recompose_node(
             &mut self,
-            node: NodeRef<'_, Latexlike, ()>,
+            node: NodeRef<'_, LatexlikeXp, ()>,
             state: &RenderState,
-            cx: &mut RecomposeContext<'_, Latexlike, ()>,
+            cx: &mut RecomposeContext<'_, LatexlikeXp, ()>,
         ) -> Result<Recompose<Flow, RenderState>, Infallible> {
             if node.macro_name() == Some("star") {
                 let mut flow = Flow::new();

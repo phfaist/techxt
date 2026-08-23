@@ -4,7 +4,8 @@ use alloc::borrow::Cow;
 use alloc::sync::Arc;
 
 use techy::core::node::NodeRef;
-use techy::latexlike::{CallableType, Latexlike};
+use techy::latexlike::CallableType;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::flow::Flow;
 use crate::render::{RenderCx, RenderError};
@@ -43,7 +44,7 @@ impl CallableKind {
     }
 
     /// The techxt kind of the callable `node` is, or `None` when it is not a callable.
-    pub fn of(node: NodeRef<'_, Latexlike>) -> Option<CallableKind> {
+    pub fn of(node: NodeRef<'_, LatexlikeXp>) -> Option<CallableKind> {
         node.callable_type()
             .and_then(CallableKind::from_callable_type)
     }
@@ -118,7 +119,7 @@ pub trait TextHandler: Send + Sync + core::fmt::Debug {
     /// Render `node`, reading everything else through `cx`.
     fn render(
         &self,
-        node: NodeRef<'_, Latexlike>,
+        node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError>;
 }

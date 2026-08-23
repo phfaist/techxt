@@ -13,7 +13,7 @@ use techxt::flow::Flow;
 use techxt::render::{RenderCx, RenderError};
 use techxt::{Converter, ConverterBuilder, Options};
 use techy::core::node::NodeRef;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 fn text(latex: &str) -> String {
     Converter::standard()
@@ -241,7 +241,7 @@ fn a_failing_handler_costs_its_construct_and_nothing_else() {
     impl TextHandler for AlwaysFails {
         fn render(
             &self,
-            _node: NodeRef<'_, Latexlike>,
+            _node: NodeRef<'_, LatexlikeXp>,
             _cx: &mut RenderCx<'_, '_>,
         ) -> Result<Flow, RenderError> {
             Err(RenderError::Handler {
@@ -275,7 +275,7 @@ fn a_handler_reads_its_arguments_through_the_context() {
     impl TextHandler for Stars {
         fn render(
             &self,
-            _node: NodeRef<'_, Latexlike>,
+            _node: NodeRef<'_, LatexlikeXp>,
             cx: &mut RenderCx<'_, '_>,
         ) -> Result<Flow, RenderError> {
             assert!(cx.arg_provided("text"));
@@ -314,7 +314,7 @@ fn a_handler_can_register_footnotes_and_document_metadata() {
     impl TextHandler for Note {
         fn render(
             &self,
-            _node: NodeRef<'_, Latexlike>,
+            _node: NodeRef<'_, LatexlikeXp>,
             cx: &mut RenderCx<'_, '_>,
         ) -> Result<Flow, RenderError> {
             let body = cx.arg("text")?.unwrap_or_default();
@@ -329,7 +329,7 @@ fn a_handler_can_register_footnotes_and_document_metadata() {
     impl TextHandler for Title {
         fn render(
             &self,
-            _node: NodeRef<'_, Latexlike>,
+            _node: NodeRef<'_, LatexlikeXp>,
             cx: &mut RenderCx<'_, '_>,
         ) -> Result<Flow, RenderError> {
             let title = cx.arg("text")?.unwrap_or_default();
@@ -539,7 +539,7 @@ fn a_suppressed_error_still_counts_as_an_error() {
     impl TextHandler for AlwaysFails {
         fn render(
             &self,
-            _node: NodeRef<'_, Latexlike>,
+            _node: NodeRef<'_, LatexlikeXp>,
             _cx: &mut RenderCx<'_, '_>,
         ) -> Result<Flow, RenderError> {
             Err(RenderError::Handler {

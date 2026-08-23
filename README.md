@@ -119,11 +119,13 @@ cargo test --workspace
 cargo build -p techxt --target thumbv7em-none-eabihf   # the no_std proof
 ```
 
-The library is `no_std` + `alloc` and its runtime dependencies are exactly `techy`
-and `unicode-width`; there are no cargo features. Every `techy` type that appears in
-techxt's public API is re-exported from `techxt::convert`, so an embedder takes one
-dependency and not two — the command-line program in `techxt-cli/` is the proof of
-it, and depends on `techxt`, `clap` and `stacker` alone.
+The library is `no_std` + `alloc` and its runtime dependencies are exactly `techy`,
+[`techy-xp`](https://github.com/phfaist/techy-xp) (techy's latexlike preset carrying
+macro expansion) and `unicode-width`; there are no cargo features. Every `techy` or
+`techy-xp` type that appears in techxt's public API is re-exported from
+`techxt::convert`, so an embedder takes one dependency and not three — the
+command-line program in `techxt-cli/` is the proof of it, and depends on `techxt`,
+`clap` and `stacker` alone.
 
 ## Status and availability
 
@@ -131,9 +133,9 @@ Version 0.1.0: everything [`PLAN.md`](PLAN.md) specifies is implemented, and CI 
 the tree to `cargo fmt --check`, `clippy -D warnings`, denied rustdoc warnings, the
 1.86 MSRV, and a `no_std` build for `thumbv7em-none-eabihf`.
 
-**Not published to crates.io.** `techxt` depends on `techy` through a pinned git
-revision, and a crates.io release cannot carry a git dependency — so techxt is used
-from a git dependency of its own until `techy` is published:
+**Not published to crates.io.** `techxt` depends on `techy` and `techy-xp` through
+pinned git revisions, and a crates.io release cannot carry a git dependency — so
+techxt is used from a git dependency of its own until those are published:
 
 ```toml
 [dependencies]

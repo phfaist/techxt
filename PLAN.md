@@ -86,6 +86,14 @@ techxt/                        # repo root (language-neutral)
   Runtime dependencies: exactly `techy` (git dependency pinned to a specific rev of
   `https://github.com/phfaist/techy`; switch to a crates.io version once techy
   publishes) and `unicode-width`. Dev-dependency: `proptest`.
+  - **Amended for M9:** the runtime set is exactly `techy`, `techy-xp` and
+    `unicode-width`. `techy-xp` supplies `LatexlikeXp` and `XpDriver`, the language
+    the converter parses through (§16 M9); it is a git dependency pinned like techy,
+    and pinned to a rev that itself pins the *same* techy rev — cargo cannot unify
+    two revs of one git dependency, so the two pins move in lockstep. Its own
+    dependencies are techy and `hashbrown`, techy's map choice and already in the
+    tree through techy, so the crate graph gains no node. Still no cargo features,
+    and `techxt-cli` still names neither upstream crate.
 - `techxt-cli`: depends on `techxt`, `clap` (derive), std.
 - **No cargo features.** The definitions library is organized as Rust modules the
   user references explicitly; unreferenced modules are removed by dead-code
@@ -697,6 +705,22 @@ with that knob and ignored; if techy has no such knob, `\\` takes the star only
   `\hypersetup`, `\graphicspath`, `\bibliographystyle`, `\bibliography` →
   arguments consumed, rule `Skip` (no diagnostic — they are *known*).
 
+  **Amended for M9 (phase 2):** the *defining* commands of that list are no longer
+  parse-and-discard. `\newcommand`, `\renewcommand`, `\providecommand`,
+  `\newenvironment`, `\renewenvironment` and `\def` — plus `\gdef`, `\let`, `\edef`,
+  `\xdef` and `\NewDocumentCommand`, which this list never had — are registered as
+  techy-xp's definer specs through the `CallableSpecSource` seam, so each parses its
+  invocation the way *it* defines and installs a macro the reader expands. The rule
+  stays `Skip` (a definition contributes no text) and no diagnostic is raised, so the
+  §9.8 promise above is unchanged; the shapes listed here are what
+  `ConverterBuilder::macro_definitions(MacroDefinitions::Declared)` falls back to.
+  Every definer is registered with `RedefinitionRule::Always`: techxt's
+  unknown-command catch-all (§10.6) resolves every name, so "is this name new?" cannot
+  be answered on this stack. `\DeclareMathOperator` stays a declaration — techy-xp
+  ships no definer for it. techy-xp's `refusals_package` is seeded below every
+  category, so `\expandafter` and the conditionals are diagnosed by name while
+  `\setcounter` and the other names this list declares keep techxt's silent answer.
+
 ---
 
 ## 10. Definitions model (`techxt::def`)
@@ -865,10 +889,12 @@ impl Converter {
 pub struct Conversion { pub text: String, pub diagnostics: Diagnostics<Option<String>> }
 ```
 Settled API constraints: annotation fixed to `A = ()` — callers with annotated trees
-use techy's cheap zero-copy `tree.annotate(|_| ())`; language fixed to `Latexlike`;
-**no `NodeSlice` entry point in v1** (techy's driver folds whole trees; if a subtree
-entry exists in techy at implementation time it may be added as
-`node_to_text(NodeRef)`, otherwise omit). `tree_to_text`/`tree_to_flow` are
+use techy's cheap zero-copy `tree.annotate(|_| ())`; language fixed to `Latexlike`
+(**amended for M9:** to techy-xp's `LatexlikeXp`, techy's latexlike preset carrying
+the expanding token reader — read `Latexlike` as `LatexlikeXp` throughout the block
+above, and see §16 M9); **no `NodeSlice` entry point in v1** (techy's driver folds
+whole trees; if a subtree entry exists in techy at implementation time it may be
+added as `node_to_text(NodeRef)`, otherwise omit). `tree_to_text`/`tree_to_flow` are
 infallible (§10.4). For wrapping consumers: drive `TreeRecomposer` over
 `Converter::renderer()` yourself, then call
 `TextRenderer::finish(self) -> RenderFinish { pub trailing: Flow, pub diagnostics:
@@ -1068,6 +1094,16 @@ kind ⇒ first-level numbering) — that is the intended semantics.
   handler; wrapping the recomposer; layout guarantees), READMEs, CHANGELOG, version
   0.1.0. Do not publish to crates.io while the techy git dependency remains (note
   in README).
+- **M9 — macro expansion (techy-xp).** *Amendment to the list above.* Honour
+  `\newcommand`, `\renewcommand`, `\def`, `\let` and the environment definers at
+  token-reading time by parsing through techy-xp's `LatexlikeXp`/`XpDriver` rather
+  than techy's bare `Latexlike`/`LatexlikeDriver`, retiring the §17 omission. Four
+  phases: the language switch alone, seeding no definer, so techy-xp's lockstep
+  property makes the output byte-identical and the existing suite is the proof; then
+  the definer wiring — definition scopes, expansion budgets, and refusal diagnostics
+  for what techy-xp declines (conditionals, category codes, registers, counters);
+  then tests and the CLI surface for the new diagnostics; then the web app and the
+  documentation. Every phase ends green under full CI, not just the milestone.
 
 ## 17. Deliberate omissions / future work (documented, not implemented)
 
@@ -1079,6 +1115,27 @@ generated words ("Theorem", "Abstract"); streaming incremental layout; serde;
 `LatexlikeLang` and tree annotations; Python (`python/`, maturin) and JS/wasm
 (`js/`) sibling bindings — the module-based defs organization was chosen with wasm
 dead-code elimination in mind.
+
+**Amended for M9:** `\newcommand` expansion is no longer deferred — §16 M9 delivers
+it through techy-xp, as of phase 2. The entry stays in the list above as the record of
+what the first shape omitted. What techy-xp itself declines stays omitted: TeX's
+conditionals, category codes, registers and counters are reported, not acted on.
+
+Three things phase 2 leaves for later, each documented where a reader meets it:
+
+- **The expansion budgets are not configurable.** They stay at techy-xp's defaults
+  (256 deep, 100 000 expansions per reader). A self-referential macro is bounded only
+  by the count budget, which takes tens of seconds to reach, and a macro whose body
+  names itself twice (`\def\x{\x\x}`) builds a tree deep enough to overflow the stack
+  when it is dropped. Both are upstream properties — techy-xp's own presets do the
+  same — and a `ConverterBuilder` knob for the two budgets is the answer.
+- **`\input` is state-transparent**, so a definition made inside an included file does
+  not survive it (`defs::inputs`). LaTeX's `\input` persists; making it a choice needs
+  the rest of techy's `persist_state` consequences thought through.
+- **`RedefinitionRule::Always` costs two diagnostics.**
+  `techy-xp.define.definition-already-exists` and `…definition-does-not-exist` can
+  never be raised on techxt's stack. Recovering them needs an upstream way to keep a
+  fallback provider out of a definer's existence query.
 
 The wasm binding under [`web/crate/`](web/crate) is **not** the planned `js/`
 package: it is app-private, shaped for one UI, and free to change without a release

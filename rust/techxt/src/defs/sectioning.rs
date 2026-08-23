@@ -35,7 +35,7 @@
 use alloc::string::String;
 
 use techy::core::node::NodeRef;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::convert::HeadingStyle;
 use crate::def::{Category, MacroDef, TextRule};
@@ -143,7 +143,7 @@ struct Heading {
 impl crate::def::TextHandler for Heading {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let starred = cx.arg_provided("star");

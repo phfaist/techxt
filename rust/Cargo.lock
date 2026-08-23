@@ -461,6 +461,7 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "techy",
+ "techy-xp",
  "unicode-width",
 ]
 
@@ -490,6 +491,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "techy-xp"
+version = "0.1.0"
+dependencies = [
+ "hashbrown",
+ "techy",
 ]
 
 [[package]]

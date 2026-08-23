@@ -20,12 +20,13 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use techy::core::node::{NodeKind, NodeRef, SlotRole};
-use techy::latexlike::{EnvironmentSyntax, Latexlike, LatexlikeInvocationSyntax};
+use techy::latexlike::{EnvironmentSyntax, LatexlikeInvocationSyntax};
+use techy_xp::lang::LatexlikeXp;
 
 /// One pending piece of work: a subtree to emit, or text to emit after it.
 enum Step<'t> {
     /// Emit this node, and schedule what follows it.
-    Node(NodeRef<'t, Latexlike>),
+    Node(NodeRef<'t, LatexlikeXp>),
     /// Emit this text (an environment's `\end{…}`, a group's closing delimiter).
     Tail(String),
 }
@@ -35,11 +36,11 @@ enum Step<'t> {
 /// Byte-exact for a parsed tree, tolerant-recovery shapes included; on a tree that was
 /// synthesized or transformed it reproduces what the nodes now *say*, which is the only
 /// answer that is meaningful there.
-pub(crate) fn latex_source(node: NodeRef<'_, Latexlike>) -> String {
+pub(crate) fn latex_source(node: NodeRef<'_, LatexlikeXp>) -> String {
     let mut out = String::new();
     let mut stack: Vec<Step<'_>> = alloc::vec![Step::Node(node)];
     // Reused across nodes so that a wide tree does not reallocate per callable.
-    let mut children: Vec<NodeRef<'_, Latexlike>> = Vec::new();
+    let mut children: Vec<NodeRef<'_, LatexlikeXp>> = Vec::new();
 
     while let Some(step) = stack.pop() {
         let node = match step {
@@ -115,8 +116,8 @@ pub(crate) fn latex_source(node: NodeRef<'_, Latexlike>) -> String {
 /// Skipping attached content is what makes `\input{a.tex}` re-emit as the invocation it
 /// was written as, rather than as the file it pulled in.
 fn collect_scoped_children<'t>(
-    node: NodeRef<'t, Latexlike>,
-    out: &mut Vec<NodeRef<'t, Latexlike>>,
+    node: NodeRef<'t, LatexlikeXp>,
+    out: &mut Vec<NodeRef<'t, LatexlikeXp>>,
 ) {
     let children = node.children();
     if children.is_empty() {

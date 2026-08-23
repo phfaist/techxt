@@ -27,11 +27,13 @@ use techy::core::specs::{ArgumentSpec, CallableSpec, ScopeOp, SpecsProvider};
 use techy::core::ParsingStateDelta;
 use techy::error::ParseError;
 use techy::latexlike::{
-    EnvironmentBehavior, EnvironmentInvocation, EnvironmentSpec, Latexlike, Mode, VerbatimBehavior,
+    EnvironmentBehavior, EnvironmentInvocation, EnvironmentSpec, Mode, VerbatimBehavior,
 };
 use techy::serialize::SerializableObject;
 use techy::source::SourceResolver;
+use techy_xp::lang::{LatexlikeXp, DEFAULT_GLOBAL_SCOPE_NAME, DEFAULT_LOCAL_SCOPE_NAME};
 
+use crate::convert::MacroDefinitions;
 use crate::render::ListKind;
 
 use super::TextRule;
@@ -43,7 +45,7 @@ use super::TextRule;
 /// arguments is the whole of it, and everything else keeps its default behaviour.
 #[derive(Debug)]
 pub struct TechxtMacroSpec {
-    arguments: Vec<Arc<ArgumentSpec<Latexlike>>>,
+    arguments: Vec<Arc<ArgumentSpec<LatexlikeXp>>>,
     rule: Option<TextRule>,
 }
 
@@ -56,7 +58,7 @@ impl TechxtMacroSpec {
     /// [`Options::unknown_macro`](crate::Options::unknown_macro), which is exactly what
     /// a parse-only entry should do.
     pub fn new(
-        arguments: Vec<Arc<ArgumentSpec<Latexlike>>>,
+        arguments: Vec<Arc<ArgumentSpec<LatexlikeXp>>>,
         rule: impl Into<Option<TextRule>>,
     ) -> TechxtMacroSpec {
         TechxtMacroSpec {
@@ -73,10 +75,10 @@ impl TechxtMacroSpec {
 
 // The `SerializableObject` supertrait of `CallableSpec` is fully defaulted; an empty
 // impl opts out of serialization, which techxt does not offer in v1 (PLAN.md §2).
-impl SerializableObject<Latexlike> for TechxtMacroSpec {}
+impl SerializableObject<LatexlikeXp> for TechxtMacroSpec {}
 
-impl CallableSpec<Latexlike> for TechxtMacroSpec {
-    fn arguments(&self) -> &[Arc<ArgumentSpec<Latexlike>>] {
+impl CallableSpec<LatexlikeXp> for TechxtMacroSpec {
+    fn arguments(&self) -> &[Arc<ArgumentSpec<LatexlikeXp>>] {
         &self.arguments
     }
 }
@@ -112,21 +114,22 @@ impl CallableSpec<Latexlike> for TechxtMacroSpec {
 ///
 /// use techxt::def::{CallableSpecSource, SpecBuildCx};
 /// use techy::core::specs::CallableSpec;
-/// use techy::latexlike::{Latexlike, MacroSpec};
+/// use techy::latexlike::MacroSpec;
+/// use techy_xp::lang::LatexlikeXp;
 ///
 /// /// Registers a macro that takes no arguments at all, whatever else it declares.
 /// #[derive(Debug)]
 /// struct Bare;
 ///
 /// impl CallableSpecSource for Bare {
-///     fn callable_spec(&self, _cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<Latexlike>>> {
+///     fn callable_spec(&self, _cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<LatexlikeXp>>> {
 ///         Some(Arc::new(MacroSpec::new(Vec::new())))
 ///     }
 /// }
 /// ```
 pub trait CallableSpecSource: Send + Sync + core::fmt::Debug {
     /// The spec to register, or `None` to register the one techxt would have built.
-    fn callable_spec(&self, cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<Latexlike>>>;
+    fn callable_spec(&self, cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<LatexlikeXp>>>;
 }
 
 /// What a [`CallableSpecSource`] may read about the converter being built
@@ -136,9 +139,12 @@ pub trait CallableSpecSource: Send + Sync + core::fmt::Debug {
 /// that depends on the converter's own configuration — rather than only on what the
 /// definition declares — reads that configuration.
 #[non_exhaustive]
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct SpecBuildCx {
     source_resolver: Option<Arc<dyn SourceResolver<Option<String>>>>,
+    macro_definitions: MacroDefinitions,
+    local_scope: Box<str>,
+    global_scope: Box<str>,
 }
 
 impl SpecBuildCx {
@@ -157,12 +163,63 @@ impl SpecBuildCx {
         self.source_resolver.as_ref()
     }
 
-    /// The context for a converter built with this resolver.
-    pub(crate) fn with_source_resolver(
-        resolver: Option<Arc<dyn SourceResolver<Option<String>>>>,
+    /// Whether this converter honours the macro-defining commands
+    /// ([`ConverterBuilder::macro_definitions`](crate::ConverterBuilder::macro_definitions)).
+    ///
+    /// It is what [`defs::preamble`](crate::defs::preamble)'s definer entries key on:
+    /// under [`Honored`](MacroDefinitions::Honored) each hands over the techy-xp definer
+    /// spec that actually makes the definition, and under
+    /// [`Declared`](MacroDefinitions::Declared) each declines, so the entry registers the
+    /// argument-consuming declaration it was written with instead.
+    pub fn macro_definitions(&self) -> MacroDefinitions {
+        self.macro_definitions
+    }
+
+    /// The name of the **local** definition scope this converter seeded — what a definer
+    /// spec must be built to write into.
+    ///
+    /// It is the driver's own
+    /// ([`XpDriver::local_scope_name`](techy_xp::lang::XpDriver::local_scope_name)),
+    /// read off the very driver the converter will parse with, so a spec built from it
+    /// cannot target a scope the seed does not hold. Writing into a scope the seed lacks
+    /// is not an error anywhere: techy creates it *innermost*, which silently inverts
+    /// techy-xp's ordering invariant.
+    pub fn local_scope_name(&self) -> &str {
+        &self.local_scope
+    }
+
+    /// The name of the **global** definition scope — `\gdef`'s target. See
+    /// [`local_scope_name`](Self::local_scope_name).
+    pub fn global_scope_name(&self) -> &str {
+        &self.global_scope
+    }
+
+    /// The context for a converter built this way.
+    pub(crate) fn for_converter(
+        source_resolver: Option<Arc<dyn SourceResolver<Option<String>>>>,
+        macro_definitions: MacroDefinitions,
+        local_scope: &str,
+        global_scope: &str,
     ) -> SpecBuildCx {
         SpecBuildCx {
-            source_resolver: resolver,
+            source_resolver,
+            macro_definitions,
+            local_scope: local_scope.into(),
+            global_scope: global_scope.into(),
+        }
+    }
+}
+
+/// The two scope names default to techy-xp's own, which is what an
+/// [`XpDriver`](techy_xp::lang::XpDriver) nobody reconfigured answers — so a context
+/// built by hand agrees with the shipped converter.
+impl Default for SpecBuildCx {
+    fn default() -> SpecBuildCx {
+        SpecBuildCx {
+            source_resolver: None,
+            macro_definitions: MacroDefinitions::default(),
+            local_scope: DEFAULT_LOCAL_SCOPE_NAME.into(),
+            global_scope: DEFAULT_GLOBAL_SCOPE_NAME.into(),
         }
     }
 }
@@ -173,6 +230,9 @@ impl core::fmt::Debug for SpecBuildCx {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("SpecBuildCx")
             .field("has_source_resolver", &self.source_resolver.is_some())
+            .field("macro_definitions", &self.macro_definitions)
+            .field("local_scope", &self.local_scope)
+            .field("global_scope", &self.global_scope)
             .finish_non_exhaustive()
     }
 }
@@ -185,7 +245,7 @@ impl core::fmt::Debug for SpecBuildCx {
 /// each take one expression argument).
 #[derive(Debug)]
 pub struct TechxtSpecialsSpec {
-    arguments: Vec<Arc<ArgumentSpec<Latexlike>>>,
+    arguments: Vec<Arc<ArgumentSpec<LatexlikeXp>>>,
     rule: Option<TextRule>,
 }
 
@@ -194,7 +254,7 @@ impl TechxtSpecialsSpec {
     ///
     /// As for [`TechxtMacroSpec::new`], the rule is optional.
     pub fn new(
-        arguments: Vec<Arc<ArgumentSpec<Latexlike>>>,
+        arguments: Vec<Arc<ArgumentSpec<LatexlikeXp>>>,
         rule: impl Into<Option<TextRule>>,
     ) -> TechxtSpecialsSpec {
         TechxtSpecialsSpec {
@@ -209,10 +269,10 @@ impl TechxtSpecialsSpec {
     }
 }
 
-impl SerializableObject<Latexlike> for TechxtSpecialsSpec {}
+impl SerializableObject<LatexlikeXp> for TechxtSpecialsSpec {}
 
-impl CallableSpec<Latexlike> for TechxtSpecialsSpec {
-    fn arguments(&self) -> &[Arc<ArgumentSpec<Latexlike>>] {
+impl CallableSpec<LatexlikeXp> for TechxtSpecialsSpec {
+    fn arguments(&self) -> &[Arc<ArgumentSpec<LatexlikeXp>>] {
         &self.arguments
     }
 }
@@ -257,10 +317,10 @@ pub enum EnvBodyKind {
 /// [`body_state_delta`](EnvironmentBehavior::body_state_delta) here instead.
 #[derive(Debug)]
 pub struct TechxtEnvironmentBehavior {
-    arguments: Vec<Arc<ArgumentSpec<Latexlike>>>,
+    arguments: Vec<Arc<ArgumentSpec<LatexlikeXp>>>,
     body: EnvBodyKind,
     body_behavior: BodyBehavior,
-    body_provider: Option<Arc<dyn SpecsProvider<Latexlike>>>,
+    body_provider: Option<Arc<dyn SpecsProvider<LatexlikeXp>>>,
     rule: Option<TextRule>,
 }
 
@@ -272,14 +332,14 @@ pub struct TechxtEnvironmentBehavior {
 #[derive(Debug)]
 enum BodyBehavior {
     Standard(StandardBody),
-    Verbatim(VerbatimBehavior<Latexlike>),
+    Verbatim(VerbatimBehavior<LatexlikeXp>),
 }
 
 /// A behaviour that overrides nothing, kept solely to reach the default body parser.
 #[derive(Debug)]
 struct StandardBody;
 
-impl EnvironmentBehavior<Latexlike> for StandardBody {}
+impl EnvironmentBehavior<LatexlikeXp> for StandardBody {}
 
 impl TechxtEnvironmentBehavior {
     /// An environment behaviour with these argument specs, body kind and text rule.
@@ -287,7 +347,7 @@ impl TechxtEnvironmentBehavior {
     /// As for [`TechxtMacroSpec::new`], the rule is optional: an environment may
     /// declare only how it parses.
     pub fn new(
-        arguments: Vec<Arc<ArgumentSpec<Latexlike>>>,
+        arguments: Vec<Arc<ArgumentSpec<LatexlikeXp>>>,
         body: EnvBodyKind,
         rule: impl Into<Option<TextRule>>,
     ) -> TechxtEnvironmentBehavior {
@@ -317,7 +377,7 @@ impl TechxtEnvironmentBehavior {
     /// nothing has to pop it when the body ends.
     pub fn with_body_provider(
         mut self,
-        provider: Arc<dyn SpecsProvider<Latexlike>>,
+        provider: Arc<dyn SpecsProvider<LatexlikeXp>>,
     ) -> TechxtEnvironmentBehavior {
         self.body_provider = Some(provider);
         self
@@ -340,7 +400,7 @@ impl TechxtEnvironmentBehavior {
     /// this object again then fails, silently costing the environment its rule. The
     /// body's state delta belongs in [`body_state_delta`](EnvironmentBehavior::body_state_delta)
     /// here instead.
-    pub fn into_spec(self) -> EnvironmentSpec<Latexlike> {
+    pub fn into_spec(self) -> EnvironmentSpec<LatexlikeXp> {
         EnvironmentSpec::from_behavior(Arc::new(self))
     }
 
@@ -348,22 +408,22 @@ impl TechxtEnvironmentBehavior {
     ///
     /// This is step 2 of the dispatch chain for environments: `spec` → the concrete
     /// [`EnvironmentSpec`] → its behaviour → this type.
-    pub fn of(node: NodeRef<'_, Latexlike>) -> Option<&TechxtEnvironmentBehavior> {
+    pub fn of(node: NodeRef<'_, LatexlikeXp>) -> Option<&TechxtEnvironmentBehavior> {
         let spec = node.spec()?;
-        let environment = (&**spec as &dyn Any).downcast_ref::<EnvironmentSpec<Latexlike>>()?;
+        let environment = (&**spec as &dyn Any).downcast_ref::<EnvironmentSpec<LatexlikeXp>>()?;
         (environment.behavior() as &dyn Any).downcast_ref::<TechxtEnvironmentBehavior>()
     }
 }
 
-impl EnvironmentBehavior<Latexlike> for TechxtEnvironmentBehavior {
-    fn arguments(&self) -> &[Arc<ArgumentSpec<Latexlike>>] {
+impl EnvironmentBehavior<LatexlikeXp> for TechxtEnvironmentBehavior {
+    fn arguments(&self) -> &[Arc<ArgumentSpec<LatexlikeXp>>] {
         &self.arguments
     }
 
     fn body_state_delta(
         &self,
-        _invocation: EnvironmentInvocation<'_, Latexlike>,
-    ) -> Result<Option<ParsingStateDelta<Latexlike>>, ParseError<Option<String>>> {
+        _invocation: EnvironmentInvocation<'_, LatexlikeXp>,
+    ) -> Result<Option<ParsingStateDelta<LatexlikeXp>>, ParseError<Option<String>>> {
         let mut delta = ParsingStateDelta::new();
         let mut anything = false;
         if self.body == EnvBodyKind::Math {
@@ -381,8 +441,8 @@ impl EnvironmentBehavior<Latexlike> for TechxtEnvironmentBehavior {
 
     fn make_body_parser<'p>(
         &'p self,
-        invocation: EnvironmentInvocation<'p, Latexlike>,
-    ) -> Box<dyn ConstructParser<Latexlike, Output = EnvironmentBody<Latexlike>> + 'p> {
+        invocation: EnvironmentInvocation<'p, LatexlikeXp>,
+    ) -> Box<dyn ConstructParser<LatexlikeXp, Output = EnvironmentBody<LatexlikeXp>> + 'p> {
         match &self.body_behavior {
             BodyBehavior::Standard(standard) => standard.make_body_parser(invocation),
             BodyBehavior::Verbatim(verbatim) => verbatim.make_body_parser(invocation),
@@ -392,7 +452,7 @@ impl EnvironmentBehavior<Latexlike> for TechxtEnvironmentBehavior {
 
 /// The techxt rule embedded in a callable node's spec, if it has one (PLAN.md §10.3
 /// step 2).
-pub(crate) fn embedded_rule(node: NodeRef<'_, Latexlike>) -> Option<&TextRule> {
+pub(crate) fn embedded_rule(node: NodeRef<'_, LatexlikeXp>) -> Option<&TextRule> {
     let spec = node.spec()?;
     let object = &**spec as &dyn Any;
     if let Some(macro_spec) = object.downcast_ref::<TechxtMacroSpec>() {

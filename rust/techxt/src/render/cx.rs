@@ -6,9 +6,9 @@ use core::convert::Infallible;
 
 use techy::core::node::{NodeRef, ParsedArgument};
 use techy::error::{Diagnostic, Diagnostics};
-use techy::latexlike::Latexlike;
 use techy::recompose::{RecomposeContext, RecomposeError, Recomposer};
 use techy::source::SourceSpan;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::convert::Options;
 use crate::diag::TechxtCondition;
@@ -125,7 +125,7 @@ pub(crate) struct RunState {
 /// behind this trait is what lets [`RenderCx`] borrow it once and keep both, without
 /// the renderer's own lifetime parameter leaking into every handler signature.
 pub(crate) trait RendererOps:
-    Recomposer<Latexlike, (), State = RenderState, Piece = Flow, Error = Infallible>
+    Recomposer<LatexlikeXp, (), State = RenderState, Piece = Flow, Error = Infallible>
 {
     fn run(&self) -> &RunState;
     fn run_mut(&mut self) -> &mut RunState;
@@ -147,7 +147,7 @@ pub(crate) trait RendererOps:
 /// use techxt::flow::Flow;
 /// use techxt::render::{RenderCx, RenderError};
 /// use techy::core::node::NodeRef;
-/// use techy::latexlike::Latexlike;
+/// use techy_xp::lang::LatexlikeXp;
 ///
 /// /// Renders `\emph{…}` as `*…*`.
 /// #[derive(Debug)]
@@ -156,7 +156,7 @@ pub(crate) trait RendererOps:
 /// impl TextHandler for Stars {
 ///     fn render(
 ///         &self,
-///         _node: NodeRef<'_, Latexlike>,
+///         _node: NodeRef<'_, LatexlikeXp>,
 ///         cx: &mut RenderCx<'_, '_>,
 ///     ) -> Result<Flow, RenderError> {
 ///         let mut flow = Flow::text("*");
@@ -168,8 +168,8 @@ pub(crate) trait RendererOps:
 /// ```
 pub struct RenderCx<'a, 't> {
     renderer: &'a mut (dyn RendererOps + 'a),
-    cx: &'a mut RecomposeContext<'t, Latexlike, ()>,
-    node: NodeRef<'a, Latexlike, ()>,
+    cx: &'a mut RecomposeContext<'t, LatexlikeXp, ()>,
+    node: NodeRef<'a, LatexlikeXp, ()>,
     state: &'a RenderState,
 }
 
@@ -177,8 +177,8 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// Build a context around the node being rendered.
     pub(crate) fn new(
         renderer: &'a mut (dyn RendererOps + 'a),
-        cx: &'a mut RecomposeContext<'t, Latexlike, ()>,
-        node: NodeRef<'a, Latexlike, ()>,
+        cx: &'a mut RecomposeContext<'t, LatexlikeXp, ()>,
+        node: NodeRef<'a, LatexlikeXp, ()>,
         state: &'a RenderState,
     ) -> RenderCx<'a, 't> {
         RenderCx {
@@ -190,7 +190,7 @@ impl<'a, 't> RenderCx<'a, 't> {
     }
 
     /// The node being rendered.
-    pub(crate) fn node(&self) -> NodeRef<'a, Latexlike, ()> {
+    pub(crate) fn node(&self) -> NodeRef<'a, LatexlikeXp, ()> {
         self.node
     }
 
@@ -342,7 +342,7 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// Reassembled from node payloads, never read out of the source buffer, so it works
     /// on transformed trees too (PLAN.md §1.6). This is what the `KeepSource` policies
     /// and math's `Source` mode emit.
-    pub fn source_of(&self, node: NodeRef<'_, Latexlike>) -> Result<String, RenderError> {
+    pub fn source_of(&self, node: NodeRef<'_, LatexlikeXp>) -> Result<String, RenderError> {
         Ok(super::source::latex_source(node))
     }
 
@@ -448,7 +448,7 @@ impl<'a, 't> RenderCx<'a, 't> {
     }
 
     /// The argument called `name`, or a region error naming what went wrong.
-    fn argument(&self, name: &str) -> Result<&'a ParsedArgument<Latexlike>, RenderError> {
+    fn argument(&self, name: &str) -> Result<&'a ParsedArgument<LatexlikeXp>, RenderError> {
         let arguments = self.node.arguments().ok_or_else(|| {
             RenderError::region_detail("asked for an argument of a node that is not a callable")
         })?;
@@ -458,7 +458,7 @@ impl<'a, 't> RenderCx<'a, 't> {
     }
 
     /// The argument at `index`, or a region error naming what went wrong.
-    fn argument_at(&self, index: usize) -> Result<&'a ParsedArgument<Latexlike>, RenderError> {
+    fn argument_at(&self, index: usize) -> Result<&'a ParsedArgument<LatexlikeXp>, RenderError> {
         let arguments = self.node.arguments().ok_or_else(|| {
             RenderError::region_detail("asked for an argument of a node that is not a callable")
         })?;

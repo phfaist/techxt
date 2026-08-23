@@ -32,11 +32,11 @@ doc = false
 # resolver and the system clock, none of which the no_std library may touch.
 [dependencies]
 techxt = { path = "../techxt", version = "0.1.0" }
-# No `techy` here, deliberately. Everything the CLI needs of techy — `SourceResolver`
-# and `check_include_chain` for the sandboxed `\input` resolver, `Recovery::Strict` for
-# `--strict`, `Diagnostics` and `Severity` for the report — is re-exported by
-# `techxt::convert`, and this program is the proof that the re-exports are sufficient:
-# an embedder takes one dependency, not two (PLAN.md §2).
+# No `techy` or `techy-xp` here, deliberately. Everything the CLI needs of them —
+# `SourceResolver` and `check_include_chain` for the sandboxed `\input` resolver,
+# `Recovery::Strict` for `--strict`, `Diagnostics` and `Severity` for the report — is
+# re-exported by `techxt::convert`, and this program is the proof that the re-exports
+# are sufficient: an embedder takes one dependency, not three (PLAN.md §2).
 clap.workspace = true
 # Only the CLI may link this: it measures the real thread stack so that the descent
 # guard can use it (DECISIONS.md D9 item 3). See `descent_guard` in `main.rs`.

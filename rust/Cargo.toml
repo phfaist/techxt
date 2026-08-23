@@ -37,19 +37,32 @@ private_intra_doc_links = "warn"
 bare_urls = "warn"
 
 # Dependency versions live here so the members stay in lockstep and a bump is a
-# one-line change. PLAN.md §2 fixes the runtime set: `techxt` may depend on exactly
-# `techy` and `unicode-width`, `techxt-cli` on `techxt` and `clap` — plus, for the
-# CLI only, `stacker` (DECISIONS.md D9 item 3 authorizes it). The CLI does *not*
-# depend on techy: everything of techy's that it names — `SourceResolver`, the
-# `Recovery` policy `--strict` selects, the `Diagnostics` it filters and renders — is
-# re-exported by `techxt::convert`, which is what keeps an embedder at one
-# dependency.
+# one-line change. PLAN.md §2 (as amended for M9) fixes the runtime set: `techxt` may
+# depend on exactly `techy`, `techy-xp` and `unicode-width` (techy-xp's own deps are
+# techy and `hashbrown`, both already in the tree, so the crate graph gains no new
+# node), `techxt-cli` on
+# `techxt` and `clap` — plus, for the CLI only, `stacker` (DECISIONS.md D9 item 3
+# authorizes it). The CLI does *not* depend on techy: everything of techy's that it
+# names — `SourceResolver`, the `Recovery` policy `--strict` selects, the
+# `Diagnostics` it filters and renders — is re-exported by `techxt::convert`, which
+# is what keeps an embedder at one dependency.
 [workspace.dependencies]
 # techy is not on crates.io yet, so the dependency is a git revision pinned to the
 # exact commit the plan was written against (PLAN.md §3 describes that API). Switch
 # to a version requirement once techy publishes; until then techxt itself cannot be
 # published either (PLAN.md §16 M8).
 techy = { git = "https://github.com/phfaist/techy", rev = "aa71c83" }
+# Macro definition and expansion for techy's latexlike preset (PLAN.md M9): the
+# `LatexlikeXp` language and `XpDriver` the converter parses through, so that
+# `\newcommand`, `\def` and friends are expanded at token-reading time. Pinned to a
+# git revision like techy, and to a revision that itself pins the *same* techy
+# revision as this workspace — cargo cannot unify two revs of one git dependency,
+# so the two pins move in lockstep.
+#
+# TEMP: path dependency while the pinned revision awaits its push to GitHub; flip to
+#   techy-xp = { git = "https://github.com/phfaist/techy-xp", rev = "9869be0" }
+# as soon as that rev is public. A committed manifest must use the git form.
+techy-xp = { path = "../../techy-xp" }
 # East-Asian-width-aware display width of the rendered text, for the layout engine's
 # column accounting (PLAN.md §7). no_std-capable and dependency-free.
 unicode-width = "0.2"

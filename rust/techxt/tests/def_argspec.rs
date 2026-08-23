@@ -12,13 +12,14 @@ use techy::core::node::{NodeRef, NodeTree, ParsedArgument};
 use techy::core::specs::ArgumentSpec;
 use techy::core::token::GroupRule;
 use techy::core::ParsingStateDelta;
-use techy::latexlike::{Event, GroupType, Latexlike, Mode};
+use techy::latexlike::{Event, GroupType, Mode};
+use techy_xp::lang::LatexlikeXp;
 
 use techxt::def::{Category, DefinitionSet, MacroDef, TextRule};
 use techxt::Converter;
 
 /// The first callable named `name` in `tree`.
-fn callable<'t>(tree: &'t NodeTree<Latexlike>, name: &str) -> NodeRef<'t, Latexlike> {
+fn callable<'t>(tree: &'t NodeTree<LatexlikeXp>, name: &str) -> NodeRef<'t, LatexlikeXp> {
     tree.root()
         .descendants()
         .find(|node| node.name() == Some(name))
@@ -65,7 +66,7 @@ fn an_argument_can_carry_a_parsing_state_delta() {
 fn an_argument_can_refuse_a_preceding_space() {
     // `\\`'s optional `[len]` must not reach across whitespace, or `\\ [a]` would lose
     // its bracketed text. Only a hand-built parser can say so.
-    let bracket = Arc::new(GroupRule::<Latexlike> {
+    let bracket = Arc::new(GroupRule::<LatexlikeXp> {
         group_type: GroupType::Content,
         open: String::from("["),
         close: String::from("]"),

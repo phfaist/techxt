@@ -30,6 +30,27 @@
 //! rather than by downcast at step 2 (PLAN.md §10.3); the fallback table
 //! [`DefinitionSet`](crate::def::DefinitionSet) builds holds it either way.
 //!
+//! # An included file's definitions end with the file
+//!
+//! techy's inclusion spec takes a mandatory `persist_state` decision, and techxt's answer
+//! is **state-transparent**: the parsing state at the `\input` governs how the included
+//! content is read, and nothing the included file changes continues past it. Definitions
+//! travel *in*, and not back *out*:
+//!
+//! | written | what happens |
+//! |---|---|
+//! | `\newcommand\greet[1]{Hi #1}` before the `\input`, `\greet{x}` inside the included file | the macro expands inside the file |
+//! | `\newcommand\greet[1]{Hi #1}` **inside** the included file, `\greet{x}` after it | `\greet` is an unknown macro |
+//! | `\gdef\x{a}` inside the included file, `\x` after it | the same: a `\gdef` escapes every *group*, and a file is not a group |
+//!
+//! Until PLAN.md §16 M9 nothing could observe this, because techxt defined nothing.
+//! It can now, and the answer is a real limitation: `\input{macros.tex}` in a preamble is
+//! how many real documents keep their definitions. LaTeX's own `\input` opens no group
+//! and so persists; techxt does not follow it here, because `persist_state: true` would
+//! carry *every* state change out of the file — a mode left in math, a group left open —
+//! into the rest of the document. Making it a choice is future work (PLAN.md §17);
+//! `tests/defs_macros.rs` pins what is true today.
+//!
 //! # An unresolved include is a note, not an error
 //!
 //! Resolution is opt-in twice over: the converter needs a resolver, and the resolver
@@ -45,7 +66,8 @@ use alloc::sync::Arc;
 
 use techy::core::node::NodeRef;
 use techy::core::specs::CallableSpec;
-use techy::latexlike::{input_macro_spec, BodyMarker, Latexlike};
+use techy::latexlike::{input_macro_spec, BodyMarker};
+use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{CallableSpecSource, Category, MacroDef, SpecBuildCx, TextHandler};
 use crate::diag::InputNotResolved;
@@ -80,12 +102,13 @@ pub fn category() -> Category {
 struct Resolving;
 
 impl CallableSpecSource for Resolving {
-    fn callable_spec(&self, cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<Latexlike>>> {
+    fn callable_spec(&self, cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<LatexlikeXp>>> {
         cx.source_resolver()?;
         Some(Arc::new(input_macro_spec(
-            // State-transparent: a definition made inside an included file ends with the
-            // file. techxt has no `\newcommand`, so nothing observes the difference
-            // today, and transparency is the choice that cannot surprise anyone.
+            // State-transparent (`persist_state: false`): every state change an included
+            // file makes ends with the file. Since PLAN.md §16 M9 that is **observable**,
+            // and the module documentation's *An included file's definitions end with the
+            // file* says exactly what it costs.
             false,
             // Not the node's body: the attached content is retrieved by slot name, and
             // marking it as a body would make every generic body walk descend into a
@@ -102,7 +125,7 @@ struct Include;
 impl TextHandler for Include {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         if let Some(content) = cx.attached()? {

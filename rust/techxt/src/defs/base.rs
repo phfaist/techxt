@@ -48,7 +48,8 @@ use techy::core::node::NodeRef;
 use techy::core::specs::ArgumentSpec;
 use techy::core::token::GroupRule;
 use techy::core::ParsingStateDelta;
-use techy::latexlike::{Event, GroupType, Latexlike, Mode};
+use techy::latexlike::{Event, GroupType, Mode};
+use techy_xp::lang::LatexlikeXp;
 
 use crate::convert::FootnoteStyle;
 use crate::def::{Category, MacroDef, SpecialsDef, TextHandler, TextRule};
@@ -166,7 +167,7 @@ fn breaks(category: &mut Category) {
 /// [`require_adjacent`](OptionalGroupArgumentParser::require_adjacent) provides
 /// (pylatexenc's `allow_pre_space=False`), and it is the whole reason this argument
 /// cannot be written as the `o` code.
-fn optional_length() -> ArgumentSpec<Latexlike> {
+fn optional_length() -> ArgumentSpec<LatexlikeXp> {
     let delimiters = Arc::new(GroupRule {
         group_type: GroupType::Content,
         open: String::from("["),
@@ -489,7 +490,7 @@ fn typesetting_only(category: &mut Category) {
 /// The exit is an [`Event`](techy::latexlike::Event) rather than a mode assignment
 /// (techy restores the enclosing non-math context, rules and all), and it is harmless
 /// outside math, where the enclosing context is the one being restored.
-fn exiting_math(name: &str) -> ArgumentSpec<Latexlike> {
+fn exiting_math(name: &str) -> ArgumentSpec<LatexlikeXp> {
     ArgumentSpec::new(
         techy::core::constructs::GroupArgumentParser::new(GroupType::Content),
         name,
@@ -498,7 +499,7 @@ fn exiting_math(name: &str) -> ArgumentSpec<Latexlike> {
 }
 
 /// An argument parsed as math (`\ensuremath{…}`).
-fn entering_math(name: &str) -> ArgumentSpec<Latexlike> {
+fn entering_math(name: &str) -> ArgumentSpec<LatexlikeXp> {
     ArgumentSpec::new(
         techy::core::constructs::GroupArgumentParser::new(GroupType::Content),
         name,
@@ -595,7 +596,7 @@ struct FixedText(&'static str);
 impl TextHandler for FixedText {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         _cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         Ok(Flow::text(self.0))
@@ -614,7 +615,7 @@ struct TextScript(ScriptKind);
 impl TextHandler for TextScript {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let argument = cx.arg(CONTENT)?.unwrap_or_default();
@@ -635,7 +636,7 @@ struct Emit(FlowItem);
 impl TextHandler for Emit {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         _cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let mut flow = Flow::new();
@@ -656,7 +657,7 @@ struct LineBreak;
 impl TextHandler for LineBreak {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let state = cx.state();
@@ -689,7 +690,7 @@ struct Alignment;
 impl TextHandler for Alignment {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let state = cx.state();
@@ -714,7 +715,7 @@ struct HorizontalRule;
 impl TextHandler for HorizontalRule {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let mut flow = Flow::new();
@@ -742,7 +743,7 @@ struct Footnote;
 impl TextHandler for Footnote {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         match cx.options().footnote_style {
@@ -779,7 +780,7 @@ struct ModeShift {
 impl TextHandler for ModeShift {
     fn render(
         &self,
-        node: NodeRef<'_, Latexlike>,
+        node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         // An `\ensuremath` written outside a formula *opens* one, so it answers `Source`

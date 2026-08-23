@@ -34,7 +34,7 @@ use alloc::format;
 use alloc::string::String;
 
 use techy::core::node::NodeRef;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{Category, MacroDef, Template, TextHandler, TextRule};
 use crate::flow::Flow;
@@ -634,7 +634,7 @@ struct FixedAtom {
 impl TextHandler for FixedAtom {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let atom = Atom::from_text(self.text, self.cls);
@@ -652,7 +652,7 @@ struct OperatorName;
 impl TextHandler for OperatorName {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let upright = upright_state(cx);
@@ -692,7 +692,7 @@ struct Modulo {
 impl TextHandler for Modulo {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let rendered = cx.arg(MODULUS)?.unwrap_or_default();
@@ -719,7 +719,7 @@ struct Stacked(ScriptKind);
 impl TextHandler for Stacked {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         // Declaration order, as everywhere: the fold's side effects happen while a
@@ -751,7 +751,7 @@ struct Fraction;
 impl TextHandler for Fraction {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         // Declaration order: the fold's side effects happen while a region is folded.
@@ -771,7 +771,7 @@ struct Root;
 impl TextHandler for Root {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let index = cx.arg(INDEX)?;
@@ -794,7 +794,7 @@ struct SizedDelimiter;
 impl TextHandler for SizedDelimiter {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let rendered = cx.arg(DELIMITER)?.unwrap_or_default();

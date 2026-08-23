@@ -14,7 +14,8 @@ use std::borrow::Cow;
 use techy::core::specs::Package;
 use techy::core::{Language, ParsingState};
 use techy::error::Recovery;
-use techy::latexlike::{CallableType, Latexlike, LatexlikeDriver, MacroSpec};
+use techy::latexlike::{CallableType, MacroSpec};
+use techy_xp::lang::{LatexlikeXp, XpDriver};
 
 use techxt::convert::{
     UnknownEnvPolicy, UnknownMacroPolicy, UnknownMacroResolution, UnknownSpecialsPolicy,
@@ -105,10 +106,10 @@ fn the_rule_in_the_spec_beats_the_name_fallback_table() {
 fn a_foreign_tree_is_rendered_through_the_name_fallback_table() {
     // A tree parsed with somebody else's definitions carries plain techy specs, which
     // hold no techxt rule at all. The name table is what makes techxt useful on it.
-    let mut package = Package::<Latexlike>::new("foreign");
+    let mut package = Package::<LatexlikeXp>::new("foreign");
     package.insert(CallableType::Macro, "mark", MacroSpec::new(Vec::new()));
     let foreign = Language::new(
-        LatexlikeDriver::new(Recovery::Tolerant),
+        XpDriver::new(Recovery::Tolerant),
         ParsingState::lang_initial_with_packages([package]).expect("seed state"),
     );
     let tree = foreign.parse(r"a\mark b").expect("parses").tree;
@@ -121,10 +122,10 @@ fn a_foreign_tree_is_rendered_through_the_name_fallback_table() {
 
 #[test]
 fn a_foreign_tree_with_no_matching_name_falls_through_to_the_policy() {
-    let mut package = Package::<Latexlike>::new("foreign");
+    let mut package = Package::<LatexlikeXp>::new("foreign");
     package.insert(CallableType::Macro, "elsewhere", MacroSpec::new(Vec::new()));
     let foreign = Language::new(
-        LatexlikeDriver::new(Recovery::Tolerant),
+        XpDriver::new(Recovery::Tolerant),
         ParsingState::lang_initial_with_packages([package]).expect("seed state"),
     );
     let tree = foreign.parse(r"a\elsewhere b").expect("parses").tree;

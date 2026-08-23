@@ -6,12 +6,14 @@ use std::string::String;
 
 use techy::core::node::NodeRef;
 use techy::error::{Recovery, Severity};
-use techy::latexlike::{InputMacroSpec, Latexlike};
+use techy::latexlike::InputMacroSpec;
 use techy::source::SourceSpan;
 use techy::source::{
     check_include_chain, MapResolver, ResolveError, ResolvedContent, SourceResolver,
 };
+use techy_xp::lang::LatexlikeXp;
 
+use techxt::convert::MacroDefinitions;
 use techxt::def::{DefinitionSet, TechxtMacroSpec};
 use techxt::diag::InputNotResolved;
 use techxt::Converter;
@@ -157,41 +159,47 @@ fn the_title_block_measures_display_columns() {
 
 #[test]
 fn preamble_declarations_consume_their_arguments_and_say_nothing() {
-    for latex in [
-        r"\documentclass[12pt,a4paper]{article}",
-        r"\usepackage[utf8]{inputenc}",
-        r"\RequirePackage{amsmath}",
-        r"\newcommand*{\foo}[2][d]{body}",
-        r"\renewcommand{\foo}{body}",
-        r"\providecommand{\foo}{body}",
-        r"\def\foo{body}",
-        r"\newenvironment{env}[1][d]{begin}{end}",
-        r"\renewenvironment{env}{begin}{end}",
-        r"\newtheorem{thm}[counter]{Theorem}[section]",
-        r"\setlength{\parindent}{0pt}",
-        r"\addtolength{\parskip}{1ex}",
-        r"\setcounter{page}{1}",
-        r"\addtocounter{page}{1}",
-        r"\pagestyle{empty}",
-        r"\thispagestyle{plain}",
-        r"\hypersetup{colorlinks=true}",
-        r"\graphicspath{{figures/}}",
-        r"\bibliographystyle{plain}",
-        r"\bibliography{refs}",
-    ] {
-        let conversion = Converter::standard().latex_to_text(latex).expect("parses");
-        assert_eq!(conversion.text, "", "{latex:?} left text behind");
-        // Known constructs: rendering them as nothing is the complete answer, so
-        // nothing is reported.
-        assert!(
-            conversion.diagnostics.is_empty(),
-            "{latex:?} reported {:?}",
-            conversion
-                .diagnostics
-                .iter()
-                .map(|d| d.identifier())
-                .collect::<Vec<_>>()
-        );
+    // The defining commands are honoured now (PLAN.md §16 M9, and `tests/defs_macros.rs`
+    // for what that means), but *contributing nothing to the text* is unchanged: a
+    // definition renders as nothing whether it defined something or was merely consumed.
+    // Both converters are checked, because the property belongs to both.
+    for converter in [Converter::standard(), declared_only()] {
+        for latex in [
+            r"\documentclass[12pt,a4paper]{article}",
+            r"\usepackage[utf8]{inputenc}",
+            r"\RequirePackage{amsmath}",
+            r"\newcommand*{\foo}[2][d]{body}",
+            r"\renewcommand{\foo}{body}",
+            r"\providecommand{\foo}{body}",
+            r"\def\foo{body}",
+            r"\newenvironment{env}[1][d]{begin}{end}",
+            r"\renewenvironment{env}{begin}{end}",
+            r"\newtheorem{thm}[counter]{Theorem}[section]",
+            r"\setlength{\parindent}{0pt}",
+            r"\addtolength{\parskip}{1ex}",
+            r"\setcounter{page}{1}",
+            r"\addtocounter{page}{1}",
+            r"\pagestyle{empty}",
+            r"\thispagestyle{plain}",
+            r"\hypersetup{colorlinks=true}",
+            r"\graphicspath{{figures/}}",
+            r"\bibliographystyle{plain}",
+            r"\bibliography{refs}",
+        ] {
+            let conversion = converter.latex_to_text(latex).expect("parses");
+            assert_eq!(conversion.text, "", "{latex:?} left text behind");
+            // Known constructs: rendering them as nothing is the complete answer, so
+            // nothing is reported.
+            assert!(
+                conversion.diagnostics.is_empty(),
+                "{latex:?} reported {:?}",
+                conversion
+                    .diagnostics
+                    .iter()
+                    .map(|d| d.identifier())
+                    .collect::<Vec<_>>()
+            );
+        }
     }
 }
 
@@ -379,7 +387,7 @@ fn the_foreign_input_spec_resolves_its_rule_at_dispatch_step_3() {
         .language()
         .parse(r"\input{intro.tex}")
         .expect("parses");
-    let node: NodeRef<'_, Latexlike> = parsed.tree.root().child(0).expect("the invocation");
+    let node: NodeRef<'_, LatexlikeXp> = parsed.tree.root().child(0).expect("the invocation");
     let spec = node.spec().expect("a spec");
     let object = &**spec as &dyn Any;
     assert!(
@@ -387,7 +395,9 @@ fn the_foreign_input_spec_resolves_its_rule_at_dispatch_step_3() {
         "step 2 must miss: the spec is techy's, not techxt's"
     );
     assert!(
-        object.downcast_ref::<InputMacroSpec<Latexlike>>().is_some(),
+        object
+            .downcast_ref::<InputMacroSpec<LatexlikeXp>>()
+            .is_some(),
         "the registered spec is techy's inclusion spec"
     );
     // And the rule was still found, by name.
@@ -502,45 +512,66 @@ fn the_late_preamble_declarations_swallow_their_arguments() {
     );
 }
 
+/// The converter with the defining commands only declared — techxt 0.1.0's answer.
+fn declared_only() -> Converter {
+    Converter::builder()
+        .macro_definitions(MacroDefinitions::Declared)
+        .build()
+        .expect("builds")
+}
+
 #[test]
 fn a_definition_can_redefine_a_macro_techxt_knows() {
-    // The command argument is read as characters, so `\vec` in `{\vec}` is not the
-    // macro techxt has a rule for — it is four characters that render as nothing. Every
-    // physics preamble does this, and parsing it as markup made the whole document a
-    // failed conversion, because `\vec` takes an argument and there was none.
-    let converted = Converter::standard()
-        .latex_to_text("\\renewcommand{\\vec}[1]{\\mathbf{#1}}\nText.")
-        .expect("parses");
-    assert_eq!(converted.text, "Text.\n");
-    assert!(
-        converted.diagnostics.is_empty(),
-        "{:?}",
-        converted.diagnostics
-    );
+    // Every physics preamble does this, and parsing `{\vec}` as markup made the whole
+    // document a failed conversion, because `\vec` takes an argument and there was none.
+    // With the definers on, the definer reads the name without resolving it and the
+    // redefinition is simply made; with them off, `{\vec}` is four characters that
+    // render as nothing. Neither reaches the text, and neither reports anything — what
+    // a redefinition then *does* is `tests/defs_macros.rs`'s business.
+    for converter in [Converter::standard(), declared_only()] {
+        let converted = converter
+            .latex_to_text("\\renewcommand{\\vec}[1]{\\mathbf{#1}}\nText.")
+            .expect("parses");
+        assert_eq!(converted.text, "Text.\n");
+        assert!(
+            converted.diagnostics.is_empty(),
+            "{:?}",
+            converted.diagnostics
+        );
+    }
 }
 
 #[test]
 fn an_environment_definition_may_be_unbalanced() {
     // The two halves of a `\newenvironment` are deliberately unbalanced — that is what
-    // an environment definition *is* — and each is read as characters, so neither the
-    // unterminated `\begin` nor the orphan `\end` is a parse error.
-    let converted = Converter::standard()
-        .latex_to_text("\\newenvironment{myenv}{\\begin{center}\\bfseries}{\\end{center}}\nText.")
-        .expect("parses");
-    assert_eq!(converted.text, "Text.\n");
-    assert!(
-        converted.diagnostics.is_empty(),
-        "{:?}",
-        converted.diagnostics
-    );
+    // an environment definition *is* — so neither the unterminated `\begin` nor the
+    // orphan `\end` may be a parse error. The definer captures each half as a macro
+    // body; the off switch reads each as characters. Both are pinned, because parsing
+    // either half as markup is what used to fail.
+    for converter in [Converter::standard(), declared_only()] {
+        let converted = converter
+            .latex_to_text(
+                "\\newenvironment{myenv}{\\begin{center}\\bfseries}{\\end{center}}\nText.",
+            )
+            .expect("parses");
+        assert_eq!(converted.text, "Text.\n");
+        assert!(
+            converted.diagnostics.is_empty(),
+            "{:?}",
+            converted.diagnostics
+        );
+    }
 }
 
 #[test]
 fn a_definition_body_never_reaches_the_text() {
-    // Read as characters, staged, and dropped: the body is not rendered, and neither is
-    // a `#1` in it.
+    // The body of a definition is not document content: it is the macro's *meaning*, and
+    // it reaches the text only where the macro is used — which neither converter's
+    // reading of this document does. A `#1` in it never reaches the text at all.
+    let latex = r"\newcommand{\ket}[1]{\lvert #1 \rangle}between\def\x{body}after";
+    assert_eq!(text(latex), "betweenafter\n");
     assert_eq!(
-        text(r"\newcommand{\ket}[1]{\lvert #1 \rangle}between\def\x{body}after"),
+        declared_only().latex_to_text(latex).expect("parses").text,
         "betweenafter\n"
     );
 }

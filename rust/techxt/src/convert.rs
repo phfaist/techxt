@@ -38,10 +38,11 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use techy::latexlike::LatexlikeDriver;
+use techy_xp::lang::XpDriver;
 
 use crate::def::{
-    BuiltDefinitions, CallableKind, DefinitionSet, RuleTable, SpecBuildCx, TemplateError,
-    TemplateScope, TextRule,
+    BuiltDefinitions, CallableKind, DefinitionSet, RuleTable, ScopeFrame, SpecBuildCx,
+    TemplateError, TemplateScope, TextRule,
 };
 use crate::flow::Flow;
 use crate::layout::{render, LayoutOptions};
@@ -49,14 +50,15 @@ use crate::render::{RenderConfig, RenderState, TextRenderer};
 
 pub use crate::mathfmt::{FontStyle, FontStyleKind, MathWrapDelims, MatrixDelims};
 
-// --------------------------------------------------------------- techy, re-exported
+// --------------------------------------------------- techy and techy-xp, re-exported
 //
-// Every techy type that appears in techxt's own public API is re-exported here, so
-// that using techxt takes one dependency and not two (PLAN.md §2). They are techy's
-// types, not aliases: a `SourceResolver` implemented against `techxt::convert` is the
-// very trait techy's parser calls, and a `Diagnostics` returned by a conversion is the
-// one techy built. Naming `techy` directly keeps working and is exactly equivalent —
-// this is a convenience and a semver statement, not an abstraction layer.
+// Every techy (and techy-xp) type that appears in techxt's own public API is
+// re-exported here, so that using techxt takes one dependency and not three (PLAN.md
+// §2). They are the upstream types, not aliases: a `SourceResolver` implemented
+// against `techxt::convert` is the very trait techy's parser calls, and a
+// `Diagnostics` returned by a conversion is the one techy built. Naming `techy` or
+// `techy_xp` directly keeps working and is exactly equivalent — this is a convenience
+// and a semver statement, not an abstraction layer.
 
 /// techy's descent guard, re-exported so that embedders configuring
 /// [`ConverterBuilder::descent_guard`] need not name `techy::core` themselves.
@@ -70,12 +72,21 @@ pub use techy::core::{StdDescentGuard, StdDescentGuardInit};
 pub use techy::core::node::{NodeRef, NodeSlice, NodeTree};
 
 /// The techy pieces a definition of your own is built from: an argument spec for
-/// [`MacroDef::arg_spec`](crate::def::MacroDef::arg_spec), a callable spec for
-/// [`MacroDef::spec`](crate::def::MacroDef::spec), and the language every techxt type
-/// is concrete over (PLAN.md §11.1).
+/// [`MacroDef::arg_spec`](crate::def::MacroDef::arg_spec) and a callable spec for
+/// [`MacroDef::spec`](crate::def::MacroDef::spec).
 pub use techy::core::specs::{ArgumentSpec, CallableSpec};
 /// See [`ArgumentSpec`].
-pub use techy::latexlike::{EnvironmentSpec, Latexlike};
+pub use techy::latexlike::EnvironmentSpec;
+/// The parsing language every techxt type is concrete over (PLAN.md §11.1): techy's
+/// latexlike preset carrying techy-xp's expanding token reader, which is what
+/// `\newcommand` and `\def` are honored through (PLAN.md §16 M9).
+///
+/// The reader expands only what a *definer* has written into a definition scope, and
+/// [`defs::preamble`](crate::defs::preamble) seeds techy-xp's definers into one — so a
+/// document that defines a macro gets it expanded, and a document that defines none
+/// parses exactly as techy's own `Latexlike` parses it. Turn the definers off with
+/// [`ConverterBuilder::macro_definitions`].
+pub use techy_xp::lang::LatexlikeXp;
 
 /// The diagnostics channel: the collection a [`Conversion`] carries, one entry of it,
 /// the severity to filter by, and the parse error [`Converter::latex_to_text`] can fail
@@ -128,7 +139,7 @@ pub struct Converter {
 }
 
 struct Inner {
-    language: Language<Latexlike>,
+    language: Language<LatexlikeXp>,
     config: RenderConfig,
     /// The fold side of the descent guard (DECISIONS.md D9). The parse side lives on
     /// the `Language`; both come from the same `ConverterBuilder::descent_guard` call,
@@ -181,7 +192,7 @@ impl Converter {
     /// Convert a tree that has already been parsed — or transformed.
     ///
     /// Infallible: everything that can go wrong during rendering is a diagnostic.
-    pub fn tree_to_text(&self, tree: &NodeTree<Latexlike>) -> Conversion {
+    pub fn tree_to_text(&self, tree: &NodeTree<LatexlikeXp>) -> Conversion {
         let (flow, diagnostics) = self.tree_to_flow(tree);
         Conversion {
             text: self.lay_out(&flow),
@@ -193,7 +204,10 @@ impl Converter {
     ///
     /// Use this to lay the result out with options of your own, to inspect the token
     /// stream, or to splice the flow into a larger one.
-    pub fn tree_to_flow(&self, tree: &NodeTree<Latexlike>) -> (Flow, Diagnostics<Option<String>>) {
+    pub fn tree_to_flow(
+        &self,
+        tree: &NodeTree<LatexlikeXp>,
+    ) -> (Flow, Diagnostics<Option<String>>) {
         let mut renderer = self.renderer();
         // So that a diagnostic raised before any node is folded still has a position.
         renderer.note_document_span(tree.root());
@@ -220,7 +234,7 @@ impl Converter {
     ///
     /// It is `Send + Sync` and reusable; parse with it directly when you want the tree
     /// as well as the text.
-    pub fn language(&self) -> &Language<Latexlike> {
+    pub fn language(&self) -> &Language<LatexlikeXp> {
         &self.inner.language
     }
 
@@ -359,6 +373,9 @@ pub struct ConverterBuilder {
     overrides: Vec<(CallableKind, Box<str>, TextRule)>,
     recovery: Recovery,
     unknown_macro_resolution: UnknownMacroResolution,
+    macro_definitions: MacroDefinitions,
+    expansion_depth_limit: usize,
+    expansion_count_limit: usize,
     descent_guard: StdDescentGuardInit,
     source_resolver: Option<Arc<dyn techy::source::SourceResolver<Option<String>>>>,
 }
@@ -369,6 +386,9 @@ impl core::fmt::Debug for ConverterBuilder {
             .field("options", &self.options)
             .field("recovery", &self.recovery)
             .field("unknown_macro_resolution", &self.unknown_macro_resolution)
+            .field("macro_definitions", &self.macro_definitions)
+            .field("expansion_depth_limit", &self.expansion_depth_limit)
+            .field("expansion_count_limit", &self.expansion_count_limit)
             .field("descent_guard", &self.descent_guard)
             .field("has_source_resolver", &self.source_resolver.is_some())
             .finish_non_exhaustive()
@@ -382,6 +402,16 @@ impl Default for ConverterBuilder {
 }
 
 impl ConverterBuilder {
+    /// The default of [`expansion_depth_limit`](Self::expansion_depth_limit): 64 nested
+    /// expansions, where techy-xp's own default is 256. See that method for the
+    /// measurement behind the number.
+    pub const DEFAULT_EXPANSION_DEPTH_LIMIT: usize = 64;
+
+    /// The default of [`expansion_count_limit`](Self::expansion_count_limit): 20 000
+    /// expansions per parse, where techy-xp's own default is 100 000. See that method for
+    /// the measurement behind the number.
+    pub const DEFAULT_EXPANSION_COUNT_LIMIT: usize = 20_000;
+
     /// A builder with the shipped definitions, [`Options::default`], and tolerant
     /// recovery.
     pub fn new() -> ConverterBuilder {
@@ -391,6 +421,9 @@ impl ConverterBuilder {
             overrides: Vec::new(),
             recovery: Recovery::Tolerant,
             unknown_macro_resolution: UnknownMacroResolution::default(),
+            macro_definitions: MacroDefinitions::default(),
+            expansion_depth_limit: ConverterBuilder::DEFAULT_EXPANSION_DEPTH_LIMIT,
+            expansion_count_limit: ConverterBuilder::DEFAULT_EXPANSION_COUNT_LIMIT,
             descent_guard: StdDescentGuardInit::default(),
             source_resolver: None,
         }
@@ -549,6 +582,58 @@ impl ConverterBuilder {
         self
     }
 
+    /// Decide whether the macro-defining commands are *honoured* or only *declared*
+    /// (PLAN.md §16 M9).
+    ///
+    /// The default, [`MacroDefinitions::Honored`], makes `\newcommand`, `\def` and their
+    /// relatives define macros that later uses expand — and registers techy-xp's
+    /// refusals, so `\expandafter` and the TeX conditionals are diagnosed by name rather
+    /// than left unknown.
+    ///
+    /// ```
+    /// use techxt::convert::MacroDefinitions;
+    /// use techxt::Converter;
+    ///
+    /// let latex = r"\newcommand{\greet}[1]{Hello #1!}\greet{world}";
+    ///
+    /// let honored = Converter::standard();
+    /// assert_eq!(honored.latex_to_text(latex)?.text, "Hello world!\n");
+    ///
+    /// // Declared: the definition is consumed and dropped, and `\greet` is an unknown
+    /// // macro that takes no arguments — so only its `{world}` group survives.
+    /// let declared = Converter::builder()
+    ///     .macro_definitions(MacroDefinitions::Declared)
+    ///     .build()?;
+    /// assert_eq!(declared.latex_to_text(latex)?.text, "world\n");
+    /// # Ok::<(), Box<dyn core::error::Error>>(())
+    /// ```
+    ///
+    /// # When you would want it off
+    ///
+    /// Expansion costs parse time and memory proportional to what a document's macros
+    /// expand to, and it changes what the tree *is*: a defined macro's invocation is
+    /// replaced by the tokens of its body, so a consumer that walks the tree looking for
+    /// the author's own commands no longer finds them. Turn it off for a pipeline that
+    /// wants the document's surface syntax, for a corpus where an adversarial input's
+    /// expansion budget is not worth spending, or to reproduce techxt 0.1.0's output
+    /// exactly.
+    pub fn macro_definitions(mut self, macro_definitions: MacroDefinitions) -> ConverterBuilder {
+        self.macro_definitions = macro_definitions;
+        self
+    }
+
+    /// TODO-BUDGET-DEPTH
+    pub fn expansion_depth_limit(mut self, limit: usize) -> ConverterBuilder {
+        self.expansion_depth_limit = limit;
+        self
+    }
+
+    /// TODO-BUDGET-COUNT
+    pub fn expansion_count_limit(mut self, limit: usize) -> ConverterBuilder {
+        self.expansion_count_limit = limit;
+        self
+    }
+
     /// Build the converter, validating the definitions (PLAN.md §10.2).
     pub fn build(self) -> Result<Converter, BuildError> {
         let ConverterBuilder {
@@ -557,6 +642,9 @@ impl ConverterBuilder {
             overrides: override_list,
             recovery,
             unknown_macro_resolution,
+            macro_definitions,
+            expansion_depth_limit,
+            expansion_count_limit,
             descent_guard,
             source_resolver,
         } = self;
@@ -569,9 +657,43 @@ impl ConverterBuilder {
             UnknownMacroResolution::Accept => true,
             UnknownMacroResolution::Reject => false,
         };
-        let spec_cx = SpecBuildCx::with_source_resolver(source_resolver.clone());
+
+        // The driver is built *first*, before the definitions, because the definitions
+        // read two things off it: the names of the two definition scopes the definer
+        // specs write into, and the providers that seed those scopes. Both must be the
+        // driver's own — the leak hook that lets `\gdef` escape a group keys on the
+        // global scope's name, and a definer writing into a name the seed does not hold
+        // is not an error anywhere (techy creates the scope innermost, silently
+        // inverting techy-xp's ordering invariant). Reading them off one object is what
+        // makes them agree by construction.
+        //
+        // The latexlike driver carries the parse-time behavior; wrapping it in
+        // `XpDriver` is what installs the expanding token reader macro definitions are
+        // honored through (PLAN.md §16 M9), and it does so whichever way
+        // `macro_definitions` went: with no definer seeded the reader has nothing to
+        // expand and parses byte for byte as the bare `LatexlikeDriver` did — techy-xp's
+        // lockstep property. The two expansion budgets are techxt's own, lower than
+        // techy-xp's defaults for the reason `expansion_count_limit` gives. The
+        // resolver is handed to the wrapper, not the inner driver: the wrapper decides
+        // where it is needed.
+        let mut driver = XpDriver::wrapping(LatexlikeDriver::new(recovery))
+            .with_expansion_depth_limit(expansion_depth_limit)
+            .with_expansion_count_limit(expansion_count_limit);
+        if let Some(resolver) = source_resolver.clone() {
+            driver = driver.with_source_resolver(resolver);
+        }
+        let frame = match macro_definitions {
+            MacroDefinitions::Declared => ScopeFrame::declared(),
+            _ => ScopeFrame::honored(&driver),
+        };
+        let spec_cx = SpecBuildCx::for_converter(
+            source_resolver,
+            macro_definitions,
+            driver.local_scope_name(),
+            driver.global_scope_name(),
+        );
         let BuiltDefinitions { state, fallback } =
-            definitions.build(&spec_cx, unknown_macro_fallback)?;
+            definitions.build(&spec_cx, unknown_macro_fallback, &frame)?;
 
         let mut overrides = RuleTable::new();
         for (kind, name, rule) in override_list {
@@ -592,10 +714,6 @@ impl ConverterBuilder {
             overrides.insert(kind, name, rule);
         }
 
-        let mut driver = LatexlikeDriver::new(recovery);
-        if let Some(resolver) = source_resolver {
-            driver = driver.with_source_resolver(resolver);
-        }
         let language = Language::new(driver, state).with_descent_guard_init(descent_guard);
 
         Ok(Converter {
@@ -1001,6 +1119,45 @@ pub enum UnknownMacroResolution {
     /// unresolvable-command handling applies — an error diagnostic, and under tolerant
     /// recovery the command survives as literal characters.
     Reject,
+}
+
+/// Whether the macro-defining commands are honoured or only declared (PLAN.md §16 M9).
+///
+/// This is a *parsing* setting, chosen with
+/// [`ConverterBuilder::macro_definitions`]: whether `\newcommand\greet{Hi}` installs a
+/// macro that `\greet` later expands to is settled while the document is being read, by
+/// the token reader techy-xp puts under techxt's parser.
+///
+/// # What "honoured" covers
+///
+/// `\newcommand`, `\renewcommand`, `\providecommand`, `\newenvironment`,
+/// `\renewenvironment`, `\def`, `\gdef`, `\let`, `\edef`, `\xdef` and
+/// `\NewDocumentCommand` — the definers techy-xp ships. Definitions are scoped as TeX
+/// scopes them: `\def` reverts with its enclosing group (an environment body included),
+/// `\gdef` escapes every group it is written in.
+///
+/// It also decides whether techy-xp's **refusals** are registered. They are the reason
+/// `\expandafter` reports *"techy-xp does not implement expansion control"* instead of
+/// being an unknown command, and they never shadow a name techxt declares itself.
+///
+/// # What stays out either way
+///
+/// techy-xp implements no conditionals, category codes, registers or counters, so
+/// `\ifx`, `\catcode`, `\count` and `\setcounter` define nothing under either setting.
+/// `\DeclareMathOperator` is techxt's own declaration and is likewise unaffected: it is
+/// read and dropped, and the operator it names is not defined.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MacroDefinitions {
+    /// Default. A definition made in the document takes effect, and a later use of the
+    /// defined macro expands.
+    #[default]
+    Honored,
+    /// The defining commands are *declared* only: their arguments are consumed so that a
+    /// definition body cannot leak into the text, and nothing is defined — so a later use
+    /// of the macro is an unknown command like any other. This is techxt 0.1.0's
+    /// behaviour exactly, and no refusal is registered either.
+    Declared,
 }
 
 /// What to do with a macro no rule renders (PLAN.md §10.6).

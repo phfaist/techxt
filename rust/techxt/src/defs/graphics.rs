@@ -9,7 +9,7 @@
 //! the document. Spaced out, it is unmistakably a marker.
 
 use techy::core::node::NodeRef;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{Category, MacroDef, TextHandler};
 use crate::flow::{BlockKind, Flow, FlowItem};
@@ -37,7 +37,7 @@ struct Placeholder(&'static str);
 impl TextHandler for Placeholder {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         _cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let mut text = alloc::string::String::from("<");

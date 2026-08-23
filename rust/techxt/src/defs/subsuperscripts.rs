@@ -16,7 +16,7 @@
 //! none when it did not (`4π𝑐𝑥²𝑝`).
 
 use techy::core::node::NodeRef;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{Category, SpecialsDef, TextHandler, TextRule};
 use crate::flow::Flow;
@@ -67,7 +67,7 @@ struct Script(ScriptKind);
 impl TextHandler for Script {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let argument = cx.arg(SCRIPT)?.unwrap_or_default();

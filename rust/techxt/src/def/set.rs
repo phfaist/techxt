@@ -14,7 +14,9 @@ use alloc::vec::Vec;
 
 use techy::core::specs::{CallableSpec, FallbackProvider, Package, ScopeOp, SpecsProvider};
 use techy::core::{FinalizeError, ParsingState, ParsingStateDelta};
-use techy::latexlike::{builtin_package, CallableType, Latexlike, MacroSpec};
+use techy::latexlike::{builtin_package, CallableType, MacroSpec};
+use techy_xp::lang::{LatexlikeXp, XpDriver};
+use techy_xp::presets::refusals_package;
 
 use crate::convert::BuildError;
 
@@ -163,16 +165,34 @@ impl DefinitionSet {
     /// costs a `build()` call rather than showing up as a hole in somebody's converted
     /// document.
     ///
-    /// Two things the *converter* decides reach the definitions here rather than being
+    /// Three things the *converter* decides reach the definitions here rather than being
     /// read back out of them: `cx` is what an entry's own
     /// [`CallableSpecSource`](super::CallableSpecSource) may consult (DECISIONS.md D15),
-    /// and `unknown_macro_fallback` says whether the catch-all provider is registered.
-    /// The set deliberately does not look at the recovery mode itself — the builder has
-    /// already resolved that question (DECISIONS.md D10).
+    /// `unknown_macro_fallback` says whether the catch-all provider is registered, and
+    /// `frame` carries the providers techy-xp contributes around the categories. The set
+    /// deliberately does not look at the recovery mode itself — the builder has already
+    /// resolved that question (DECISIONS.md D10).
+    ///
+    /// # The stack this builds, outermost first
+    ///
+    /// | position | provider | why there |
+    /// |---|---|---|
+    /// | outermost | `techxt-unknown` (optional) | shadowed by everything, so it answers only for a name nothing else claims |
+    /// | | techy's `builtin` | `\begin`/`\end`, above the catch-all or no environment would parse |
+    /// | | [`frame.shipped`](ScopeFrame) — techy-xp's refusals | below every category, so a name techxt declares itself wins over the refusal |
+    /// | | one package per [`Category`], in push order | later categories shadow earlier ones |
+    /// | | the **global** definition scope | above every package: `\gdef\frac` must shadow a package's `\frac` |
+    /// | innermost | the **local** definition scope | above the global one, so a later `\def` shadows an earlier `\gdef` |
+    ///
+    /// The last two are [`frame.definition_scopes`](ScopeFrame), and their order is not
+    /// a detail: techy-xp's own seed states the invariant, and a stack that breaks it
+    /// parses without complaint and answers wrongly. `the_provider_stack_is_ordered_as_techy_xp_requires`
+    /// in `tests/defs_macros.rs` pins the whole shape.
     pub(crate) fn build(
         &self,
         cx: &SpecBuildCx,
         unknown_macro_fallback: bool,
+        frame: &ScopeFrame,
     ) -> Result<BuiltDefinitions, BuildError> {
         self.check_category_names()?;
 
@@ -181,8 +201,9 @@ impl DefinitionSet {
         let item = self.item_provider(cx)?;
 
         let mut fallback = RuleTable::new();
-        let mut providers: Vec<Arc<dyn SpecsProvider<Latexlike>>> =
-            Vec::with_capacity(self.categories.len() + 2);
+        let mut providers: Vec<Arc<dyn SpecsProvider<LatexlikeXp>>> = Vec::with_capacity(
+            self.categories.len() + 2 + frame.shipped.len() + frame.definition_scopes.len(),
+        );
 
         // Outermost: the catch-all that gives an unresolvable command a spec, so that
         // it reaches the renderer as a callable node and techxt's unknown-macro policy
@@ -198,6 +219,11 @@ impl DefinitionSet {
         // seed's copy of them, and they have to sit *above* the catch-all: below it,
         // the catch-all would answer for `\begin` and no environment would parse.
         providers.push(builtin_package());
+        // techy-xp's shipped packages, in the place techy-xp's own seed gives them:
+        // below every host provider, so a name techxt declares wins over a refusal of
+        // the same name (`\setcounter` is declared here and dropped silently, which is
+        // the answer techxt wants for it).
+        providers.extend(frame.shipped.iter().map(Arc::clone));
 
         for category in &self.categories {
             providers.push(Arc::new(self.build_category(
@@ -208,8 +234,13 @@ impl DefinitionSet {
             )?));
         }
 
+        // Innermost, after every package: the two definition scopes, in techy-xp's push
+        // order. See the type documentation for what a stack that omits or reorders them
+        // does instead of failing.
+        providers.extend(frame.definition_scopes.iter().map(Arc::clone));
+
         let delta = ParsingStateDelta::new().scope_op(ScopeOp::ReplaceStack(providers));
-        let state = ParsingState::<Latexlike>::lang_initial()?
+        let state = ParsingState::<LatexlikeXp>::lang_initial()?
             .derived(&delta)
             // A scope-op failure here is a techxt bug, not a caller's mistake — the op
             // is a whole-stack replacement, which targets no name and cannot miss — but
@@ -248,7 +279,7 @@ impl DefinitionSet {
     fn item_provider(
         &self,
         cx: &SpecBuildCx,
-    ) -> Result<Option<Arc<dyn SpecsProvider<Latexlike>>>, BuildError> {
+    ) -> Result<Option<Arc<dyn SpecsProvider<LatexlikeXp>>>, BuildError> {
         let Some(definition) = self.categories.iter().rev().find_map(|category| {
             category
                 .macros
@@ -258,7 +289,7 @@ impl DefinitionSet {
         }) else {
             return Ok(None);
         };
-        let mut package = Package::<Latexlike>::new(ITEM_PACKAGE);
+        let mut package = Package::<LatexlikeXp>::new(ITEM_PACKAGE);
         package.insert_in_modes(
             CallableType::Macro,
             ITEM_MACRO,
@@ -273,11 +304,11 @@ impl DefinitionSet {
     fn build_category(
         &self,
         category: &Category,
-        item: Option<&Arc<dyn SpecsProvider<Latexlike>>>,
+        item: Option<&Arc<dyn SpecsProvider<LatexlikeXp>>>,
         fallback: &mut RuleTable,
         cx: &SpecBuildCx,
-    ) -> Result<Package<Latexlike>, BuildError> {
-        let mut package = Package::<Latexlike>::new(category.name.clone());
+    ) -> Result<Package<LatexlikeXp>, BuildError> {
+        let mut package = Package::<LatexlikeXp>::new(category.name.clone());
 
         for definition in &category.macros {
             let spec = macro_spec(definition, cx)?;
@@ -349,7 +380,7 @@ impl DefinitionSet {
 fn macro_spec(
     definition: &MacroDef,
     cx: &SpecBuildCx,
-) -> Result<Arc<dyn CallableSpec<Latexlike>>, BuildError> {
+) -> Result<Arc<dyn CallableSpec<LatexlikeXp>>, BuildError> {
     let arguments = definition.arg_specs()?;
     let rule = validated_rule(
         definition.name(),
@@ -398,19 +429,57 @@ fn validated_rule(
 /// [`Options::unknown_macro`](crate::Options::unknown_macro): the generic spec takes no
 /// arguments, so `\foo{x}` is an unknown macro followed by an ordinary group, and `x`
 /// survives under every policy.
-fn unknown_command_provider() -> FallbackProvider<Latexlike> {
-    let mut provider = FallbackProvider::<Latexlike>::new(UNKNOWN_PACKAGE);
+fn unknown_command_provider() -> FallbackProvider<LatexlikeXp> {
+    let mut provider = FallbackProvider::<LatexlikeXp>::new(UNKNOWN_PACKAGE);
     // One shared singleton for every unknown name: specs are de-keyed, so an unknown
     // macro costs no allocation of its own.
-    let spec: Arc<dyn CallableSpec<Latexlike>> = Arc::new(MacroSpec::new(Vec::new()));
+    let spec: Arc<dyn CallableSpec<LatexlikeXp>> = Arc::new(MacroSpec::new(Vec::new()));
     provider.set(CallableType::Macro, spec);
     provider
+}
+
+/// The providers techy-xp contributes around techxt's own categories (PLAN.md §16 M9).
+///
+/// Both halves come off the very [`XpDriver`] the converter will parse with, which is
+/// the point of passing a driver rather than two strings: the definer specs write into
+/// scopes **by name**, the driver's leak hook keys `\gdef`'s escape on the global one's
+/// name, and a seed that names them differently is not an error anywhere — techy creates
+/// a missing scope *innermost*, which inverts the ordering silently. Reading both off one
+/// object is what makes them agree by construction.
+pub(crate) struct ScopeFrame {
+    /// Pushed below every category: techy-xp's refusals package.
+    pub(crate) shipped: Vec<Arc<dyn SpecsProvider<LatexlikeXp>>>,
+    /// Pushed innermost, after every package: the global and the local definition scope,
+    /// in that order.
+    pub(crate) definition_scopes: Vec<Arc<dyn SpecsProvider<LatexlikeXp>>>,
+}
+
+impl ScopeFrame {
+    /// The frame for a converter that honours the macro-defining commands: the two
+    /// definition scopes the definers write into, and the refusals package that turns
+    /// techy-xp's non-goals into diagnosed commands rather than unknown ones.
+    pub(crate) fn honored(driver: &XpDriver<LatexlikeXp>) -> ScopeFrame {
+        ScopeFrame {
+            shipped: alloc::vec![refusals_package::<LatexlikeXp>()],
+            definition_scopes: driver.definition_scope_providers().to_vec(),
+        }
+    }
+
+    /// The frame for a converter that only *declares* them: nothing at all, which is the
+    /// stack techxt built before the definers were wired
+    /// ([`MacroDefinitions::Declared`](crate::convert::MacroDefinitions::Declared)).
+    pub(crate) fn declared() -> ScopeFrame {
+        ScopeFrame {
+            shipped: Vec::new(),
+            definition_scopes: Vec::new(),
+        }
+    }
 }
 
 /// What building a [`DefinitionSet`] produces (PLAN.md §10.2).
 pub(crate) struct BuiltDefinitions {
     /// The parsing state the packages make, ready for `Language::new`.
-    pub(crate) state: ParsingState<Latexlike>,
+    pub(crate) state: ParsingState<LatexlikeXp>,
     /// Dispatch step 3: every rule, keyed by kind and name.
     pub(crate) fallback: RuleTable,
 }

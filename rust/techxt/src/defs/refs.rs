@@ -28,7 +28,7 @@
 use alloc::borrow::Cow;
 
 use techy::core::node::NodeRef;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{Category, EnvDef, MacroDef, TextHandler, TextRule};
 use crate::flow::{Flow, FlowItem};
@@ -102,7 +102,7 @@ struct EntryBreak;
 impl TextHandler for EntryBreak {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         _cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let mut flow = Flow::new();

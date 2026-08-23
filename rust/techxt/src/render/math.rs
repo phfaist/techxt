@@ -32,7 +32,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use techy::core::node::NodeRef;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::convert::{MathMode, Options};
 use crate::flow::{BlockKind, Flow, FlowItem};
@@ -78,7 +78,7 @@ pub(crate) fn atoms_in_use(state: &RenderState, options: &Options) -> bool {
 /// given the display indent — that indent is part of rendering a formula, and this is
 /// its source.
 pub(crate) fn source_scope(
-    node: NodeRef<'_, Latexlike>,
+    node: NodeRef<'_, LatexlikeXp>,
     display: bool,
     options: &Options,
 ) -> Option<Flow> {

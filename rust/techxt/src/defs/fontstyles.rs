@@ -42,7 +42,7 @@
 //! medium-weight alphabet for it to select.
 
 use techy::core::node::NodeRef;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{Category, MacroDef, TextHandler, TextRule};
 use crate::flow::Flow;
@@ -178,7 +178,7 @@ struct SetFont(FontStyleKind);
 impl TextHandler for SetFont {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let state = derive_font(cx, |_| FontStyle::Style(self.0));
@@ -197,7 +197,7 @@ struct Emphasis;
 impl TextHandler for Emphasis {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let state = derive_font(cx, |current| FontStyle::Style(toggle_italic(current)));

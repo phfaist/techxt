@@ -12,7 +12,7 @@ use std::any::Any;
 
 use techy::core::node::{NodeRef, NodeTree};
 use techy::core::specs::CallableSpec;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 use techxt::def::{
     Category, DefinitionSet, EnvBodyKind, EnvDef, MacroDef, SpecialsDef, TechxtEnvironmentBehavior,
@@ -56,7 +56,7 @@ fn converter() -> Converter {
 }
 
 /// The first callable named `name` in `tree`.
-fn callable<'t>(tree: &'t NodeTree<Latexlike>, name: &str) -> NodeRef<'t, Latexlike> {
+fn callable<'t>(tree: &'t NodeTree<LatexlikeXp>, name: &str) -> NodeRef<'t, LatexlikeXp> {
     tree.root()
         .descendants()
         .find(|node| node.name() == Some(name))

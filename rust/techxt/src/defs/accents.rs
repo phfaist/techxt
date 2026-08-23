@@ -24,7 +24,7 @@
 use alloc::string::String;
 
 use techy::core::node::NodeRef;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{Category, MacroDef, TextHandler};
 use crate::flow::Flow;
@@ -66,7 +66,7 @@ struct Accent(char);
 impl TextHandler for Accent {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         // The argument as one line: an accent's argument is a character, not a

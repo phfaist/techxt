@@ -31,7 +31,7 @@
 //! align it to.
 
 use techy::core::node::NodeRef;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{Category, EnvDef, TextHandler, TextRule};
 use crate::flow::Flow;
@@ -172,7 +172,7 @@ struct Formula {
 impl TextHandler for Formula {
     fn render(
         &self,
-        node: NodeRef<'_, Latexlike>,
+        node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let enclosing = cx.state().math;
@@ -219,7 +219,7 @@ struct Matrix;
 impl TextHandler for Matrix {
     fn render(
         &self,
-        node: NodeRef<'_, Latexlike>,
+        node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let name = node.name().unwrap_or("");

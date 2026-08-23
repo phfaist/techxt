@@ -58,6 +58,6 @@ pub use spec::{
 };
 pub use template::{Template, TemplateError};
 
-pub(crate) use set::{BuiltDefinitions, RuleTable};
+pub(crate) use set::{BuiltDefinitions, RuleTable, ScopeFrame};
 pub(crate) use spec::embedded_rule;
 pub(crate) use template::{ArgRef, Seg, TemplateScope};

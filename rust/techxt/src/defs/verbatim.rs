@@ -32,7 +32,8 @@ use alloc::sync::Arc;
 use techy::core::constructs::OptionalGroupArgumentParser;
 use techy::core::specs::ArgumentSpec;
 use techy::core::token::GroupRule;
-use techy::latexlike::{GroupType, Latexlike};
+use techy::latexlike::GroupType;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{Category, EnvDef, MacroDef, Template, TextRule};
 
@@ -81,7 +82,7 @@ pub fn category() -> Category {
 /// says what LaTeX means here: `\begin{lstlisting}[language=C]` has options,
 /// `\begin{lstlisting}` followed by a newline and a `[` does not. pylatexenc spells the
 /// same requirement `allow_pre_space=False`, for the same reason.
-fn adjacent_options() -> ArgumentSpec<Latexlike> {
+fn adjacent_options() -> ArgumentSpec<LatexlikeXp> {
     let delimiters = Arc::new(GroupRule {
         group_type: GroupType::Content,
         open: String::from("["),

@@ -10,7 +10,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use techy::core::specs::ArgumentSpec;
-use techy::latexlike::{argument_specs_named, ArgumentCodeError, Latexlike, Mode};
+use techy::latexlike::{argument_specs_named, ArgumentCodeError, Mode};
+use techy_xp::lang::LatexlikeXp;
 
 use crate::render::ListKind;
 
@@ -28,7 +29,7 @@ enum ArgDecl {
         name: Box<str>,
     },
     /// An argument built as a techy [`ArgumentSpec`] directly.
-    Spec(Arc<ArgumentSpec<Latexlike>>),
+    Spec(Arc<ArgumentSpec<LatexlikeXp>>),
 }
 
 /// The argument declarations of one entry, shared by the three builders.
@@ -43,7 +44,7 @@ impl Args {
         });
     }
 
-    fn spec(&mut self, spec: ArgumentSpec<Latexlike>) {
+    fn spec(&mut self, spec: ArgumentSpec<LatexlikeXp>) {
         self.0.push(ArgDecl::Spec(Arc::new(spec)));
     }
 
@@ -51,7 +52,7 @@ impl Args {
     ///
     /// Codes are resolved through techy's own factory, one call for the whole entry so
     /// that an invalid code reports the position it was written at.
-    fn build(&self) -> Result<Vec<Arc<ArgumentSpec<Latexlike>>>, ArgumentCodeError> {
+    fn build(&self) -> Result<Vec<Arc<ArgumentSpec<LatexlikeXp>>>, ArgumentCodeError> {
         let codes: Vec<(&str, &str)> = self
             .0
             .iter()
@@ -186,7 +187,7 @@ impl MacroDef {
     /// its own (`\text{…}`, which leaves math for the extent of its argument), or one
     /// whose parser is configured (`\\`'s optional `[len]`, which must refuse a
     /// preceding space).
-    pub fn arg_spec(mut self, spec: ArgumentSpec<Latexlike>) -> MacroDef {
+    pub fn arg_spec(mut self, spec: ArgumentSpec<LatexlikeXp>) -> MacroDef {
         self.args.spec(spec);
         self
     }
@@ -274,7 +275,9 @@ impl MacroDef {
     }
 
     /// The techy argument specs, in declaration order.
-    pub(crate) fn arg_specs(&self) -> Result<Vec<Arc<ArgumentSpec<Latexlike>>>, ArgumentCodeError> {
+    pub(crate) fn arg_specs(
+        &self,
+    ) -> Result<Vec<Arc<ArgumentSpec<LatexlikeXp>>>, ArgumentCodeError> {
         self.args.build()
     }
 
@@ -334,7 +337,7 @@ impl EnvDef {
 
     /// Declare the next argument as a techy [`ArgumentSpec`] — see
     /// [`MacroDef::arg_spec`].
-    pub fn arg_spec(mut self, spec: ArgumentSpec<Latexlike>) -> EnvDef {
+    pub fn arg_spec(mut self, spec: ArgumentSpec<LatexlikeXp>) -> EnvDef {
         self.args.spec(spec);
         self
     }
@@ -373,7 +376,9 @@ impl EnvDef {
     }
 
     /// The techy argument specs, in declaration order.
-    pub(crate) fn arg_specs(&self) -> Result<Vec<Arc<ArgumentSpec<Latexlike>>>, ArgumentCodeError> {
+    pub(crate) fn arg_specs(
+        &self,
+    ) -> Result<Vec<Arc<ArgumentSpec<LatexlikeXp>>>, ArgumentCodeError> {
         self.args.build()
     }
 
@@ -425,7 +430,7 @@ impl SpecialsDef {
 
     /// Declare the next argument as a techy [`ArgumentSpec`] — see
     /// [`MacroDef::arg_spec`].
-    pub fn arg_spec(mut self, spec: ArgumentSpec<Latexlike>) -> SpecialsDef {
+    pub fn arg_spec(mut self, spec: ArgumentSpec<LatexlikeXp>) -> SpecialsDef {
         self.args.spec(spec);
         self
     }
@@ -454,7 +459,9 @@ impl SpecialsDef {
     }
 
     /// The techy argument specs, in declaration order.
-    pub(crate) fn arg_specs(&self) -> Result<Vec<Arc<ArgumentSpec<Latexlike>>>, ArgumentCodeError> {
+    pub(crate) fn arg_specs(
+        &self,
+    ) -> Result<Vec<Arc<ArgumentSpec<LatexlikeXp>>>, ArgumentCodeError> {
         self.args.build()
     }
 

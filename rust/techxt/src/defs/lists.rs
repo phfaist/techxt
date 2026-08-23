@@ -39,7 +39,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use techy::core::node::NodeRef;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::convert::{CounterStyle, CounterWrap, EnumFormat};
 use crate::def::{Category, EnvDef, MacroDef, TextHandler};
@@ -112,7 +112,7 @@ struct ListEnv {
 impl TextHandler for ListEnv {
     fn render(
         &self,
-        node: NodeRef<'_, Latexlike>,
+        node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         if cx.arg_provided("options") {
@@ -221,7 +221,7 @@ struct Item;
 impl TextHandler for Item {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let context = cx.state().list;

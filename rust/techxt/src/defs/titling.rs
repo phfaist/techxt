@@ -29,7 +29,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use techy::core::node::NodeRef;
-use techy::latexlike::Latexlike;
+use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{Category, MacroDef, TextHandler, TextRule};
 use crate::flow::{display_width, Flow, FlowItem};
@@ -96,7 +96,7 @@ struct SetField(Field);
 impl TextHandler for SetField {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         let value = cx.arg("value")?.unwrap_or_default();
@@ -120,7 +120,7 @@ struct Today;
 impl TextHandler for Today {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         Ok(Flow::from_plain_text(&today(cx)))
@@ -142,7 +142,7 @@ struct MakeTitle;
 impl TextHandler for MakeTitle {
     fn render(
         &self,
-        _node: NodeRef<'_, Latexlike>,
+        _node: NodeRef<'_, LatexlikeXp>,
         cx: &mut RenderCx<'_, '_>,
     ) -> Result<Flow, RenderError> {
         // Each field on one line: a title block is a block of lines, and a paragraph

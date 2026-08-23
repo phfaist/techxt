@@ -43,8 +43,11 @@
 //! Three things a document may contain are knowingly left out, and each reports
 //! itself when met:
 //!
-//! - **TeX's conditionals** (`\if…\else\fi`) and macro expansion generally. techxt
-//!   has no mouth (see [`preamble`]); a conditional is an unknown command.
+//! - **TeX's conditionals** (`\if…\else\fi`), and with them category codes, registers
+//!   and counters. Macro *definition* is no longer on this list — [`preamble`] seeds
+//!   techy-xp's definers, so `\newcommand` and `\def` are honoured (PLAN.md §16 M9) —
+//!   but a conditional is outside techy-xp's scope by design, and reaching one raises
+//!   `techy-xp.presets.conditional-unsupported` and renders as nothing.
 //! - **`tabbing`**, whose `\=` and `\>` collide with the accent macros of
 //!   [`accents`] — it would have to be a mode of its own, and it is rare in documents
 //!   written this century.
