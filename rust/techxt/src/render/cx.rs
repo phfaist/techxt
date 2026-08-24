@@ -4,11 +4,11 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::convert::Infallible;
 
-use techy::core::node::{NodeRef, ParsedArgument};
+use techy::core::node::{BodySlotExt, NodeRef, ParsedArguments, SlotExt};
 use techy::error::{Diagnostic, Diagnostics};
+use techy::latexlike::LatexlikeLang;
 use techy::recompose::{RecomposeContext, RecomposeError, Recomposer};
 use techy::source::SourceSpan;
-use techy_xp::lang::LatexlikeXp;
 
 use crate::convert::Options;
 use crate::diag::TechxtCondition;
@@ -17,6 +17,7 @@ use crate::layout::render_inline;
 
 use super::math;
 use super::state::{ListKind, RenderState};
+use super::NodeView;
 
 /// Why a rule could not render a construct (PLAN.md §10.4).
 ///
@@ -117,19 +118,186 @@ pub(crate) struct RunState {
     pub(crate) document_span: Option<SourceSpan<Option<String>>>,
 }
 
-/// The renderer as the context sees it.
+/// The renderer as the fold sees it.
 ///
-/// The context needs two things from the renderer at once: to be the recomposer that
+/// The fold needs two things from the renderer at once: to be the recomposer that
 /// techy's region operations fold *through* (so nested constructs are rendered by the
 /// same rules), and to be the owner of the run's counters and diagnostics. Erasing it
-/// behind this trait is what lets [`RenderCx`] borrow it once and keep both, without
-/// the renderer's own lifetime parameter leaking into every handler signature.
-pub(crate) trait RendererOps:
-    Recomposer<LatexlikeXp, (), State = RenderState, Piece = Flow, Error = Infallible>
+/// behind this trait is what lets [`FoldOn`] borrow it once and keep both, without the
+/// renderer's own lifetime parameter leaking any further.
+pub(crate) trait RendererOps<LLL>:
+    Recomposer<LLL, (), State = RenderState, Piece = Flow, Error = Infallible>
+where
+    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
 {
     fn run(&self) -> &RunState;
     fn run_mut(&mut self) -> &mut RunState;
     fn options(&self) -> &Options;
+}
+
+/// Everything [`RenderCx`] does to the fold, with the tree's language erased.
+///
+/// This is the seam that keeps [`TextHandler`](crate::def::TextHandler) non-generic
+/// (PLAN.md §11.1): the renderer, the recompose context and the node all name the
+/// language `LLL`, and all three are erased together behind one trait object, of which
+/// only the tree's lifetime `'t` survives. The one implementor is [`FoldOn`].
+pub(crate) trait Fold<'t> {
+    /// The node being rendered.
+    fn node(&self) -> NodeView<'t>;
+
+    /// Fold the content of the argument called `name`, under `state`.
+    fn arg_named(&mut self, name: &str, state: &RenderState) -> Result<Flow, RenderError>;
+
+    /// Fold the content of the argument at `index` in declaration order, under `state`.
+    fn arg_at(&mut self, index: usize, state: &RenderState) -> Result<Flow, RenderError>;
+
+    /// Fold the node's environment body, under `state`.
+    fn body(&mut self, state: &RenderState) -> Result<Flow, RenderError>;
+
+    /// Fold the content of the slot called `name`, or answer `None` when the node has
+    /// no such slot.
+    fn slot_named(&mut self, name: &str, state: &RenderState) -> Result<Option<Flow>, RenderError>;
+
+    /// Whether the argument called `name` was written; `Err` when none is declared.
+    fn argument_provided(&self, name: &str) -> Result<bool, RenderError>;
+
+    /// Whether the argument at `index` was written; `Err` when the index has none.
+    fn argument_provided_at(&self, index: usize) -> Result<bool, RenderError>;
+
+    /// How many arguments the node's definition declares.
+    fn argument_count(&self) -> usize;
+
+    /// The run's accumulated state.
+    fn run(&self) -> &RunState;
+
+    /// The run's accumulated state, to add to.
+    fn run_mut(&mut self) -> &mut RunState;
+
+    /// The conversion's options.
+    fn options(&self) -> &Options;
+
+    /// [`argument_provided`](Self::argument_provided), reading an undeclared argument as
+    /// absent rather than as a failure.
+    fn arg_provided(&self, name: &str) -> bool {
+        self.argument_provided(name).unwrap_or(false)
+    }
+
+    /// [`argument_provided_at`](Self::argument_provided_at), reading an index the
+    /// definition does not have as absent.
+    fn arg_provided_at(&self, index: usize) -> bool {
+        self.argument_provided_at(index).unwrap_or(false)
+    }
+}
+
+/// The fold, positioned on one node of one tree (PLAN.md §10.4).
+///
+/// Note the three lifetimes and why they differ: techy hands
+/// [`recompose_node`](Recomposer::recompose_node) the node and the context with
+/// *unrelated* lifetimes, so `'t` is the tree's — the one a [`NodeView`] keeps and a
+/// handler may hold on to — while the context's own `'c` is visible only here, folded
+/// away into the borrow `'a` as soon as this is erased behind [`Fold`].
+pub(crate) struct FoldOn<'a, 'c, 't, LLL>
+where
+    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
+{
+    renderer: &'a mut dyn RendererOps<LLL>,
+    cx: &'a mut RecomposeContext<'c, LLL, ()>,
+    node: NodeRef<'t, LLL, ()>,
+}
+
+impl<'a, 'c, 't, LLL> FoldOn<'a, 'c, 't, LLL>
+where
+    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
+{
+    /// The fold as it stands at `node`.
+    pub(crate) fn new(
+        renderer: &'a mut dyn RendererOps<LLL>,
+        cx: &'a mut RecomposeContext<'c, LLL, ()>,
+        node: NodeRef<'t, LLL, ()>,
+    ) -> FoldOn<'a, 'c, 't, LLL> {
+        FoldOn { renderer, cx, node }
+    }
+
+    /// The node's parsed arguments, or a region error naming what went wrong.
+    fn arguments(&self) -> Result<&'t ParsedArguments<LLL>, RenderError> {
+        self.node.arguments().ok_or_else(|| {
+            RenderError::region_detail("asked for an argument of a node that is not a callable")
+        })
+    }
+}
+
+impl<'t, LLL> Fold<'t> for FoldOn<'_, '_, 't, LLL>
+where
+    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
+    SlotExt<LLL>: BodySlotExt,
+{
+    fn node(&self) -> NodeView<'t> {
+        NodeView::of(self.node)
+    }
+
+    fn arg_named(&mut self, name: &str, state: &RenderState) -> Result<Flow, RenderError> {
+        self.cx
+            .recompose_argument_content_named(self.node, name, state, &mut *self.renderer)
+            .map_err(RenderError::region)
+    }
+
+    fn arg_at(&mut self, index: usize, state: &RenderState) -> Result<Flow, RenderError> {
+        self.cx
+            .recompose_argument_content(self.node, index, state, &mut *self.renderer)
+            .map_err(RenderError::region)
+    }
+
+    fn body(&mut self, state: &RenderState) -> Result<Flow, RenderError> {
+        self.cx
+            .recompose_body(self.node, state, &mut *self.renderer)
+            .map_err(RenderError::region)
+    }
+
+    fn slot_named(&mut self, name: &str, state: &RenderState) -> Result<Option<Flow>, RenderError> {
+        match self
+            .cx
+            .recompose_slot_content_named(self.node, name, state, &mut *self.renderer)
+        {
+            Ok(flow) => Ok(Some(flow)),
+            Err(RecomposeError::UnknownSlotName { .. }) => Ok(None),
+            Err(error) => Err(RenderError::region(error)),
+        }
+    }
+
+    fn argument_provided(&self, name: &str) -> Result<bool, RenderError> {
+        let arguments = self.arguments()?;
+        let argument = arguments.get_named(name).ok_or_else(|| {
+            RenderError::region_detail(alloc::format!("no argument named ‘{name}’ is declared"))
+        })?;
+        Ok(argument.is_provided())
+    }
+
+    fn argument_provided_at(&self, index: usize) -> Result<bool, RenderError> {
+        let arguments = self.arguments()?;
+        let argument = arguments.get(index).ok_or_else(|| {
+            RenderError::region_detail(alloc::format!(
+                "argument index {index} is out of range ({} declared)",
+                arguments.len()
+            ))
+        })?;
+        Ok(argument.is_provided())
+    }
+
+    fn argument_count(&self) -> usize {
+        self.node.arguments().map_or(0, ParsedArguments::len)
+    }
+
+    fn run(&self) -> &RunState {
+        self.renderer.run()
+    }
+
+    fn run_mut(&mut self) -> &mut RunState {
+        self.renderer.run_mut()
+    }
+
+    fn options(&self) -> &Options {
+        self.renderer.options()
+    }
 }
 
 /// A rule's view of the conversion in progress (PLAN.md §10.4).
@@ -142,12 +310,15 @@ pub(crate) trait RendererOps:
 /// order — the fold's side effects (footnote numbers, heading counters) happen in the
 /// order the regions are folded.
 ///
+/// The tree's language is not a parameter here: it was erased when the context was
+/// built, which is what lets one handler render trees of every
+/// [`LatexlikeLang`](techy::latexlike::LatexlikeLang) (PLAN.md §11.1). `'t` is the
+/// tree's own lifetime — the one a [`NodeView`] read out of the context keeps.
+///
 /// ```
 /// use techxt::def::{TextHandler, TextRule};
 /// use techxt::flow::Flow;
-/// use techxt::render::{RenderCx, RenderError};
-/// use techy::core::node::NodeRef;
-/// use techy_xp::lang::LatexlikeXp;
+/// use techxt::render::{NodeView, RenderCx, RenderError};
 ///
 /// /// Renders `\emph{…}` as `*…*`.
 /// #[derive(Debug)]
@@ -156,7 +327,7 @@ pub(crate) trait RendererOps:
 /// impl TextHandler for Stars {
 ///     fn render(
 ///         &self,
-///         _node: NodeRef<'_, LatexlikeXp>,
+///         _node: NodeView<'_>,
 ///         cx: &mut RenderCx<'_, '_>,
 ///     ) -> Result<Flow, RenderError> {
 ///         let mut flow = Flow::text("*");
@@ -167,31 +338,22 @@ pub(crate) trait RendererOps:
 /// }
 /// ```
 pub struct RenderCx<'a, 't> {
-    renderer: &'a mut (dyn RendererOps + 'a),
-    cx: &'a mut RecomposeContext<'t, LatexlikeXp, ()>,
-    node: NodeRef<'a, LatexlikeXp, ()>,
+    fold: &'a mut (dyn Fold<'t> + 'a),
     state: &'a RenderState,
 }
 
 impl<'a, 't> RenderCx<'a, 't> {
-    /// Build a context around the node being rendered.
+    /// Build a context around the fold as it stands at the node being rendered.
     pub(crate) fn new(
-        renderer: &'a mut (dyn RendererOps + 'a),
-        cx: &'a mut RecomposeContext<'t, LatexlikeXp, ()>,
-        node: NodeRef<'a, LatexlikeXp, ()>,
+        fold: &'a mut (dyn Fold<'t> + 'a),
         state: &'a RenderState,
     ) -> RenderCx<'a, 't> {
-        RenderCx {
-            renderer,
-            cx,
-            node,
-            state,
-        }
+        RenderCx { fold, state }
     }
 
     /// The node being rendered.
-    pub(crate) fn node(&self) -> NodeRef<'a, LatexlikeXp, ()> {
-        self.node
+    pub(crate) fn node(&self) -> NodeView<'t> {
+        self.fold.node()
     }
 
     // ---------------------------------------------------------------- arguments
@@ -230,13 +392,10 @@ impl<'a, 't> RenderCx<'a, 't> {
         name: &str,
         state: RenderState,
     ) -> Result<Option<Flow>, RenderError> {
-        if !self.argument(name)?.is_provided() {
+        if !self.fold.argument_provided(name)? {
             return Ok(None);
         }
-        let flow = self
-            .cx
-            .recompose_argument_content_named(self.node, name, &state, self.renderer)
-            .map_err(RenderError::region)?;
+        let flow = self.fold.arg_named(name, &state)?;
         Ok(Some(self.close_math_scope(flow, &state)))
     }
 
@@ -254,15 +413,11 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// Answers `Ok(None)` for a declared-but-absent argument, `Err` for an index the
     /// definition does not have.
     pub fn arg_at(&mut self, index: usize) -> Result<Option<Flow>, RenderError> {
-        if !self.argument_at(index)?.is_provided() {
+        if !self.fold.argument_provided_at(index)? {
             return Ok(None);
         }
         let state = self.state.clone();
-        let flow = self
-            .cx
-            .recompose_argument_content(self.node, index, &state, self.renderer)
-            .map_err(RenderError::region)?;
-        Ok(Some(flow))
+        Ok(Some(self.fold.arg_at(index, &state)?))
     }
 
     /// Whether the argument called `name` was actually written.
@@ -271,10 +426,7 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// is there. An unknown name answers `false` rather than failing, so a rule can ask
     /// about an argument it is not sure the definition has.
     pub fn arg_provided(&self, name: &str) -> bool {
-        self.node
-            .arguments()
-            .and_then(|arguments| arguments.get_named(name))
-            .is_some_and(ParsedArgument::is_provided)
+        self.fold.arg_provided(name)
     }
 
     /// The argument called `name`, rendered and flattened to a single line.
@@ -297,9 +449,7 @@ impl<'a, 't> RenderCx<'a, 't> {
 
     /// Render the environment body of the node under a state of the handler's choosing.
     pub fn body_with_state(&mut self, state: RenderState) -> Result<Flow, RenderError> {
-        self.cx
-            .recompose_body(self.node, &state, self.renderer)
-            .map_err(RenderError::region)
+        self.fold.body(&state)
     }
 
     /// Render the content attached to the node by source resolution, if any.
@@ -315,14 +465,7 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// method cannot do for it — only the handler knows what was being included.
     pub fn attached(&mut self) -> Result<Option<Flow>, RenderError> {
         let state = self.state.clone();
-        match self
-            .cx
-            .recompose_slot_content_named(self.node, "attached", &state, self.renderer)
-        {
-            Ok(flow) => Ok(Some(flow)),
-            Err(RecomposeError::UnknownSlotName { .. }) => Ok(None),
-            Err(error) => Err(RenderError::region(error)),
-        }
+        self.fold.slot_named("attached", &state)
     }
 
     // -------------------------------------------------------------- environment
@@ -334,7 +477,7 @@ impl<'a, 't> RenderCx<'a, 't> {
 
     /// The conversion's options.
     pub fn options(&self) -> &Options {
-        self.renderer.options()
+        self.fold.options()
     }
 
     /// The LaTeX source `node` was parsed from.
@@ -342,8 +485,8 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// Reassembled from node payloads, never read out of the source buffer, so it works
     /// on transformed trees too (PLAN.md §1.6). This is what the `KeepSource` policies
     /// and math's `Source` mode emit.
-    pub fn source_of(&self, node: NodeRef<'_, LatexlikeXp>) -> Result<String, RenderError> {
-        Ok(super::source::latex_source(node))
+    pub fn source_of(&self, node: NodeView<'_>) -> Result<String, RenderError> {
+        Ok(node.source())
     }
 
     // -------------------------------------------------------------- diagnostics
@@ -353,12 +496,12 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// Build it through [`TechxtCondition::diagnose`](crate::diag::TechxtCondition) so
     /// that the condition keeps the severity PLAN.md §10.6 assigns it.
     pub fn diag(&mut self, diagnostic: Diagnostic<Option<String>>) {
-        self.renderer.run_mut().diagnostics.push(diagnostic);
+        self.fold.run_mut().diagnostics.push(diagnostic);
     }
 
     /// Report a condition, positioned at the node being rendered.
     pub(crate) fn report(&mut self, condition: impl TechxtCondition) {
-        let span = self.node.span().clone();
+        let span = self.node().span().clone();
         self.diag(condition.diagnose(span));
     }
 
@@ -366,32 +509,32 @@ impl<'a, 't> RenderCx<'a, 't> {
 
     /// Record the document's title (`\title{…}`).
     pub fn set_doc_title(&mut self, title: Flow) {
-        self.renderer.run_mut().doc_title = Some(title);
+        self.fold.run_mut().doc_title = Some(title);
     }
 
     /// Record the document's author (`\author{…}`).
     pub fn set_doc_author(&mut self, author: Flow) {
-        self.renderer.run_mut().doc_author = Some(author);
+        self.fold.run_mut().doc_author = Some(author);
     }
 
     /// Record the document's date (`\date{…}`).
     pub fn set_doc_date(&mut self, date: Flow) {
-        self.renderer.run_mut().doc_date = Some(date);
+        self.fold.run_mut().doc_date = Some(date);
     }
 
     /// The document's title, if one has been recorded so far.
     pub fn doc_title(&self) -> Option<&Flow> {
-        self.renderer.run().doc_title.as_ref()
+        self.fold.run().doc_title.as_ref()
     }
 
     /// The document's author, if one has been recorded so far.
     pub fn doc_author(&self) -> Option<&Flow> {
-        self.renderer.run().doc_author.as_ref()
+        self.fold.run().doc_author.as_ref()
     }
 
     /// The document's date, if one has been recorded so far.
     pub fn doc_date(&self) -> Option<&Flow> {
-        self.renderer.run().doc_date.as_ref()
+        self.fold.run().doc_date.as_ref()
     }
 
     /// Register a footnote's text and get its number, counting from 1.
@@ -401,21 +544,32 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// way, and it is assigned in document order because the fold visits nodes in
     /// document order.
     pub fn push_footnote(&mut self, text: Flow) -> usize {
-        let footnotes = &mut self.renderer.run_mut().footnotes;
+        let footnotes = &mut self.fold.run_mut().footnotes;
         footnotes.push(text);
         footnotes.len()
     }
 
     // ---------------------------------------------------- crate-internal accessors
 
+    /// Whether the argument at `index` was written, reading an index the definition does
+    /// not have as absent.
+    pub(crate) fn arg_provided_at(&self, index: usize) -> bool {
+        self.fold.arg_provided_at(index)
+    }
+
+    /// How many arguments the node's definition declares.
+    pub(crate) fn argument_count(&self) -> usize {
+        self.fold.argument_count()
+    }
+
     /// The section-level counters, indexed by heading level.
     pub(crate) fn heading_counters_mut(&mut self) -> &mut [u32; 7] {
-        &mut self.renderer.run_mut().heading_counters
+        &mut self.fold.run_mut().heading_counters
     }
 
     /// Whether a `\chapter` has been seen, which changes what `\section` numbers mean.
     pub(crate) fn chapter_seen_mut(&mut self) -> &mut bool {
-        &mut self.renderer.run_mut().chapter_seen
+        &mut self.fold.run_mut().chapter_seen
     }
 
     /// The enumerate counters, one per open list environment.
@@ -424,7 +578,7 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// so the top of the stack is always the innermost list's counter and `\item` can
     /// count without knowing how deeply it is nested.
     pub(crate) fn list_counter_stack_mut(&mut self) -> &mut Vec<u32> {
-        &mut self.renderer.run_mut().list_counter_stack
+        &mut self.fold.run_mut().list_counter_stack
     }
 
     /// The kinds of the open list environments, innermost last.
@@ -434,47 +588,24 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// [`ListCtx::same_kind_depth`](crate::render::ListCtx::same_kind_depth), which
     /// counts *all* the enclosing lists of a kind and not only an unbroken run of them.
     pub(crate) fn list_kind_stack_mut(&mut self) -> &mut Vec<ListKind> {
-        &mut self.renderer.run_mut().list_kind_stack
+        &mut self.fold.run_mut().list_kind_stack
     }
 
     /// How many of the open list environments are of this kind.
     pub(crate) fn enclosing_lists_of_kind(&self, kind: ListKind) -> usize {
-        self.renderer
+        self.fold
             .run()
             .list_kind_stack
             .iter()
             .filter(|open| **open == kind)
             .count()
     }
-
-    /// The argument called `name`, or a region error naming what went wrong.
-    fn argument(&self, name: &str) -> Result<&'a ParsedArgument<LatexlikeXp>, RenderError> {
-        let arguments = self.node.arguments().ok_or_else(|| {
-            RenderError::region_detail("asked for an argument of a node that is not a callable")
-        })?;
-        arguments.get_named(name).ok_or_else(|| {
-            RenderError::region_detail(alloc::format!("no argument named ‘{name}’ is declared"))
-        })
-    }
-
-    /// The argument at `index`, or a region error naming what went wrong.
-    fn argument_at(&self, index: usize) -> Result<&'a ParsedArgument<LatexlikeXp>, RenderError> {
-        let arguments = self.node.arguments().ok_or_else(|| {
-            RenderError::region_detail("asked for an argument of a node that is not a callable")
-        })?;
-        arguments.get(index).ok_or_else(|| {
-            RenderError::region_detail(alloc::format!(
-                "argument index {index} is out of range ({} declared)",
-                arguments.len()
-            ))
-        })
-    }
 }
 
 impl core::fmt::Debug for RenderCx<'_, '_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("RenderCx")
-            .field("node", &self.node.id())
+            .field("node", &self.node().id())
             .field("state", self.state)
             .finish_non_exhaustive()
     }

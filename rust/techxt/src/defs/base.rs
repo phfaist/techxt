@@ -44,7 +44,6 @@ use alloc::string::String;
 use alloc::sync::Arc;
 
 use techy::core::constructs::OptionalGroupArgumentParser;
-use techy::core::node::NodeRef;
 use techy::core::specs::ArgumentSpec;
 use techy::core::token::GroupRule;
 use techy::core::ParsingStateDelta;
@@ -57,7 +56,7 @@ use crate::diag::{MisplacedAlignment, UnsupportedIgnored};
 use crate::flow::{Flow, FlowItem};
 use crate::layout::render_inline;
 use crate::mathfmt::{fmt_script_text, ScriptKind};
-use crate::render::{math, MathCtx, RenderCx, RenderError};
+use crate::render::{math, MathCtx, NodeView, RenderCx, RenderError};
 
 use super::handler;
 
@@ -594,11 +593,7 @@ fn text_symbols(category: &mut Category) {
 struct FixedText(&'static str);
 
 impl TextHandler for FixedText {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        _cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, _cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         Ok(Flow::text(self.0))
     }
 }
@@ -613,11 +608,7 @@ impl TextHandler for FixedText {
 struct TextScript(ScriptKind);
 
 impl TextHandler for TextScript {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let argument = cx.arg(CONTENT)?.unwrap_or_default();
         let text = render_inline(&argument);
         match fmt_script_text(&text, self.0) {
@@ -634,11 +625,7 @@ impl TextHandler for TextScript {
 struct Emit(FlowItem);
 
 impl TextHandler for Emit {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        _cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, _cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let mut flow = Flow::new();
         flow.push(self.0.clone());
         Ok(flow)
@@ -655,11 +642,7 @@ impl TextHandler for Emit {
 struct LineBreak;
 
 impl TextHandler for LineBreak {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let state = cx.state();
         let mut flow = Flow::new();
         match (state.table.is_some(), state.math) {
@@ -688,11 +671,7 @@ impl TextHandler for LineBreak {
 struct Alignment;
 
 impl TextHandler for Alignment {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let state = cx.state();
         let mut flow = Flow::new();
         match (state.table.is_some(), state.math) {
@@ -713,11 +692,7 @@ impl TextHandler for Alignment {
 struct HorizontalRule;
 
 impl TextHandler for HorizontalRule {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let mut flow = Flow::new();
         if cx.state().table.is_some() {
             flow.push(FlowItem::RuleMark);
@@ -741,11 +716,7 @@ impl TextHandler for HorizontalRule {
 struct Footnote;
 
 impl TextHandler for Footnote {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         match cx.options().footnote_style {
             FootnoteStyle::Collected => {
                 let note = cx.arg("note")?.unwrap_or_default();
@@ -778,11 +749,7 @@ struct ModeShift {
 }
 
 impl TextHandler for ModeShift {
-    fn render(
-        &self,
-        node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         // An `\ensuremath` written outside a formula *opens* one, so it answers `Source`
         // mode the way `$…$` and `\begin{equation}` do: re-emitted, argument and all,
         // rather than rendered. `\text` never opens one, and one written inside a

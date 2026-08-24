@@ -34,13 +34,10 @@
 
 use alloc::string::String;
 
-use techy::core::node::NodeRef;
-use techy_xp::lang::LatexlikeXp;
-
 use crate::convert::HeadingStyle;
 use crate::def::{Category, MacroDef, TextRule};
 use crate::flow::{display_width, Flow, FlowItem};
-use crate::render::{RenderCx, RenderError};
+use crate::render::{NodeView, RenderCx, RenderError};
 
 use super::handler;
 
@@ -141,11 +138,7 @@ struct Heading {
 }
 
 impl crate::def::TextHandler for Heading {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let starred = cx.arg_provided("star");
         let style = cx.options().heading_style;
         // Only the numbered style counts. Under the others no number is ever shown, so

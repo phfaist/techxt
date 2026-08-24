@@ -15,13 +15,10 @@
 //! put a space in front of the *base* when the notation fell back (`4π𝑐 𝑥^𝑞 𝑝`) and
 //! none when it did not (`4π𝑐𝑥²𝑝`).
 
-use techy::core::node::NodeRef;
-use techy_xp::lang::LatexlikeXp;
-
 use crate::def::{Category, SpecialsDef, TextHandler, TextRule};
 use crate::flow::Flow;
 use crate::mathfmt::{script_atom, ScriptKind};
-use crate::render::{math, RenderCx, RenderError};
+use crate::render::{math, NodeView, RenderCx, RenderError};
 
 use super::handler;
 
@@ -65,11 +62,7 @@ fn script_rule(kind: ScriptKind) -> TextRule {
 struct Script(ScriptKind);
 
 impl TextHandler for Script {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let argument = cx.arg(SCRIPT)?.unwrap_or_default();
         // The argument is a formula of its own: `_{i=1}` has to be joined before it can
         // be looked up as script characters, or the `=` would not have become `₌`.

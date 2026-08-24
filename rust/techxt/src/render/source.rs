@@ -20,13 +20,12 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use techy::core::node::{NodeKind, NodeRef, SlotRole};
-use techy::latexlike::{EnvironmentSyntax, LatexlikeInvocationSyntax};
-use techy_xp::lang::LatexlikeXp;
+use techy::latexlike::{EnvironmentSyntax, LatexlikeInvocationSyntax, LatexlikeLang};
 
 /// One pending piece of work: a subtree to emit, or text to emit after it.
-enum Step<'t> {
+enum Step<'t, LLL: LatexlikeLang> {
     /// Emit this node, and schedule what follows it.
-    Node(NodeRef<'t, LatexlikeXp>),
+    Node(NodeRef<'t, LLL>),
     /// Emit this text (an environment's `\end{…}`, a group's closing delimiter).
     Tail(String),
 }
@@ -36,11 +35,11 @@ enum Step<'t> {
 /// Byte-exact for a parsed tree, tolerant-recovery shapes included; on a tree that was
 /// synthesized or transformed it reproduces what the nodes now *say*, which is the only
 /// answer that is meaningful there.
-pub(crate) fn latex_source(node: NodeRef<'_, LatexlikeXp>) -> String {
+pub(crate) fn latex_source<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> String {
     let mut out = String::new();
-    let mut stack: Vec<Step<'_>> = alloc::vec![Step::Node(node)];
+    let mut stack: Vec<Step<'_, LLL>> = alloc::vec![Step::Node(node)];
     // Reused across nodes so that a wide tree does not reallocate per callable.
-    let mut children: Vec<NodeRef<'_, LatexlikeXp>> = Vec::new();
+    let mut children: Vec<NodeRef<'_, LLL>> = Vec::new();
 
     while let Some(step) = stack.pop() {
         let node = match step {
@@ -115,9 +114,9 @@ pub(crate) fn latex_source(node: NodeRef<'_, LatexlikeXp>) -> String {
 ///
 /// Skipping attached content is what makes `\input{a.tex}` re-emit as the invocation it
 /// was written as, rather than as the file it pulled in.
-fn collect_scoped_children<'t>(
-    node: NodeRef<'t, LatexlikeXp>,
-    out: &mut Vec<NodeRef<'t, LatexlikeXp>>,
+fn collect_scoped_children<'t, LLL: LatexlikeLang>(
+    node: NodeRef<'t, LLL>,
+    out: &mut Vec<NodeRef<'t, LLL>>,
 ) {
     let children = node.children();
     if children.is_empty() {

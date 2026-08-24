@@ -30,13 +30,10 @@
 //! relation the `&` was aligning, and a rendering that is not in columns has nothing to
 //! align it to.
 
-use techy::core::node::NodeRef;
-use techy_xp::lang::LatexlikeXp;
-
 use crate::def::{Category, EnvDef, TextHandler, TextRule};
 use crate::flow::Flow;
 use crate::mathfmt::{display_matrix_atom, inline_matrix_atom, MatrixFence};
-use crate::render::{math, MathCtx, RenderCx, RenderError};
+use crate::render::{math, MathCtx, NodeView, RenderCx, RenderError};
 
 use super::handler;
 
@@ -170,11 +167,7 @@ struct Formula {
 }
 
 impl TextHandler for Formula {
-    fn render(
-        &self,
-        node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let enclosing = cx.state().math;
         // A math environment *is* display math (PLAN.md §9.5) — unless it is written
         // inside an inline formula, where there is no second line to display it on.
@@ -217,11 +210,7 @@ impl TextHandler for Formula {
 struct Matrix;
 
 impl TextHandler for Matrix {
-    fn render(
-        &self,
-        node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let name = node.name().unwrap_or("");
         // A name the fence table does not know can only be an environment registered
         // elsewhere against this handler; brackets are v3's universal pair and the

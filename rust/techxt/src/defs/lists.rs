@@ -38,14 +38,11 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use techy::core::node::NodeRef;
-use techy_xp::lang::LatexlikeXp;
-
 use crate::convert::{CounterStyle, CounterWrap, EnumFormat};
 use crate::def::{Category, EnvDef, MacroDef, TextHandler};
 use crate::diag::{StrayItem, UnsupportedIgnored};
 use crate::flow::{display_width, BlockKind, Flow, FlowItem};
-use crate::render::{ListCtx, ListKind, RenderCx, RenderError};
+use crate::render::{ListCtx, ListKind, NodeView, RenderCx, RenderError};
 
 use super::handler;
 
@@ -110,11 +107,7 @@ struct ListEnv {
 }
 
 impl TextHandler for ListEnv {
-    fn render(
-        &self,
-        node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         if cx.arg_provided("options") {
             let name = String::from(node.name().unwrap_or("list"));
             cx.report(UnsupportedIgnored::new(name, "the list option list"));
@@ -219,11 +212,7 @@ fn open_blocks(flow: &Flow) -> usize {
 struct Item;
 
 impl TextHandler for Item {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let context = cx.state().list;
         if context.is_none() {
             cx.report(StrayItem);

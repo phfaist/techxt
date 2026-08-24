@@ -34,15 +34,11 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use techy::core::node::NodeRef;
-use techy::latexlike::CallableType;
-use techy_xp::lang::LatexlikeXp;
-
-use crate::def::{Category, EnvDef, MacroDef, Template, TextHandler, TextRule};
+use crate::def::{CallableKind, Category, EnvDef, MacroDef, Template, TextHandler, TextRule};
 use crate::diag::UnsupportedIgnored;
 use crate::flow::{display_width, BlockKind, Flow, FlowItem};
 use crate::layout::render_inline;
-use crate::render::{RenderCx, RenderError, TableCtx};
+use crate::render::{NodeView, RenderCx, RenderError, TableCtx};
 
 use super::handler;
 
@@ -129,12 +125,8 @@ pub fn category() -> Category {
 struct Tabular;
 
 impl TextHandler for Tabular {
-    fn render(
-        &self,
-        node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
-        let alignments = parse_alignments(&colspec_source(node, cx));
+    fn render(&self, node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
+        let alignments = parse_alignments(&colspec_source(node));
 
         let mut state = cx.state().clone();
         state.table = Some(TableCtx);
@@ -159,11 +151,7 @@ impl TextHandler for Tabular {
 struct Rule;
 
 impl TextHandler for Rule {
-    fn render(
-        &self,
-        node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let mut flow = Flow::new();
         if cx.state().table.is_some() {
             flow.push(FlowItem::RuleMark);
@@ -183,19 +171,19 @@ impl TextHandler for Rule {
 /// The ancestor walk is what makes the count "one per table" exact rather than
 /// approximate: a `tabular` nested in a cell of another owns its own spans, and the
 /// outer table must not report them a second time.
-fn spans_a_column(node: NodeRef<'_, LatexlikeXp>) -> bool {
+fn spans_a_column(node: NodeView<'_>) -> bool {
     node.descendants().any(|descendant| {
-        descendant.callable_type() == Some(CallableType::Macro)
+        descendant.callable_kind() == Some(CallableKind::Macro)
             && descendant.name() == Some(MULTICOLUMN)
             && enclosing_table(descendant).is_some_and(|table| table.id() == node.id())
     })
 }
 
 /// The innermost table environment `node` sits in, if any.
-fn enclosing_table(node: NodeRef<'_, LatexlikeXp>) -> Option<NodeRef<'_, LatexlikeXp>> {
+fn enclosing_table(node: NodeView<'_>) -> Option<NodeView<'_>> {
     let mut current = node.parent();
     while let Some(ancestor) = current {
-        if ancestor.callable_type() == Some(CallableType::Environment)
+        if ancestor.callable_kind() == Some(CallableKind::Environment)
             && ancestor
                 .name()
                 .is_some_and(|name| TABLE_ENVIRONMENTS.contains(&name))
@@ -225,17 +213,8 @@ enum Align {
 /// Answers an empty specification for a table with no `colspec` argument at all — a
 /// tree parsed against a different definition set — which reads as "every column is
 /// left-aligned", the same default an over-short specification gets.
-fn colspec_source(node: NodeRef<'_, LatexlikeXp>, cx: &RenderCx<'_, '_>) -> String {
-    let Ok(Some(nodes)) = node.argument_content_nodes_named("colspec") else {
-        return String::new();
-    };
-    let mut source = String::new();
-    for child in nodes.iter() {
-        if let Ok(text) = cx.source_of(child) {
-            source.push_str(&text);
-        }
-    }
-    source
+fn colspec_source(node: NodeView<'_>) -> String {
+    node.argument_source("colspec").unwrap_or_default()
 }
 
 /// Read the alignment letters of a column specification (PLAN.md §9.6).

@@ -31,9 +31,6 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use techy::core::node::NodeRef;
-use techy_xp::lang::LatexlikeXp;
-
 use crate::convert::{MathMode, Options};
 use crate::flow::{BlockKind, Flow, FlowItem};
 use crate::layout::render_inline;
@@ -42,6 +39,7 @@ use crate::mathfmt::{
 };
 
 use super::state::RenderState;
+use super::NodeView;
 
 /// The prefix a display formula's block indents by, on its first and every later line.
 const DISPLAY_INDENT: &str = "    ";
@@ -77,15 +75,11 @@ pub(crate) fn atoms_in_use(state: &RenderState, options: &Options) -> bool {
 /// [`InlineVerbatim`](FlowItem::InlineVerbatim) word in the running text. Neither is
 /// given the display indent — that indent is part of rendering a formula, and this is
 /// its source.
-pub(crate) fn source_scope(
-    node: NodeRef<'_, LatexlikeXp>,
-    display: bool,
-    options: &Options,
-) -> Option<Flow> {
+pub(crate) fn source_scope(node: NodeView<'_>, display: bool, options: &Options) -> Option<Flow> {
     if options.math_mode != MathMode::Source {
         return None;
     }
-    let latex = super::source::latex_source(node);
+    let latex = node.source();
     let mut flow = Flow::new();
     flow.push(if display {
         FlowItem::Verbatim(latex.into())

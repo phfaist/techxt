@@ -73,9 +73,17 @@ pub use crate::mathfmt::{FontStyle, FontStyleKind, MathWrapDelims, MatrixDelims}
 /// library — and works on a `no_std` target like everything else here.
 pub use techy::core::{StdDescentGuard, StdDescentGuardInit};
 
-/// The parse tree and its nodes: what [`Converter::tree_to_text`] converts, and what a
-/// [`TextHandler`](crate::def::TextHandler) is handed.
+/// The parse tree and its nodes: what [`Converter::tree_to_text`] converts. What a
+/// [`TextHandler`](crate::def::TextHandler) is handed is techxt's own language-erased
+/// [`NodeView`](crate::render::NodeView) instead.
 pub use techy::core::node::{NodeRef, NodeSlice, NodeTree};
+
+/// The two techy items that spell out "the tree's body slots are marked", the second
+/// half of the bound [`Converter::tree_to_text`] takes its tree under (PLAN.md §11.1).
+pub use techy::core::node::{BodySlotExt, SlotExt};
+/// The language family [`Converter::tree_to_text`] accepts a tree of: any latexlike
+/// language, not only the [`LatexlikeXp`] this converter parses with.
+pub use techy::latexlike::LatexlikeLang;
 
 /// The techy pieces a definition of your own is built from: an argument spec for
 /// [`MacroDef::arg_spec`](crate::def::MacroDef::arg_spec) and a callable spec for
@@ -198,7 +206,19 @@ impl Converter {
     /// Convert a tree that has already been parsed — or transformed.
     ///
     /// Infallible: everything that can go wrong during rendering is a diagnostic.
-    pub fn tree_to_text(&self, tree: &NodeTree<LatexlikeXp>) -> Conversion {
+    ///
+    /// The tree's language is whatever parsed it. A converter's own
+    /// [`language`](Self::language) is [`LatexlikeXp`], and a tree it parsed is the
+    /// inferred case; but rendering reads *payloads* (PLAN.md §1.6) and no techy-xp
+    /// facility, so a tree parsed by anybody's latexlike language — plain techy's
+    /// [`Latexlike`](techy::latexlike::Latexlike), a language of your own — converts
+    /// through the same rules. What such a tree cannot carry is techxt's rules *inside*
+    /// its specs, so its constructs are matched by name instead (PLAN.md §10.3 step 3).
+    pub fn tree_to_text<LLL>(&self, tree: &NodeTree<LLL>) -> Conversion
+    where
+        LLL: LatexlikeLang<SourceOrigin = Option<String>>,
+        SlotExt<LLL>: BodySlotExt,
+    {
         let (flow, diagnostics) = self.tree_to_flow(tree);
         Conversion {
             text: self.lay_out(&flow),
@@ -210,10 +230,11 @@ impl Converter {
     ///
     /// Use this to lay the result out with options of your own, to inspect the token
     /// stream, or to splice the flow into a larger one.
-    pub fn tree_to_flow(
-        &self,
-        tree: &NodeTree<LatexlikeXp>,
-    ) -> (Flow, Diagnostics<Option<String>>) {
+    pub fn tree_to_flow<LLL>(&self, tree: &NodeTree<LLL>) -> (Flow, Diagnostics<Option<String>>)
+    where
+        LLL: LatexlikeLang<SourceOrigin = Option<String>>,
+        SlotExt<LLL>: BodySlotExt,
+    {
         let mut renderer = self.renderer();
         // So that a diagnostic raised before any node is folded still has a position.
         renderer.note_document_span(tree.root());

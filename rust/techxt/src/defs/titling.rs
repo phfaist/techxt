@@ -28,13 +28,10 @@ use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use techy::core::node::NodeRef;
-use techy_xp::lang::LatexlikeXp;
-
 use crate::def::{Category, MacroDef, TextHandler, TextRule};
 use crate::flow::{display_width, Flow, FlowItem};
 use crate::layout::render_inline;
-use crate::render::{RenderCx, RenderError};
+use crate::render::{NodeView, RenderCx, RenderError};
 
 use super::handler;
 
@@ -94,11 +91,7 @@ fn field(name: &str, which: Field) -> MacroDef {
 struct SetField(Field);
 
 impl TextHandler for SetField {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let value = cx.arg("value")?.unwrap_or_default();
         match self.0 {
             Field::Title => cx.set_doc_title(value),
@@ -118,11 +111,7 @@ impl TextHandler for SetField {
 struct Today;
 
 impl TextHandler for Today {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         Ok(Flow::from_plain_text(&today(cx)))
     }
 }
@@ -140,11 +129,7 @@ fn today(cx: &RenderCx<'_, '_>) -> String {
 struct MakeTitle;
 
 impl TextHandler for MakeTitle {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         // Each field on one line: a title block is a block of lines, and a paragraph
         // break inside a recorded title would otherwise break the layout apart.
         let title = cx.doc_title().map_or_else(

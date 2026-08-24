@@ -156,8 +156,9 @@
 //!
 //! ## Extending: writing a handler
 //!
-//! [`TextRule::Handler`](def::TextRule::Handler) runs code. A handler is handed the
-//! node and a [`RenderCx`](render::RenderCx), which is its whole interface to the fold:
+//! [`TextRule::Handler`](def::TextRule::Handler) runs code. A handler is handed a
+//! [`NodeView`](render::NodeView) of the node and a [`RenderCx`](render::RenderCx),
+//! which is its whole interface to the fold:
 //! it reads arguments *through* the context (so nested constructs keep working), reads
 //! the downward [`RenderState`](render::RenderState) and the [`Options`], raises
 //! diagnostics, and registers footnotes and document metadata. It must be `Send + Sync`
@@ -167,10 +168,9 @@
 //! ```
 //! use std::sync::Arc;
 //!
-//! use techxt::convert::{LatexlikeXp, NodeRef};
 //! use techxt::def::{Category, MacroDef, TextHandler, TextRule};
 //! use techxt::flow::{Flow, FlowItem};
-//! use techxt::render::{RenderCx, RenderError};
+//! use techxt::render::{NodeView, RenderCx, RenderError};
 //! use techxt::{defs, Converter};
 //!
 //! /// `\twice{ho}` → `ho ho`.
@@ -180,7 +180,7 @@
 //! impl TextHandler for Twice {
 //!     fn render(
 //!         &self,
-//!         _node: NodeRef<'_, LatexlikeXp>,
+//!         _node: NodeView<'_>,
 //!         cx: &mut RenderCx<'_, '_>,
 //!     ) -> Result<Flow, RenderError> {
 //!         // Rendering the argument through the context is what makes `\twice{\emph{x}}`

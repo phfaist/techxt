@@ -8,12 +8,9 @@
 //! fed to a search index, and `graphics` written solid would be indexed as a word of
 //! the document. Spaced out, it is unmistakably a marker.
 
-use techy::core::node::NodeRef;
-use techy_xp::lang::LatexlikeXp;
-
 use crate::def::{Category, MacroDef, TextHandler};
 use crate::flow::{BlockKind, Flow, FlowItem};
-use crate::render::{RenderCx, RenderError};
+use crate::render::{NodeView, RenderCx, RenderError};
 
 use super::handler;
 
@@ -35,11 +32,7 @@ pub fn category() -> Category {
 struct Placeholder(&'static str);
 
 impl TextHandler for Placeholder {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        _cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, _cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let mut text = alloc::string::String::from("<");
         for character in self.0.chars() {
             text.push(' ');

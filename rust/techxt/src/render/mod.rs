@@ -100,22 +100,23 @@ pub(crate) mod math;
 mod rules;
 mod source;
 mod state;
+mod view;
 
 pub use cx::{RenderCx, RenderError};
 pub use state::{FloatKind, ListCtx, ListKind, MathCtx, RenderState, TableCtx};
+pub use view::NodeView;
 
-pub(crate) use cx::RendererOps;
+pub(crate) use cx::{FoldOn, RendererOps};
 
 use alloc::string::String;
 use core::convert::Infallible;
 
 use techy::core::constructs::DescentLimitApproaching;
-use techy::core::node::{NodeKind, NodeRef};
+use techy::core::node::{BodySlotExt, NodeKind, NodeRef, SlotExt};
 use techy::core::DescentWarning;
 use techy::error::{Diagnostic, Diagnostics, Severity};
-use techy::latexlike::{GroupType, MathGroupForm};
+use techy::latexlike::{LatexlikeGroupType, LatexlikeLang, MathGroupForm};
 use techy::recompose::{ConcatPieces, Recompose, RecomposeContext, Recomposer};
-use techy_xp::lang::LatexlikeXp;
 
 use crate::convert::{FootnoteStyle, Options};
 use crate::def::{embedded_rule, is_refusal, CallableKind, RuleTable};
@@ -189,7 +190,10 @@ impl<'a> TextRenderer<'a> {
     /// Note a document-wide span, so that a diagnostic with no node to point at still
     /// has a position. Called by the converter before the fold, and by the fold itself
     /// on the first node it sees.
-    pub(crate) fn note_document_span(&mut self, node: NodeRef<'_, LatexlikeXp>) {
+    pub(crate) fn note_document_span<LLL: LatexlikeLang<SourceOrigin = Option<String>>>(
+        &mut self,
+        node: NodeRef<'_, LLL>,
+    ) {
         if self.run.document_span.is_none() {
             self.run.document_span = Some(node.span().clone());
         }
@@ -208,7 +212,11 @@ impl<'a> TextRenderer<'a> {
     // ------------------------------------------------------------------ per kind
 
     /// Characters (PLAN.md §9.1).
-    fn chars(&self, node: NodeRef<'_, LatexlikeXp>, state: &RenderState) -> Flow {
+    fn chars<LLL>(&self, node: NodeRef<'_, LLL>, state: &RenderState) -> Flow
+    where
+        LLL: LatexlikeLang<SourceOrigin = Option<String>>,
+        SlotExt<LLL>: BodySlotExt,
+    {
         // `chars()` reads the node's own payload, resolved against the node's own
         // source: the one text-reading operation that is safe on any tree (PLAN.md
         // §1.6). `span_content()` would be wrong on a transformed tree, silently.
@@ -271,7 +279,10 @@ impl<'a> TextRenderer<'a> {
     /// By default a comment renders as *nothing at all* — not even the newline that
     /// ends it, which is exactly what LaTeX does and why `A% note` followed by `B` is
     /// one word `AB`.
-    fn comment(&self, node: NodeRef<'_, LatexlikeXp>) -> Flow {
+    fn comment<LLL: LatexlikeLang<SourceOrigin = Option<String>>>(
+        &self,
+        node: NodeRef<'_, LLL>,
+    ) -> Flow {
         if !self.config.options.keep_comments {
             return Flow::new();
         }
@@ -293,25 +304,29 @@ impl<'a> TextRenderer<'a> {
     }
 
     /// A group (PLAN.md §9.1).
-    fn group(
+    fn group<LLL: LatexlikeLang<SourceOrigin = Option<String>>>(
         &mut self,
-        node: NodeRef<'_, LatexlikeXp>,
+        node: NodeRef<'_, LLL>,
         state: &RenderState,
     ) -> Recompose<Flow, RenderState> {
-        match node.group_type() {
-            Some(GroupType::Math(form)) => self.math_group(node, state, form),
-            Some(GroupType::Verbatim) => {
+        // Asked through the language's own group-class roles rather than by matching a
+        // concrete enum, so that every latexlike language answers (PLAN.md §11.1).
+        if let Some(group_type) = node.group_type() {
+            if let Some(form) = group_type.math_form() {
+                return self.math_group(node, state, form);
+            }
+            if group_type == LLL::GroupTypeId::verbatim_group() {
                 // One raw characters child, by construction. `Emit` prunes it, so it is
                 // read here rather than folded.
                 let raw = node.child(0).and_then(|child| child.chars()).unwrap_or("");
                 let mut flow = Flow::new();
                 flow.push(FlowItem::InlineVerbatim(raw.into()));
-                Recompose::Emit(flow)
+                return Recompose::Emit(flow);
             }
-            // Ordinary grouping is transparent: `{brave}` renders as `brave`. The
-            // braces were syntax, not content.
-            _ => Recompose::Concat(ConcatPieces::children()),
         }
+        // Ordinary grouping is transparent: `{brave}` renders as `brave`. The braces
+        // were syntax, not content.
+        Recompose::Concat(ConcatPieces::children())
     }
 
     /// A math group — `$…$`, `\(…\)`, `\[…\]`, `$$…$$` (PLAN.md §9.5).
@@ -341,15 +356,15 @@ impl<'a> TextRenderer<'a> {
     /// (PLAN.md §1.6). That is [`math::source_scope`]'s job rather than this method's,
     /// because a math group is only one of the ways a formula is opened — a math
     /// environment is another — and all of them have to answer alike.
-    fn math_group(
+    fn math_group<LLL: LatexlikeLang<SourceOrigin = Option<String>>>(
         &mut self,
-        node: NodeRef<'_, LatexlikeXp>,
+        node: NodeRef<'_, LLL>,
         state: &RenderState,
         form: MathGroupForm,
     ) -> Recompose<Flow, RenderState> {
         let display = form == MathGroupForm::Display;
 
-        if let Some(flow) = math::source_scope(node, display, &self.config.options) {
+        if let Some(flow) = math::source_scope(NodeView::of(node), display, &self.config.options) {
             return Recompose::Emit(flow);
         }
 
@@ -366,12 +381,16 @@ impl<'a> TextRenderer<'a> {
     }
 
     /// A callable: find its rule (PLAN.md §10.3), then run it (PLAN.md §10.4).
-    fn callable(
+    fn callable<LLL>(
         &mut self,
-        node: NodeRef<'_, LatexlikeXp>,
+        node: NodeRef<'_, LLL>,
         state: &RenderState,
-        cx: &mut RecomposeContext<'_, LatexlikeXp, ()>,
-    ) -> Recompose<Flow, RenderState> {
+        cx: &mut RecomposeContext<'_, LLL, ()>,
+    ) -> Recompose<Flow, RenderState>
+    where
+        LLL: LatexlikeLang<SourceOrigin = Option<String>>,
+        SlotExt<LLL>: BodySlotExt,
+    {
         // Read the configuration *out* of `self` first: it is a shared reference with
         // the converter's lifetime, so the rule it yields outlives the mutable borrow
         // the context below needs.
@@ -387,16 +406,22 @@ impl<'a> TextRenderer<'a> {
         // Step 4 (PLAN.md §10.6): no rule, so the unknown-construct policy decides — and
         // says so, unless the parse has already named this construct better than
         // `techxt.unknown-macro` could. A techy-xp refusal is exactly that case.
-        let mut render_cx = RenderCx::new(self, cx, node, state);
+        let diagnose = !is_refusal(node);
+        let mut fold = FoldOn::new(self, cx, node);
+        let mut render_cx = RenderCx::new(&mut fold, state);
         let flow = match rule {
             Some(rule) => rules::execute(rule, &mut render_cx),
-            None => rules::unknown(kind, !is_refusal(node), &mut render_cx),
+            None => rules::unknown(kind, diagnose, &mut render_cx),
         };
         Recompose::Emit(flow)
     }
 }
 
-impl RendererOps for TextRenderer<'_> {
+impl<LLL> RendererOps<LLL> for TextRenderer<'_>
+where
+    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
+    SlotExt<LLL>: BodySlotExt,
+{
     fn run(&self) -> &RunState {
         &self.run
     }
@@ -410,7 +435,11 @@ impl RendererOps for TextRenderer<'_> {
     }
 }
 
-impl Recomposer<LatexlikeXp, ()> for TextRenderer<'_> {
+impl<LLL> Recomposer<LLL, ()> for TextRenderer<'_>
+where
+    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
+    SlotExt<LLL>: BodySlotExt,
+{
     type State = RenderState;
     type Piece = Flow;
     /// The fold itself never fails: a rule that cannot render its construct becomes a
@@ -421,9 +450,9 @@ impl Recomposer<LatexlikeXp, ()> for TextRenderer<'_> {
 
     fn recompose_node(
         &mut self,
-        node: NodeRef<'_, LatexlikeXp, ()>,
+        node: NodeRef<'_, LLL, ()>,
         state: &RenderState,
-        cx: &mut RecomposeContext<'_, LatexlikeXp, ()>,
+        cx: &mut RecomposeContext<'_, LLL, ()>,
     ) -> Result<Recompose<Flow, RenderState>, Infallible> {
         self.note_document_span(node);
         Ok(match node.kind() {
@@ -460,10 +489,12 @@ impl Recomposer<LatexlikeXp, ()> for TextRenderer<'_> {
 ///
 /// The structural test is the reliable one: techy parses `\verb|x_1|` into a group of
 /// class [`GroupType::Verbatim`] holding one characters node.
-fn in_verbatim_group(node: NodeRef<'_, LatexlikeXp>) -> bool {
+fn in_verbatim_group<LLL: LatexlikeLang<SourceOrigin = Option<String>>>(
+    node: NodeRef<'_, LLL>,
+) -> bool {
     node.parent()
         .and_then(|parent| parent.group_type())
-        .is_some_and(|group_type| group_type == GroupType::Verbatim)
+        .is_some_and(|group_type| group_type == LLL::GroupTypeId::verbatim_group())
 }
 
 /// Whether these characters are the raw body of a verbatim environment.
@@ -471,7 +502,11 @@ fn in_verbatim_group(node: NodeRef<'_, LatexlikeXp>) -> bool {
 /// Asked of the environment's definition rather than guessed from the text: a techxt
 /// environment records what its body is (`EnvBodyKind::Verbatim`), which is the whole
 /// point of one definition serving both parsing and rendering.
-fn in_verbatim_body(node: NodeRef<'_, LatexlikeXp>) -> bool {
+fn in_verbatim_body<LLL>(node: NodeRef<'_, LLL>) -> bool
+where
+    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
+    SlotExt<LLL>: BodySlotExt,
+{
     let Some(body_list) = node.parent() else {
         return false;
     };
@@ -524,6 +559,7 @@ mod tests {
     use techy::core::node::NodeTree;
     use techy::core::StdDescentGuardInit;
     use techy::recompose::{RecomposeError, TreeRecomposer};
+    use techy_xp::lang::LatexlikeXp;
 
     use super::*;
     use crate::convert::Converter;
@@ -541,7 +577,7 @@ mod tests {
     impl TextHandler for EnterFigure {
         fn render(
             &self,
-            _node: NodeRef<'_, LatexlikeXp>,
+            _node: NodeView<'_>,
             cx: &mut RenderCx<'_, '_>,
         ) -> Result<Flow, RenderError> {
             let derived = RenderState {
@@ -559,7 +595,7 @@ mod tests {
     impl TextHandler for ReportFloat {
         fn render(
             &self,
-            _node: NodeRef<'_, LatexlikeXp>,
+            _node: NodeView<'_>,
             cx: &mut RenderCx<'_, '_>,
         ) -> Result<Flow, RenderError> {
             Ok(Flow::text(match cx.state().float {
@@ -785,9 +821,15 @@ mod tests {
         let tree = parse(&converter, "a");
         let mut renderer = converter.renderer();
         renderer.note_document_span(tree.root());
-        renderer.observe_descent_warning(DescentWarning {
-            detail: String::from("half the budget is gone"),
-        });
+        // The renderer recomposes *any* latexlike language now, so a `Recomposer`
+        // method called on it directly — rather than through a fold, where the tree
+        // pins the language — has to say which one.
+        Recomposer::<LatexlikeXp, ()>::observe_descent_warning(
+            &mut renderer,
+            DescentWarning {
+                detail: String::from("half the budget is gone"),
+            },
+        );
         let finish = renderer.finish();
         assert_eq!(
             finish

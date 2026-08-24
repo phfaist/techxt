@@ -64,7 +64,6 @@
 use alloc::string::String;
 use alloc::sync::Arc;
 
-use techy::core::node::NodeRef;
 use techy::core::specs::CallableSpec;
 use techy::latexlike::{input_macro_spec, BodyMarker};
 use techy_xp::lang::LatexlikeXp;
@@ -72,7 +71,7 @@ use techy_xp::lang::LatexlikeXp;
 use crate::def::{CallableSpecSource, Category, MacroDef, SpecBuildCx, TextHandler};
 use crate::diag::InputNotResolved;
 use crate::flow::Flow;
-use crate::render::{RenderCx, RenderError};
+use crate::render::{NodeView, RenderCx, RenderError};
 
 use super::handler;
 
@@ -123,11 +122,7 @@ impl CallableSpecSource for Resolving {
 struct Include;
 
 impl TextHandler for Include {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         if let Some(content) = cx.attached()? {
             return Ok(content);
         }

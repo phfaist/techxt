@@ -10,18 +10,23 @@
 //! 4. the unknown-construct policy.
 
 use std::borrow::Cow;
+use std::sync::Arc;
 
-use techy::core::specs::Package;
+use techy::core::specs::{ArgumentSpec, Package};
 use techy::core::{Language, ParsingState};
 use techy::error::Recovery;
-use techy::latexlike::{CallableType, MacroSpec};
+use techy::latexlike::{
+    argument_specs_named, CallableType, EnvironmentSpec, Latexlike, LatexlikeDriver, MacroSpec,
+};
 use techy_xp::lang::{LatexlikeXp, XpDriver};
 
 use techxt::convert::{
     UnknownEnvPolicy, UnknownMacroPolicy, UnknownMacroResolution, UnknownSpecialsPolicy,
 };
-use techxt::def::{Category, DefinitionSet, EnvDef, MacroDef, SpecialsDef, TextRule};
+use techxt::def::{Category, DefinitionSet, EnvDef, MacroDef, SpecialsDef, TextHandler, TextRule};
 use techxt::diag::UnknownMacro;
+use techxt::flow::Flow;
+use techxt::render::{NodeView, RenderCx, RenderError};
 use techxt::Converter;
 
 /// A literal rule.
@@ -472,4 +477,200 @@ fn a_declared_macro_is_unaffected_by_the_resolution_setting() {
             .unwrap_or_else(|error| panic!("{resolution:?} should parse: {error}"));
         assert_eq!(conversion.text, "axb\n", "{resolution:?}");
     }
+}
+
+// ------------------------------------------- over plain techy (`Latexlike`)
+//
+// techxt parses with techy-xp's `LatexlikeXp`, but it *renders* any latexlike language
+// (PLAN.md §11.1): the fold reads node payloads, and no payload is techy-xp's. These
+// tests hand it trees of plain techy's own `Latexlike`, parsed by `LatexlikeDriver`
+// with no techy-xp anywhere — the case techxt 0.1.0 served only by accident, because
+// everyone happened to name the same concrete type.
+
+/// A plain-techy language holding `packages`, driven by techy's own latexlike driver.
+fn plain_techy(packages: impl IntoIterator<Item = Package<Latexlike>>) -> Language<Latexlike> {
+    Language::new(
+        LatexlikeDriver::new(Recovery::Tolerant),
+        ParsingState::lang_initial_with_packages(packages).expect("seed state"),
+    )
+}
+
+/// The argument specs for these `(code, name)` pairs, in plain techy's language.
+fn foreign_args(codes: &[(&str, &str)]) -> Vec<Arc<ArgumentSpec<Latexlike>>> {
+    argument_specs_named::<Latexlike, _, _, _>(codes.iter().copied()).expect("argument codes")
+}
+
+#[test]
+fn a_plain_techy_tree_is_rendered_through_the_name_fallback_table() {
+    // The same test as `a_foreign_tree_is_rendered_through_the_name_fallback_table`
+    // above, one language further away: not merely somebody else's *definitions* but
+    // somebody else's `Lang`. Nothing in the tree is a techxt spec, so the rule is
+    // found at step 3, by name.
+    let mut package = Package::<Latexlike>::new("foreign");
+    package.insert(CallableType::Macro, "mark", MacroSpec::new(Vec::new()));
+    let tree = plain_techy([package])
+        .parse(r"a\mark b")
+        .expect("parses")
+        .tree;
+
+    assert_eq!(
+        marking("FROM-THE-TABLE").tree_to_text(&tree).text,
+        "aFROM-THE-TABLEb\n"
+    );
+}
+
+#[test]
+fn a_plain_techy_tree_with_no_matching_name_falls_through_to_the_policy() {
+    let mut package = Package::<Latexlike>::new("foreign");
+    package.insert(CallableType::Macro, "elsewhere", MacroSpec::new(Vec::new()));
+    let tree = plain_techy([package])
+        .parse(r"a\elsewhere b")
+        .expect("parses")
+        .tree;
+
+    let conversion = marking("unused").tree_to_text(&tree);
+    assert_eq!(conversion.text, "ab\n");
+    assert_eq!(
+        conversion
+            .diagnostics
+            .with_identifier("techxt.unknown-macro")
+            .count(),
+        1
+    );
+}
+
+/// `\shout{hi}` → `*hi*`: a handler of a consumer's own, on a foreign tree.
+#[derive(Debug)]
+struct Shout;
+
+impl TextHandler for Shout {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
+        let mut flow = Flow::text("*");
+        flow.extend(cx.arg("text")?.unwrap_or_default());
+        flow.extend(Flow::text("*"));
+        Ok(flow)
+    }
+}
+
+/// A plain-techy language with everything the four-construct test needs: a macro taking
+/// one argument, and an environment with an ordinary body. Groups and math need no
+/// definitions at all — they are the language's own syntax.
+fn foreign_constructs() -> Language<Latexlike> {
+    let mut package = Package::<Latexlike>::new("foreign");
+    package.insert(
+        CallableType::Macro,
+        "shout",
+        MacroSpec::new(foreign_args(&[("m", "text")])),
+    );
+    package.insert(
+        CallableType::Environment,
+        "quoteish",
+        EnvironmentSpec::new(Vec::new()),
+    );
+    plain_techy([package])
+}
+
+#[test]
+fn every_construct_of_a_plain_techy_tree_renders() {
+    // Groups, math, an environment body and a macro invocation — the four shapes a
+    // latexlike tree is made of — each folded by the renderer over a language it was
+    // not compiled against.
+    let converter = Converter::builder()
+        .definitions(
+            DefinitionSet::new().with(
+                Category::new("foreign")
+                    .with_macro(
+                        MacroDef::new("shout")
+                            .arg("m", "text")
+                            .rule(TextRule::Handler(Arc::new(Shout))),
+                    )
+                    .with_env(EnvDef::new("quoteish").rule(TextRule::Content)),
+            ),
+        )
+        .build()
+        .expect("builds");
+    let tree = foreign_constructs()
+        .parse(r"{grouped} $a b$ \begin{quoteish}inside\end{quoteish} \shout{hi}")
+        .expect("parses")
+        .tree;
+
+    // The group is transparent, the formula is joined and styled by the math engine,
+    // the environment renders its body, and the handler runs.
+    assert_eq!(
+        converter.tree_to_text(&tree).text,
+        "grouped \u{1d44e}\u{1d44f} inside *hi*\n"
+    );
+}
+
+#[test]
+fn a_handler_of_ones_own_fires_on_a_plain_techy_tree() {
+    // The same handler, reached through the *override* map rather than the fallback
+    // table: dispatch step 1 is language-blind too.
+    let converter = Converter::builder()
+        .override_macro("shout", TextRule::Handler(Arc::new(Shout)))
+        .build()
+        .expect("builds");
+    let tree = foreign_constructs()
+        .parse(r"\shout{hi}")
+        .expect("parses")
+        .tree;
+
+    assert_eq!(converter.tree_to_text(&tree).text, "*hi*\n");
+}
+
+#[test]
+fn a_shipped_handler_renders_a_plain_techy_list() {
+    // `itemize` and `\item` are rendered by `defs::lists`'s handlers, found by name
+    // because the foreign specs carry no rule. The markers, the numbering and the
+    // hanging indent are the shipped ones, on a tree techxt never parsed.
+    let mut package = Package::<Latexlike>::new("foreign");
+    package.insert(
+        CallableType::Environment,
+        "itemize",
+        EnvironmentSpec::new(Vec::new()),
+    );
+    package.insert(
+        CallableType::Macro,
+        "item",
+        MacroSpec::new(foreign_args(&[("o", "label")])),
+    );
+    let latex = r"\begin{itemize}\item one \item two\end{itemize}";
+    let tree = plain_techy([package]).parse(latex).expect("parses").tree;
+
+    let converter = Converter::standard();
+    let conversion = converter.tree_to_text(&tree);
+    assert_eq!(conversion.text, "  \u{2022} one\n  \u{2022} two\n");
+    assert!(
+        !conversion.diagnostics.has_errors(),
+        "{:?}",
+        conversion.diagnostics
+    );
+    // And byte for byte what the same document renders as when techxt parsed it
+    // itself: the language the tree came from changes nothing about the rendering.
+    assert_eq!(
+        conversion.text,
+        converter.latex_to_text(latex).expect("parses").text
+    );
+}
+
+#[test]
+fn a_shipped_handler_renders_text_inside_a_plain_techy_formula() {
+    // `\text{…}` is `defs::base`'s `ModeShift` handler: it leaves math for its
+    // argument, so the words inside come out unstyled while the variable around them
+    // does not.
+    let mut package = Package::<Latexlike>::new("foreign");
+    package.insert(
+        CallableType::Macro,
+        "text",
+        MacroSpec::new(foreign_args(&[("m", "text")])),
+    );
+    let tree = plain_techy([package])
+        .parse(r"$x \text{if} y$")
+        .expect("parses")
+        .tree;
+
+    assert_eq!(
+        Converter::standard().tree_to_text(&tree).text,
+        "\u{1d465} if \u{1d466}\n"
+    );
 }

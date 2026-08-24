@@ -27,12 +27,9 @@
 
 use alloc::borrow::Cow;
 
-use techy::core::node::NodeRef;
-use techy_xp::lang::LatexlikeXp;
-
 use crate::def::{Category, EnvDef, MacroDef, TextHandler, TextRule};
 use crate::flow::{Flow, FlowItem};
-use crate::render::{RenderCx, RenderError};
+use crate::render::{NodeView, RenderCx, RenderError};
 
 use super::handler;
 
@@ -100,11 +97,7 @@ pub fn category() -> Category {
 struct EntryBreak;
 
 impl TextHandler for EntryBreak {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        _cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, _cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let mut flow = Flow::new();
         flow.push(FlowItem::ParagraphBreak);
         Ok(flow)

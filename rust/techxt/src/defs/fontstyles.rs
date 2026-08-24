@@ -41,13 +41,10 @@
 //! weight back to medium — therefore reads like `\textrm` and `\textup`, there being no
 //! medium-weight alphabet for it to select.
 
-use techy::core::node::NodeRef;
-use techy_xp::lang::LatexlikeXp;
-
 use crate::def::{Category, MacroDef, TextHandler, TextRule};
 use crate::flow::Flow;
 use crate::mathfmt::{FontStyle, FontStyleKind};
-use crate::render::{RenderCx, RenderError};
+use crate::render::{NodeView, RenderCx, RenderError};
 
 use super::handler;
 
@@ -176,11 +173,7 @@ const TEXT: &str = "text";
 struct SetFont(FontStyleKind);
 
 impl TextHandler for SetFont {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let state = derive_font(cx, |_| FontStyle::Style(self.0));
         Ok(cx.arg_with_state(TEXT, state)?.unwrap_or_default())
     }
@@ -195,11 +188,7 @@ impl TextHandler for SetFont {
 struct Emphasis;
 
 impl TextHandler for Emphasis {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let state = derive_font(cx, |current| FontStyle::Style(toggle_italic(current)));
         Ok(cx.arg_with_state(TEXT, state)?.unwrap_or_default())
     }

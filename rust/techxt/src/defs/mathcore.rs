@@ -33,15 +33,12 @@
 use alloc::format;
 use alloc::string::String;
 
-use techy::core::node::NodeRef;
-use techy_xp::lang::LatexlikeXp;
-
 use crate::def::{Category, MacroDef, Template, TextHandler, TextRule};
 use crate::flow::Flow;
 use crate::mathfmt::{
     frac_atom, script_atom, sqrt_atom, Atom, AtomClass, FontStyle, FontStyleKind, ScriptKind,
 };
-use crate::render::{math, RenderCx, RenderError, RenderState};
+use crate::render::{math, NodeView, RenderCx, RenderError, RenderState};
 
 use super::handler;
 
@@ -632,11 +629,7 @@ struct FixedAtom {
 }
 
 impl TextHandler for FixedAtom {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let atom = Atom::from_text(self.text, self.cls);
         Ok(math::atom(atom, cx.state(), cx.options()))
     }
@@ -650,11 +643,7 @@ impl TextHandler for FixedAtom {
 struct OperatorName;
 
 impl TextHandler for OperatorName {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let upright = upright_state(cx);
         let rendered = cx
             .arg_with_state(OPERATOR_TEXT, upright)?
@@ -690,11 +679,7 @@ struct Modulo {
 }
 
 impl TextHandler for Modulo {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let rendered = cx.arg(MODULUS)?.unwrap_or_default();
         let modulus = math::inline_text(&rendered, cx.state(), cx.options());
         let (text, cls) = if self.parenthesized {
@@ -717,11 +702,7 @@ impl TextHandler for Modulo {
 struct Stacked(ScriptKind);
 
 impl TextHandler for Stacked {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         // Declaration order, as everywhere: the fold's side effects happen while a
         // region is folded, and the annotation is written first.
         let annotation = cx.arg(ANNOTATION)?.unwrap_or_default();
@@ -749,11 +730,7 @@ impl TextHandler for Stacked {
 struct Fraction;
 
 impl TextHandler for Fraction {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         // Declaration order: the fold's side effects happen while a region is folded.
         let numerator = cx.arg(NUMERATOR)?.unwrap_or_default();
         let denominator = cx.arg(DENOMINATOR)?.unwrap_or_default();
@@ -769,11 +746,7 @@ impl TextHandler for Fraction {
 struct Root;
 
 impl TextHandler for Root {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let index = cx.arg(INDEX)?;
         let radicand = cx.arg(RADICAND)?.unwrap_or_default();
         let index = index.map(|flow| math::inline_text(&flow, cx.state(), cx.options()));
@@ -792,11 +765,7 @@ impl TextHandler for Root {
 struct SizedDelimiter;
 
 impl TextHandler for SizedDelimiter {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let rendered = cx.arg(DELIMITER)?.unwrap_or_default();
         // `\left.` and `\right.` mark a side that has no delimiter at all.
         if math::inline_text(&rendered, cx.state(), cx.options()) == "." {

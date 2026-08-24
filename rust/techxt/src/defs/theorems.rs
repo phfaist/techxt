@@ -29,13 +29,10 @@
 
 use alloc::string::String;
 
-use techy::core::node::NodeRef;
-use techy_xp::lang::LatexlikeXp;
-
 use crate::def::{Category, EnvDef, MacroDef, TextHandler, TextRule};
 use crate::flow::{BlockKind, Flow, FlowItem};
 use crate::layout::render_inline;
-use crate::render::{FloatKind, RenderCx, RenderError};
+use crate::render::{FloatKind, NodeView, RenderCx, RenderError};
 
 use super::handler;
 
@@ -175,11 +172,7 @@ struct Block {
 }
 
 impl TextHandler for Block {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         Ok(indented(cx.body()?, self.indent))
     }
 }
@@ -189,11 +182,7 @@ impl TextHandler for Block {
 struct Abstract;
 
 impl TextHandler for Abstract {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let body = cx.body()?;
         let mut flow = Flow::new();
         flow.push(FlowItem::ParagraphBreak);
@@ -213,11 +202,7 @@ struct Float {
 }
 
 impl TextHandler for Float {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let mut state = cx.state().clone();
         state.float = Some(self.kind);
         cx.body_with_state(state)
@@ -229,11 +214,7 @@ impl TextHandler for Float {
 struct Caption;
 
 impl TextHandler for Caption {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         // A caption outside any float still has something to say; it just cannot say
         // what it is a caption *of*.
         let label = match cx.state().float {
@@ -263,11 +244,7 @@ struct Theorem {
 }
 
 impl TextHandler for Theorem {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         // The note is rendered before the body, which is the order it is written in and
         // therefore the order its own side effects (a footnote in a theorem's note)
         // must happen in.

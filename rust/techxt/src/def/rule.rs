@@ -4,11 +4,10 @@ use alloc::borrow::Cow;
 use alloc::sync::Arc;
 
 use techy::core::node::NodeRef;
-use techy::latexlike::CallableType;
-use techy_xp::lang::LatexlikeXp;
+use techy::latexlike::{CallableType, LatexlikeCallableType, LatexlikeLang};
 
 use crate::flow::Flow;
-use crate::render::{RenderCx, RenderError};
+use crate::render::{NodeView, RenderCx, RenderError};
 
 use super::Template;
 
@@ -44,9 +43,24 @@ impl CallableKind {
     }
 
     /// The techxt kind of the callable `node` is, or `None` when it is not a callable.
-    pub fn of(node: NodeRef<'_, LatexlikeXp>) -> Option<CallableKind> {
-        node.callable_type()
-            .and_then(CallableKind::from_callable_type)
+    ///
+    /// Read through the language's own callable-type roles
+    /// ([`LatexlikeCallableType`]) rather than by matching techy's concrete
+    /// [`CallableType`], so that a tree of any latexlike language answers (PLAN.md
+    /// §11.1). A callable playing none of the three roles is one techxt has no
+    /// vocabulary for, and answers `None` exactly as an unknown [`CallableType`] does.
+    pub fn of<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> Option<CallableKind> {
+        let callable_type = node.callable_type()?;
+        if callable_type.is_macro() {
+            return Some(CallableKind::Macro);
+        }
+        if callable_type.is_environment() {
+            return Some(CallableKind::Environment);
+        }
+        if callable_type.is_specials() {
+            return Some(CallableKind::Specials);
+        }
+        None
     }
 
     /// How a construct of this kind is written, for diagnostic messages: `\name` for a
@@ -100,8 +114,8 @@ pub enum TextRule {
 
 /// Rendering code for one construct (PLAN.md §10.4).
 ///
-/// A handler is called with the node it is rendering and a [`RenderCx`], which is its
-/// whole interface to the fold: it reads arguments through the context (which folds
+/// A handler is called with a [`NodeView`] of the node it is rendering and a
+/// [`RenderCx`], which is its whole interface to the fold: it reads arguments through the context (which folds
 /// them with the renderer, so nested constructs keep working), reads the downward
 /// [`RenderState`](crate::render::RenderState) and the [`Options`](crate::Options),
 /// raises diagnostics, and registers footnotes and document metadata.
@@ -117,9 +131,5 @@ pub enum TextRule {
 /// rendering is nothing.
 pub trait TextHandler: Send + Sync + core::fmt::Debug {
     /// Render `node`, reading everything else through `cx`.
-    fn render(
-        &self,
-        node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError>;
+    fn render(&self, node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError>;
 }

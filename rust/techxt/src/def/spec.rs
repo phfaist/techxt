@@ -27,7 +27,8 @@ use techy::core::specs::{ArgumentSpec, CallableSpec, ScopeOp, SpecsProvider};
 use techy::core::ParsingStateDelta;
 use techy::error::ParseError;
 use techy::latexlike::{
-    EnvironmentBehavior, EnvironmentInvocation, EnvironmentSpec, Mode, VerbatimBehavior,
+    EnvironmentBehavior, EnvironmentInvocation, EnvironmentSpec, LatexlikeLang, Mode,
+    VerbatimBehavior,
 };
 use techy::serialize::SerializableObject;
 use techy::source::SourceResolver;
@@ -409,7 +410,13 @@ impl TechxtEnvironmentBehavior {
     ///
     /// This is step 2 of the dispatch chain for environments: `spec` → the concrete
     /// [`EnvironmentSpec`] → its behaviour → this type.
-    pub fn of(node: NodeRef<'_, LatexlikeXp>) -> Option<&TechxtEnvironmentBehavior> {
+    ///
+    /// Generic over the tree's language but downcasting to techxt's own concrete spec
+    /// type, which is the whole design: on a foreign tree — a plain-techy
+    /// [`Latexlike`](techy::latexlike::Latexlike) parse, say — the downcast simply
+    /// misses, and the environment's rule is found one step later, in the name fallback
+    /// table (PLAN.md §10.3 step 3).
+    pub fn of<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> Option<&TechxtEnvironmentBehavior> {
         let spec = node.spec()?;
         let environment = (&**spec as &dyn Any).downcast_ref::<EnvironmentSpec<LatexlikeXp>>()?;
         (environment.behavior() as &dyn Any).downcast_ref::<TechxtEnvironmentBehavior>()
@@ -461,14 +468,14 @@ impl EnvironmentBehavior<LatexlikeXp> for TechxtEnvironmentBehavior {
 /// time, under a name that says less than the first report did — see
 /// [`rules::unknown`](crate::render). What it *renders* as is unchanged: the policy still
 /// decides that.
-pub(crate) fn is_refusal(node: NodeRef<'_, LatexlikeXp>) -> bool {
+pub(crate) fn is_refusal<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> bool {
     node.spec()
         .is_some_and(|spec| (&**spec as &dyn Any).is::<RefusalSpec<LatexlikeXp>>())
 }
 
 /// The techxt rule embedded in a callable node's spec, if it has one (PLAN.md §10.3
 /// step 2).
-pub(crate) fn embedded_rule(node: NodeRef<'_, LatexlikeXp>) -> Option<&TextRule> {
+pub(crate) fn embedded_rule<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> Option<&TextRule> {
     let spec = node.spec()?;
     let object = &**spec as &dyn Any;
     if let Some(macro_spec) = object.downcast_ref::<TechxtMacroSpec>() {

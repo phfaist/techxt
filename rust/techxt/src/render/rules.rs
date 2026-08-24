@@ -2,8 +2,6 @@
 
 use alloc::string::String;
 
-use techy::core::node::ParsedArgument;
-
 use crate::convert::{UnknownEnvPolicy, UnknownMacroPolicy, UnknownSpecialsPolicy};
 use crate::def::{ArgRef, CallableKind, Seg, Template, TextRule};
 use crate::diag::{HandlerFailed, UnknownEnvironment, UnknownMacro, UnknownSpecials};
@@ -99,12 +97,7 @@ fn arg_present(reference: &ArgRef, cx: &RenderCx<'_, '_>) -> bool {
         // for — build-time validation has already refused it for a real definition.
         ArgRef::Index(index) => index
             .checked_sub(1)
-            .and_then(|zero_based| {
-                cx.node()
-                    .arguments()
-                    .and_then(|arguments| arguments.get(zero_based))
-            })
-            .is_some_and(ParsedArgument::is_provided),
+            .is_some_and(|zero_based| cx.arg_provided_at(zero_based)),
     }
 }
 
@@ -139,7 +132,7 @@ fn arg_ref(reference: &ArgRef, cx: &mut RenderCx<'_, '_>) -> Option<Flow> {
 /// trigger characters themselves.
 fn content(cx: &mut RenderCx<'_, '_>) -> Flow {
     let node = cx.node();
-    match CallableKind::of(node) {
+    match node.callable_kind() {
         Some(CallableKind::Environment) => match cx.body() {
             Ok(body) => body,
             Err(error) => {
@@ -158,7 +151,7 @@ fn content(cx: &mut RenderCx<'_, '_>) -> Flow {
 /// heading counters, `\title` capture — happen while a region is being folded, so
 /// rendering argument 2 before argument 1 would reorder them.
 fn arguments_in_order(cx: &mut RenderCx<'_, '_>) -> Flow {
-    let count = cx.node().arguments().map_or(0, |arguments| arguments.len());
+    let count = cx.argument_count();
     let mut flow = Flow::new();
     for index in 0..count {
         match cx.arg_at(index) {
@@ -266,7 +259,7 @@ fn fail(cx: &mut RenderCx<'_, '_>, error: &RenderError) {
 fn construct_name(cx: &RenderCx<'_, '_>) -> String {
     let node = cx.node();
     let name = node.name().unwrap_or("");
-    match CallableKind::of(node) {
+    match node.callable_kind() {
         Some(kind) => kind.write_construct(name),
         None => String::from(name),
     }

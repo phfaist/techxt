@@ -23,12 +23,9 @@
 
 use alloc::string::String;
 
-use techy::core::node::NodeRef;
-use techy_xp::lang::LatexlikeXp;
-
 use crate::def::{Category, MacroDef, TextHandler};
 use crate::flow::Flow;
-use crate::render::{RenderCx, RenderError};
+use crate::render::{NodeView, RenderCx, RenderError};
 
 use super::accents_data::{ACCENTS, ACCENT_COMPOSITIONS, ACCENT_SPACING};
 use super::handler;
@@ -64,11 +61,7 @@ pub fn category() -> Category {
 struct Accent(char);
 
 impl TextHandler for Accent {
-    fn render(
-        &self,
-        _node: NodeRef<'_, LatexlikeXp>,
-        cx: &mut RenderCx<'_, '_>,
-    ) -> Result<Flow, RenderError> {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         // The argument as one line: an accent's argument is a character, not a
         // paragraph, and a rendered `\i` has to arrive here as text before its dot can
         // be reasoned about.
