@@ -1836,9 +1836,19 @@ select.control {
     max-height: 72dvh;
   }
 
-  /* With the keyboard up there is no room to insist on 38dvh a pane. */
+  /*
+   * With the keyboard up there is no room to insist on 38dvh a pane, and splitting
+   * what little is left between two panes leaves the one being typed into a sliver.
+   * The output pane isn't reachable behind the keyboard anyway, so it collapses out
+   * of the grid — same rule the Focus button applies by hand (§6.6) — and the source
+   * pane takes the row on its own.
+   */
   .kbd-up .panes {
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .kbd-up .pane-out > .pane-body {
+    display: none;
   }
 
   .kbd-up .site-header {
@@ -1916,8 +1926,23 @@ select.control {
   }
 }
 
-/* Touch targets of at least 44 px (§6.6). */
+/*
+ * Touch targets of at least 44 px (§6.6), and — just as much a touch-input concern —
+ * no text-entry field under 16 px. Below that threshold iOS Safari zooms the whole
+ * page in on focus and never zooms back out on blur, which on this one-viewport,
+ * no-scroll app (§6.6) reads as the field itself deforming into an oversized strip.
+ * The fix is scoped to touch so the desktop reading size (`--code-size`) is untouched.
+ */
 @media (pointer: coarse) {
+  .pane-input {
+    font-size: max(16px, var(--code-size));
+  }
+
+  .control-text,
+  .control-number {
+    font-size: max(16px, 0.85rem);
+  }
+
   .btn,
   .control,
   .status-toggle,
