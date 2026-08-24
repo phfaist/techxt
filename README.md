@@ -89,11 +89,6 @@ techxt [OPTIONS] [FILE]        # FILE or stdin → stdout (or -o FILE)
   -q / -v                     # -q: no diagnostics; default: warnings; -v: notes too
 ```
 
-The two expansion budgets are what bound a runaway definition — techy-xp detects no
-cycles — and they default well below techy-xp's own (256 / 100 000) because techxt
-converts documents it did not write. Raise them for a long document that reports
-having run out of budget.
-
 Diagnostics go to standard error. Exit code 0 means the document converted and
 nothing was wrong with it, 1 that it converted but the diagnostics contain errors,
 and 2 that it could not be converted at all (a strict-mode parse failure, or an I/O
@@ -127,10 +122,7 @@ cargo test --workspace
 cargo build -p techxt --target thumbv7em-none-eabihf   # the no_std proof
 ```
 
-The library is `no_std` + `alloc` and its runtime dependencies are exactly `techy`,
-[`techy-xp`](https://github.com/phfaist/techy-xp) (techy's latexlike preset carrying
-macro expansion) and `unicode-width`; there are no cargo features. Every `techy` or
-`techy-xp` type that appears in techxt's public API is re-exported from
-`techxt::convert`, so an embedder takes one dependency and not three — the
-command-line program in `techxt-cli/` is the proof of it, and depends on `techxt`,
-`clap` and `stacker` alone.
+The library is `no_std` + `alloc` and its runtime dependencies are exactly
+[`techy`](https://github.com/phfaist/techy),
+[`techy-xp`](https://github.com/phfaist/techy-xp) (techy's macro-token expansion
+extension) and `unicode-width`; there are no cargo features.
