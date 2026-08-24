@@ -10,23 +10,30 @@
 //! 4. the unknown-construct policy.
 
 use std::borrow::Cow;
+use std::convert::Infallible;
 use std::sync::Arc;
 
+use techy::core::node::{NodeRef, NodeTree};
 use techy::core::specs::{ArgumentSpec, Package};
 use techy::core::{Language, ParsingState};
 use techy::error::Recovery;
 use techy::latexlike::{
     argument_specs_named, CallableType, EnvironmentSpec, Latexlike, LatexlikeDriver, MacroSpec,
+    VerbatimBehavior,
 };
+use techy::recompose::{Recompose, RecomposeContext, Recomposer, TreeRecomposer};
 use techy_xp::lang::{LatexlikeXp, XpDriver};
 
 use techxt::convert::{
-    UnknownEnvPolicy, UnknownMacroPolicy, UnknownMacroResolution, UnknownSpecialsPolicy,
+    MathMode, UnknownEnvPolicy, UnknownMacroPolicy, UnknownMacroResolution, UnknownSpecialsPolicy,
 };
-use techxt::def::{Category, DefinitionSet, EnvDef, MacroDef, SpecialsDef, TextHandler, TextRule};
+use techxt::def::{
+    Category, DefinitionSet, EnvDef, MacroDef, SpecialsDef, Template, TextHandler, TextRule,
+};
 use techxt::diag::UnknownMacro;
 use techxt::flow::Flow;
-use techxt::render::{NodeView, RenderCx, RenderError};
+use techxt::layout::{render, LayoutOptions};
+use techxt::render::{NodeView, RenderCx, RenderError, RenderState, TextRenderer};
 use techxt::Converter;
 
 /// A literal rule.
@@ -672,5 +679,303 @@ fn a_shipped_handler_renders_text_inside_a_plain_techy_formula() {
     assert_eq!(
         Converter::standard().tree_to_text(&tree).text,
         "\u{1d465} if \u{1d466}\n"
+    );
+}
+
+// ---------------------------------- the unknown-construct policies, over plain techy
+
+/// A plain-techy language with the two vehicles the unknown-construct policies act on:
+/// a macro that declares one argument and an environment with an ordinary body. Neither
+/// name is defined anywhere in `techxt::defs`, so both reach step 4.
+fn foreign_unknowns() -> Language<Latexlike> {
+    let mut package = Package::<Latexlike>::new("foreign");
+    package.insert(
+        CallableType::Macro,
+        "ruleless",
+        MacroSpec::new(foreign_args(&[("m", "text")])),
+    );
+    package.insert(
+        CallableType::Environment,
+        "myenv",
+        EnvironmentSpec::new(Vec::new()),
+    );
+    plain_techy([package])
+}
+
+#[test]
+fn every_unknown_macro_policy_acts_on_a_plain_techy_macro() {
+    // Step 4 over a foreign language. `KeepSource` is the one that could have gone
+    // wrong: it re-emits the invocation through `Latexlike`'s own `InvocationSyntaxData`
+    // — a different type from the one `LatexlikeXp` carries, under a span regime that
+    // tiles where techy-xp's does not — and PLAN.md §1.6's payload-only rule is what
+    // makes the two answer alike.
+    let latex = r"a\ruleless{x}b";
+    let tree = foreign_unknowns().parse(latex).expect("parses").tree;
+
+    for (policy, expected) in [
+        (UnknownMacroPolicy::Skip, "ab\n"),
+        (UnknownMacroPolicy::RenderArgs, "axb\n"),
+        (UnknownMacroPolicy::KeepSource, "a\\ruleless{x}b\n"),
+        (UnknownMacroPolicy::Placeholder, "a<ruleless>b\n"),
+    ] {
+        let converter = Converter::builder()
+            .definitions(with_ruleless())
+            .unknown_macro(policy)
+            .build()
+            .expect("builds");
+        let conversion = converter.tree_to_text(&tree);
+        assert_eq!(conversion.text, expected, "{policy:?}");
+        assert_eq!(
+            conversion
+                .diagnostics
+                .with_identifier("techxt.unknown-macro")
+                .count(),
+            1,
+            "{policy:?}"
+        );
+        // And byte for byte what techxt's own parse of the same source renders as.
+        assert_eq!(
+            conversion.text,
+            converter.latex_to_text(latex).expect("parses").text,
+            "{policy:?}"
+        );
+    }
+}
+
+#[test]
+fn every_unknown_environment_policy_acts_on_a_plain_techy_environment() {
+    // `KeepSource` here goes through `Latexlike`'s environment syntax — `write_begin`
+    // and `write_end`, which reassemble `\begin{myenv}` and `\end{myenv}` from what the
+    // node recorded rather than from the source buffer.
+    let latex = r"a \begin{myenv}inner\end{myenv} b";
+    let tree = foreign_unknowns().parse(latex).expect("parses").tree;
+
+    for (policy, expected) in [
+        (UnknownEnvPolicy::RenderBody, "a inner b\n"),
+        (UnknownEnvPolicy::Skip, "a b\n"),
+        (
+            UnknownEnvPolicy::KeepSource,
+            "a\n\n\\begin{myenv}inner\\end{myenv}\n\nb\n",
+        ),
+    ] {
+        let converter = Converter::builder()
+            .unknown_env(policy)
+            .build()
+            .expect("builds");
+        let conversion = converter.tree_to_text(&tree);
+        assert_eq!(conversion.text, expected, "{policy:?}");
+        assert_eq!(
+            conversion
+                .diagnostics
+                .with_identifier("techxt.unknown-environment")
+                .count(),
+            1,
+            "{policy:?}"
+        );
+        assert_eq!(
+            conversion.text,
+            converter.latex_to_text(latex).expect("parses").text,
+            "{policy:?}"
+        );
+    }
+}
+
+// ------------------------------------- data rules over a plain-techy two-argument macro
+
+/// A plain-techy language whose `\deco` takes an optional and a mandatory argument,
+/// named exactly as the techxt definition names them — which is what lets a template
+/// refer to them and `Content` find which of them were written.
+fn foreign_deco() -> Language<Latexlike> {
+    let mut package = Package::<Latexlike>::new("foreign");
+    package.insert(
+        CallableType::Macro,
+        "deco",
+        MacroSpec::new(foreign_args(&[("o", "opt"), ("m", "main")])),
+    );
+    plain_techy([package])
+}
+
+/// A converter whose `\deco` declares the same two arguments and renders through `rule`.
+///
+/// The declaration is what the template is validated against when the converter is
+/// built; on a foreign tree the rule itself is found by name, at dispatch step 3.
+fn decorating(rule: TextRule) -> Converter {
+    Converter::builder()
+        .definitions(
+            DefinitionSet::new().with(
+                Category::new("deco").with_macro(
+                    MacroDef::new("deco")
+                        .arg("o", "opt")
+                        .arg("m", "main")
+                        .rule(rule),
+                ),
+            ),
+        )
+        .build()
+        .expect("builds")
+}
+
+#[test]
+fn a_template_rule_reads_a_plain_techy_macros_arguments() {
+    // Every way a template can reach an argument, at once: by name, by 1-based index,
+    // and by asking whether an optional one was written. All three go through the
+    // language-erased `argument_provided_at` / `argument_count` path.
+    let converter = decorating(TextRule::Template(Template::new(
+        "{main}/{2}/{?opt:<{opt}>|-}",
+    )));
+    let language = foreign_deco();
+
+    let written = language.parse(r"\deco[o]{m}").expect("parses").tree;
+    assert_eq!(converter.tree_to_text(&written).text, "m/m/<o>\n");
+
+    let omitted = language.parse(r"\deco{m}").expect("parses").tree;
+    assert_eq!(converter.tree_to_text(&omitted).text, "m/m/-\n");
+
+    // The same answers techxt's own parse gives, so the template is reading the
+    // invocation and not the language.
+    assert_eq!(
+        converter.tree_to_text(&written).text,
+        converter
+            .latex_to_text(r"\deco[o]{m}")
+            .expect("parses")
+            .text
+    );
+    assert_eq!(
+        converter.tree_to_text(&omitted).text,
+        converter.latex_to_text(r"\deco{m}").expect("parses").text
+    );
+}
+
+#[test]
+fn a_content_rule_concatenates_a_plain_techy_macros_provided_arguments() {
+    // `Content` is every *provided* argument in declaration order, so the optional one
+    // contributes exactly when it was written.
+    let converter = decorating(TextRule::Content);
+    let language = foreign_deco();
+
+    let written = language.parse(r"\deco[o]{m}").expect("parses").tree;
+    assert_eq!(converter.tree_to_text(&written).text, "om\n");
+
+    let omitted = language.parse(r"\deco{m}").expect("parses").tree;
+    assert_eq!(converter.tree_to_text(&omitted).text, "m\n");
+
+    assert_eq!(
+        converter.tree_to_text(&written).text,
+        converter
+            .latex_to_text(r"\deco[o]{m}")
+            .expect("parses")
+            .text
+    );
+}
+
+// -------------------------------------------- wrapping the renderer over a foreign tree
+
+/// A consumer's recomposer over a *plain techy* tree: it uppercases characters nodes and
+/// delegates every other node to techxt's renderer — PLAN.md §3's wrapping contract,
+/// written against a language techxt does not parse with.
+struct ShoutingWrapper<'a> {
+    inner: TextRenderer<'a>,
+}
+
+impl Recomposer<Latexlike, ()> for ShoutingWrapper<'_> {
+    type State = RenderState;
+    type Piece = Flow;
+    type Error = Infallible;
+
+    fn recompose_node(
+        &mut self,
+        node: NodeRef<'_, Latexlike, ()>,
+        state: &RenderState,
+        cx: &mut RecomposeContext<'_, Latexlike, ()>,
+    ) -> Result<Recompose<Flow, RenderState>, Infallible> {
+        if let Some(text) = node.chars() {
+            return Ok(Recompose::Emit(Flow::from_plain_text(&text.to_uppercase())));
+        }
+        self.inner.recompose_node(node, state, cx)
+    }
+}
+
+#[test]
+fn a_consumers_recomposer_can_wrap_the_renderer_over_a_plain_techy_tree() {
+    // The blanket `Recomposer<LLL, ()>` impl is what makes this compile at all: the
+    // renderer this wrapper holds was never specialized to a language, and the tree
+    // handed to `recompose` is what settles which one this run is over.
+    let converter = Converter::builder()
+        .override_macro("shout", TextRule::Handler(Arc::new(Shout)))
+        .build()
+        .expect("builds");
+    let tree: NodeTree<Latexlike> = foreign_constructs()
+        .parse(r"a \shout{hi} \begin{quoteish}c\end{quoteish}")
+        .expect("parses")
+        .tree;
+
+    let mut wrapper = ShoutingWrapper {
+        inner: converter.renderer(),
+    };
+    let flow = TreeRecomposer::new(&mut wrapper)
+        .recompose(&tree, RenderState::initial(converter.options()))
+        .expect("no refusal");
+    let finish = wrapper.inner.finish();
+
+    // The override reaches every node the *driver* descends into, and stops at the edge
+    // of a construct a techxt rule renders: `hi` is folded by the inner renderer through
+    // the handler, and so is the environment body.
+    assert_eq!(render(&flow, &LayoutOptions::default()), "A *hi* c\n");
+    // And the inner renderer still reported what it saw: `quoteish` is defined nowhere.
+    assert_eq!(
+        finish
+            .diagnostics
+            .with_identifier("techxt.unknown-environment")
+            .count(),
+        1
+    );
+}
+
+// ------------------------------------------------------- a foreign verbatim environment
+
+#[test]
+fn a_plain_techy_verbatim_environment_keeps_its_body_raw() {
+    // The one thing a foreign tree can carry that says *raw body* is techy's own
+    // `VerbatimBehavior`. techxt's own environment definition is not in this tree —
+    // `verbatim`'s rule is found by name, at step 3 — so without consulting techy's
+    // behaviour the body would come back reflowed into running words.
+    let mut package = Package::<Latexlike>::new("foreign");
+    package.insert(
+        CallableType::Environment,
+        "verbatim",
+        EnvironmentSpec::from_behavior(Arc::new(VerbatimBehavior::<Latexlike>::new(Vec::new()))),
+    );
+    let latex = "\\begin{verbatim}  a   b\n   c\\end{verbatim}";
+    let tree = plain_techy([package]).parse(latex).expect("parses").tree;
+
+    let converter = Converter::standard();
+    let conversion = converter.tree_to_text(&tree);
+    assert_eq!(conversion.text, "  a   b\n   c\n");
+    // Byte for byte what techxt's own parse of the same source renders as.
+    assert_eq!(
+        conversion.text,
+        converter.latex_to_text(latex).expect("parses").text
+    );
+}
+
+// --------------------------------------------- math `Source` mode over a foreign tree
+
+#[test]
+fn math_source_mode_re_emits_a_plain_techy_formula() {
+    // `Source` mode never enters the formula: it re-emits it from the node payloads it
+    // finds, which on a plain-techy tree are `Latexlike`'s own. The interior spacing
+    // survives, which is the whole point of the mode.
+    let converter = Converter::builder()
+        .math_mode(MathMode::Source)
+        .build()
+        .expect("builds");
+    let latex = "x $a  b$ y";
+    let tree = plain_techy([]).parse(latex).expect("parses").tree;
+
+    let conversion = converter.tree_to_text(&tree);
+    assert_eq!(conversion.text, "x $a  b$ y\n");
+    assert_eq!(
+        conversion.text,
+        converter.latex_to_text(latex).expect("parses").text
     );
 }

@@ -4,6 +4,11 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use techy::core::specs::Package;
+use techy::core::{Language, ParsingState};
+use techy::error::Recovery;
+use techy::latexlike::{argument_specs_named, CallableType, Latexlike, LatexlikeDriver, MacroSpec};
+
 use techxt::convert::{
     Conversion, MathMode, UnknownEnvPolicy, UnknownMacroPolicy, UnknownSpecialsPolicy,
 };
@@ -71,6 +76,46 @@ fn the_three_layers_agree() {
     assert_eq!(
         techxt::layout::render(&flow, &techxt::layout::LayoutOptions::default()),
         from_tree.text
+    );
+}
+
+#[test]
+fn the_three_layers_agree_on_a_plain_techy_tree_too() {
+    // The same agreement one language further away: `tree_to_flow` and `tree_to_text`
+    // are one fold, and the tree they are handed is plain techy's — parsed by techy's
+    // own `LatexlikeDriver`, with no techy-xp anywhere (PLAN.md §11.1).
+    let mut package = Package::<Latexlike>::new("foreign");
+    package.insert(
+        CallableType::Macro,
+        "emph",
+        MacroSpec::new(
+            argument_specs_named::<Latexlike, _, _, _>([("m", "text")]).expect("argument codes"),
+        ),
+    );
+    let foreign: Language<Latexlike> = Language::new(
+        LatexlikeDriver::new(Recovery::Tolerant),
+        ParsingState::lang_initial_with_packages([package]).expect("seed state"),
+    );
+    let tree = foreign.parse(r"a \emph{b} c").expect("parses").tree;
+
+    let converter = Converter::standard();
+    let from_tree: Conversion = converter.tree_to_text(&tree);
+    let (flow, diagnostics) = converter.tree_to_flow(&tree);
+
+    // The shipped `\emph` rule, found by name because a foreign spec carries none.
+    assert_eq!(from_tree.text, "a \u{1d44f} c\n");
+    assert!(diagnostics.is_empty());
+    assert_eq!(
+        techxt::layout::render(&flow, &techxt::layout::LayoutOptions::default()),
+        from_tree.text
+    );
+    // And the flow laid out is exactly the text techxt's own parse produces.
+    assert_eq!(
+        from_tree.text,
+        converter
+            .latex_to_text(r"a \emph{b} c")
+            .expect("parses")
+            .text
     );
 }
 

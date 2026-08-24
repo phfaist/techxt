@@ -16,7 +16,9 @@
 //! 2. the **rule embedded in the node's spec** — recovered by downcasting, and the
 //!    reason a definition can never drift from what was parsed;
 //! 3. the **name fallback table**, which is what makes techxt work on a tree parsed by
-//!    someone else's definitions;
+//!    someone else's definitions — or by someone else's *language*, since the renderer
+//!    folds the tree of any [`RenderLang`](crate::render::RenderLang) and a foreign spec
+//!    of any of them carries no techxt rule for step 2 to find;
 //! 4. the **unknown-construct policy** from [`Options`](crate::Options), which also
 //!    raises a diagnostic.
 //!

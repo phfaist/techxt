@@ -4,9 +4,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::convert::Infallible;
 
-use techy::core::node::{BodySlotExt, NodeRef, ParsedArguments, SlotExt};
+use techy::core::node::{NodeRef, ParsedArguments};
 use techy::error::{Diagnostic, Diagnostics};
-use techy::latexlike::LatexlikeLang;
 use techy::recompose::{RecomposeContext, RecomposeError, Recomposer};
 use techy::source::SourceSpan;
 
@@ -17,7 +16,7 @@ use crate::layout::render_inline;
 
 use super::math;
 use super::state::{ListKind, RenderState};
-use super::NodeView;
+use super::{NodeView, RenderLang};
 
 /// Why a rule could not render a construct (PLAN.md §10.4).
 ///
@@ -125,10 +124,8 @@ pub(crate) struct RunState {
 /// same rules), and to be the owner of the run's counters and diagnostics. Erasing it
 /// behind this trait is what lets [`FoldOn`] borrow it once and keep both, without the
 /// renderer's own lifetime parameter leaking any further.
-pub(crate) trait RendererOps<LLL>:
+pub(crate) trait RendererOps<LLL: RenderLang>:
     Recomposer<LLL, (), State = RenderState, Piece = Flow, Error = Infallible>
-where
-    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
 {
     fn run(&self) -> &RunState;
     fn run_mut(&mut self) -> &mut RunState;
@@ -139,8 +136,9 @@ where
 ///
 /// This is the seam that keeps [`TextHandler`](crate::def::TextHandler) non-generic
 /// (PLAN.md §11.1): the renderer, the recompose context and the node all name the
-/// language `LLL`, and all three are erased together behind one trait object, of which
-/// only the tree's lifetime `'t` survives. The one implementor is [`FoldOn`].
+/// [`RenderLang`](super::RenderLang) `LLL`, and all three are erased together behind one
+/// trait object, of which only the tree's lifetime `'t` survives. The one implementor is
+/// [`FoldOn`].
 pub(crate) trait Fold<'t> {
     /// The node being rendered.
     fn node(&self) -> NodeView<'t>;
@@ -196,19 +194,13 @@ pub(crate) trait Fold<'t> {
 /// *unrelated* lifetimes, so `'t` is the tree's — the one a [`NodeView`] keeps and a
 /// handler may hold on to — while the context's own `'c` is visible only here, folded
 /// away into the borrow `'a` as soon as this is erased behind [`Fold`].
-pub(crate) struct FoldOn<'a, 'c, 't, LLL>
-where
-    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
-{
+pub(crate) struct FoldOn<'a, 'c, 't, LLL: RenderLang> {
     renderer: &'a mut dyn RendererOps<LLL>,
     cx: &'a mut RecomposeContext<'c, LLL, ()>,
     node: NodeRef<'t, LLL, ()>,
 }
 
-impl<'a, 'c, 't, LLL> FoldOn<'a, 'c, 't, LLL>
-where
-    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
-{
+impl<'a, 'c, 't, LLL: RenderLang> FoldOn<'a, 'c, 't, LLL> {
     /// The fold as it stands at `node`.
     pub(crate) fn new(
         renderer: &'a mut dyn RendererOps<LLL>,
@@ -226,11 +218,7 @@ where
     }
 }
 
-impl<'t, LLL> Fold<'t> for FoldOn<'_, '_, 't, LLL>
-where
-    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
-    SlotExt<LLL>: BodySlotExt,
-{
+impl<'t, LLL: RenderLang> Fold<'t> for FoldOn<'_, '_, 't, LLL> {
     fn node(&self) -> NodeView<'t> {
         NodeView::of(self.node)
     }
@@ -312,8 +300,8 @@ where
 ///
 /// The tree's language is not a parameter here: it was erased when the context was
 /// built, which is what lets one handler render trees of every
-/// [`LatexlikeLang`](techy::latexlike::LatexlikeLang) (PLAN.md §11.1). `'t` is the
-/// tree's own lifetime — the one a [`NodeView`] read out of the context keeps.
+/// [`RenderLang`](super::RenderLang) (PLAN.md §11.1). `'t` is the tree's own lifetime —
+/// the one a [`NodeView`] read out of the context keeps.
 ///
 /// ```
 /// use techxt::def::{TextHandler, TextRule};

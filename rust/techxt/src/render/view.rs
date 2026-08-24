@@ -3,10 +3,10 @@
 //! A [`TextHandler`](crate::def::TextHandler) is handed one of these rather than a
 //! techy [`NodeRef`], and the difference is the whole point: a `NodeRef` names the
 //! language its tree was parsed with, so a handler written against one language cannot
-//! be called on a tree of another. techxt renders *any*
-//! [`LatexlikeLang`](techy::latexlike::LatexlikeLang) tree (PLAN.md §11.1), so the
-//! language is erased here — behind [`TreeView`], one object-safe trait implemented for
-//! every such tree — and a handler compiled once runs on all of them.
+//! be called on a tree of another. techxt renders the tree of *any*
+//! [`RenderLang`](super::RenderLang) (PLAN.md §11.1), so the language is erased here —
+//! behind [`TreeView`], one object-safe trait implemented for every such tree — and a
+//! handler compiled once runs on all of them.
 //!
 //! What the view offers is deliberately small and payload-only (PLAN.md §1.6): the
 //! node's own payload, the tree's shape, and the reassembled LaTeX source of a subtree.
@@ -18,20 +18,19 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use techy::core::node::{NodeId, NodeRef, NodeTree};
-use techy::latexlike::LatexlikeLang;
 use techy::source::SourceSpan;
 
 use crate::def::CallableKind;
 
 use super::source::latex_source;
+use super::RenderLang;
 
 /// One parsed tree, with its language erased.
 ///
-/// Implemented for every `NodeTree<LLL, ()>` whose language is latexlike and whose
-/// sources are origin-tagged the way techxt's diagnostics are. Every method takes the
-/// id of a node *of this tree*; ids reach it only through a [`NodeView`], which is
-/// minted from a [`NodeRef`] and never leaves its tree, so the ids are always this
-/// tree's own.
+/// Implemented for every `NodeTree<LLL, ()>` whose language is a
+/// [`RenderLang`](super::RenderLang). Every method takes the id of a node *of this
+/// tree*; ids reach it only through a [`NodeView`], which is minted from a [`NodeRef`]
+/// and never leaves its tree, so the ids are always this tree's own.
 pub(crate) trait TreeView {
     /// The node's parent, or `None` at the root.
     fn parent(&self, id: NodeId) -> Option<NodeId>;
@@ -61,10 +60,7 @@ pub(crate) trait TreeView {
     fn argument_source(&self, id: NodeId, name: &str) -> Option<String>;
 }
 
-impl<LLL> TreeView for NodeTree<LLL, ()>
-where
-    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
-{
+impl<LLL: RenderLang> TreeView for NodeTree<LLL, ()> {
     fn parent(&self, id: NodeId) -> Option<NodeId> {
         self.node(id).parent().map(|parent| parent.id())
     }
@@ -129,10 +125,7 @@ pub struct NodeView<'t> {
 
 impl<'t> NodeView<'t> {
     /// The view of a techy node, whatever language its tree is in.
-    pub(crate) fn of<LLL>(node: NodeRef<'t, LLL, ()>) -> NodeView<'t>
-    where
-        LLL: LatexlikeLang<SourceOrigin = Option<String>>,
-    {
+    pub(crate) fn of<LLL: RenderLang>(node: NodeRef<'t, LLL, ()>) -> NodeView<'t> {
         NodeView {
             tree: node.tree(),
             id: node.id(),

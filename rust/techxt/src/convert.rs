@@ -75,14 +75,20 @@ pub use techy::core::{StdDescentGuard, StdDescentGuardInit};
 
 /// The parse tree and its nodes: what [`Converter::tree_to_text`] converts. What a
 /// [`TextHandler`](crate::def::TextHandler) is handed is techxt's own language-erased
-/// [`NodeView`](crate::render::NodeView) instead.
-pub use techy::core::node::{NodeRef, NodeSlice, NodeTree};
+/// [`NodeView`](crate::render::NodeView) instead — and [`NodeId`] is what that view's
+/// [`id`](crate::render::NodeView::id) answers with, the identity a tree walk that must
+/// not count a node twice keys on.
+pub use techy::core::node::{NodeId, NodeRef, NodeSlice, NodeTree};
 
-/// The two techy items that spell out "the tree's body slots are marked", the second
-/// half of the bound [`Converter::tree_to_text`] takes its tree under (PLAN.md §11.1).
-pub use techy::core::node::{BodySlotExt, SlotExt};
-/// The language family [`Converter::tree_to_text`] accepts a tree of: any latexlike
-/// language, not only the [`LatexlikeXp`] this converter parses with.
+/// The bound [`Converter::tree_to_text`] takes its tree under (PLAN.md §11.1): any
+/// latexlike language whose sources are origin-tagged and whose body slots are marked,
+/// not only the [`LatexlikeXp`] this converter parses with.
+///
+/// It is auto-implemented — see [`RenderLang`] for what those two facts are, and why
+/// they are the only ones techxt's render side is concrete about.
+pub use crate::render::RenderLang;
+/// The language family [`RenderLang`] refines, and the trait an embedder reads that
+/// bound through.
 pub use techy::latexlike::LatexlikeLang;
 
 /// The techy pieces a definition of your own is built from: an argument spec for
@@ -207,18 +213,16 @@ impl Converter {
     ///
     /// Infallible: everything that can go wrong during rendering is a diagnostic.
     ///
-    /// The tree's language is whatever parsed it. A converter's own
-    /// [`language`](Self::language) is [`LatexlikeXp`], and a tree it parsed is the
-    /// inferred case; but rendering reads *payloads* (PLAN.md §1.6) and no techy-xp
-    /// facility, so a tree parsed by anybody's latexlike language — plain techy's
-    /// [`Latexlike`](techy::latexlike::Latexlike), a language of your own — converts
-    /// through the same rules. What such a tree cannot carry is techxt's rules *inside*
-    /// its specs, so its constructs are matched by name instead (PLAN.md §10.3 step 3).
-    pub fn tree_to_text<LLL>(&self, tree: &NodeTree<LLL>) -> Conversion
-    where
-        LLL: LatexlikeLang<SourceOrigin = Option<String>>,
-        SlotExt<LLL>: BodySlotExt,
-    {
+    /// The tree's language is whatever parsed it: any [`RenderLang`], which is every
+    /// latexlike language whose sources are origin-tagged and whose body slots are
+    /// marked. A converter's own [`language`](Self::language) is [`LatexlikeXp`], and a
+    /// tree it parsed is the inferred case; but rendering reads *payloads* (PLAN.md
+    /// §1.6) and no techy-xp facility, so a tree parsed by anybody's latexlike language
+    /// — plain techy's [`Latexlike`](techy::latexlike::Latexlike), a language of your
+    /// own — converts through the same rules. What such a tree cannot carry is techxt's
+    /// rules *inside* its specs, so its constructs are matched by name instead (PLAN.md
+    /// §10.3 step 3).
+    pub fn tree_to_text<LLL: RenderLang>(&self, tree: &NodeTree<LLL>) -> Conversion {
         let (flow, diagnostics) = self.tree_to_flow(tree);
         Conversion {
             text: self.lay_out(&flow),
@@ -229,12 +233,13 @@ impl Converter {
     /// Convert a tree to a [`Flow`], stopping short of layout.
     ///
     /// Use this to lay the result out with options of your own, to inspect the token
-    /// stream, or to splice the flow into a larger one.
-    pub fn tree_to_flow<LLL>(&self, tree: &NodeTree<LLL>) -> (Flow, Diagnostics<Option<String>>)
-    where
-        LLL: LatexlikeLang<SourceOrigin = Option<String>>,
-        SlotExt<LLL>: BodySlotExt,
-    {
+    /// stream, or to splice the flow into a larger one. It renders the tree of any
+    /// [`RenderLang`], exactly as [`tree_to_text`](Self::tree_to_text) does — the two
+    /// differ only in whether the flow is laid out.
+    pub fn tree_to_flow<LLL: RenderLang>(
+        &self,
+        tree: &NodeTree<LLL>,
+    ) -> (Flow, Diagnostics<Option<String>>) {
         let mut renderer = self.renderer();
         // So that a diagnostic raised before any node is folded still has a position.
         renderer.note_document_span(tree.root());

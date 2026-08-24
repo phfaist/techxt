@@ -111,6 +111,12 @@ impl CallableSpec<LatexlikeXp> for TechxtMacroSpec {
 /// [`DefinitionSet`](super::DefinitionSet) builds from every entry that declares one.
 /// Declaring a rule alongside the spec is therefore still required, and still works.
 ///
+/// A spec from another *language* behaves identically, and by the same mechanism: the
+/// renderer folds the tree of any [`RenderLang`](crate::render::RenderLang), the
+/// downcast targets here stay concrete over [`LatexlikeXp`], and on a tree of plain
+/// techy's [`Latexlike`](techy::latexlike::Latexlike) they simply miss. Missing is the
+/// designed outcome, not a degradation: step 3 is what such a tree is rendered by.
+///
 /// ```
 /// use std::sync::Arc;
 ///
@@ -415,7 +421,9 @@ impl TechxtEnvironmentBehavior {
     /// type, which is the whole design: on a foreign tree — a plain-techy
     /// [`Latexlike`](techy::latexlike::Latexlike) parse, say — the downcast simply
     /// misses, and the environment's rule is found one step later, in the name fallback
-    /// table (PLAN.md §10.3 step 3).
+    /// table (PLAN.md §10.3 step 3). The bound is [`LatexlikeLang`] rather than
+    /// [`RenderLang`](crate::render::RenderLang): asking a node for its spec needs
+    /// nothing of the tree's slots or of how its sources are tagged.
     pub fn of<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> Option<&TechxtEnvironmentBehavior> {
         let spec = node.spec()?;
         let environment = (&**spec as &dyn Any).downcast_ref::<EnvironmentSpec<LatexlikeXp>>()?;

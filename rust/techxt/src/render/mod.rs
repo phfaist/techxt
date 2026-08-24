@@ -59,6 +59,25 @@
 //! assert!(finish.diagnostics.is_empty());
 //! ```
 //!
+//! ## One renderer, every language
+//!
+//! A renderer folds a tree of **any** [`RenderLang`] (PLAN.md §11.1) — it implements
+//! [`Recomposer<LLL, ()>`](Recomposer) for every one of them at once — so
+//! [`Converter::renderer`](crate::Converter::renderer) takes no language parameter and
+//! what it hands back is specialized to nothing. Which language a run is over is settled
+//! by the tree handed to `recompose`, and a wrapper of your own names its own language
+//! in its `impl Recomposer<…>` exactly as it always did.
+//!
+//! One call leaves rustc without an answer, and it is the only one: a [`Recomposer`]
+//! method invoked on the renderer *directly*, when nothing in the arguments names the
+//! language. [`observe_descent_warning`](Recomposer::observe_descent_warning) is that
+//! case — its one argument is a [`DescentWarning`], which says nothing about the tree —
+//! so it is called as
+//! `Recomposer::<LatexlikeXp, ()>::observe_descent_warning(&mut renderer, warning)`,
+//! naming whichever language the run is over. Everything reached *through* a fold, and
+//! every inherent method ([`options`](TextRenderer::options),
+//! [`finish`](TextRenderer::finish)), is unambiguous as it stands.
+//!
 //! ## How far a wrapper's overrides reach
 //!
 //! The driver holds exactly one recomposer and re-enters it for every child it
@@ -96,6 +115,7 @@
 //! and none survives into the piece a run finally yields.
 
 mod cx;
+mod lang;
 pub(crate) mod math;
 mod rules;
 mod source;
@@ -103,19 +123,21 @@ mod state;
 mod view;
 
 pub use cx::{RenderCx, RenderError};
+pub use lang::RenderLang;
 pub use state::{FloatKind, ListCtx, ListKind, MathCtx, RenderState, TableCtx};
 pub use view::NodeView;
 
 pub(crate) use cx::{FoldOn, RendererOps};
 
 use alloc::string::String;
+use core::any::Any;
 use core::convert::Infallible;
 
 use techy::core::constructs::DescentLimitApproaching;
-use techy::core::node::{BodySlotExt, NodeKind, NodeRef, SlotExt};
+use techy::core::node::{NodeKind, NodeRef};
 use techy::core::DescentWarning;
 use techy::error::{Diagnostic, Diagnostics, Severity};
-use techy::latexlike::{LatexlikeGroupType, LatexlikeLang, MathGroupForm};
+use techy::latexlike::{EnvironmentSpec, LatexlikeGroupType, MathGroupForm, VerbatimBehavior};
 use techy::recompose::{ConcatPieces, Recompose, RecomposeContext, Recomposer};
 
 use crate::convert::{FootnoteStyle, Options};
@@ -190,10 +212,7 @@ impl<'a> TextRenderer<'a> {
     /// Note a document-wide span, so that a diagnostic with no node to point at still
     /// has a position. Called by the converter before the fold, and by the fold itself
     /// on the first node it sees.
-    pub(crate) fn note_document_span<LLL: LatexlikeLang<SourceOrigin = Option<String>>>(
-        &mut self,
-        node: NodeRef<'_, LLL>,
-    ) {
+    pub(crate) fn note_document_span<LLL: RenderLang>(&mut self, node: NodeRef<'_, LLL>) {
         if self.run.document_span.is_none() {
             self.run.document_span = Some(node.span().clone());
         }
@@ -212,11 +231,7 @@ impl<'a> TextRenderer<'a> {
     // ------------------------------------------------------------------ per kind
 
     /// Characters (PLAN.md §9.1).
-    fn chars<LLL>(&self, node: NodeRef<'_, LLL>, state: &RenderState) -> Flow
-    where
-        LLL: LatexlikeLang<SourceOrigin = Option<String>>,
-        SlotExt<LLL>: BodySlotExt,
-    {
+    fn chars<LLL: RenderLang>(&self, node: NodeRef<'_, LLL>, state: &RenderState) -> Flow {
         // `chars()` reads the node's own payload, resolved against the node's own
         // source: the one text-reading operation that is safe on any tree (PLAN.md
         // §1.6). `span_content()` would be wrong on a transformed tree, silently.
@@ -279,10 +294,7 @@ impl<'a> TextRenderer<'a> {
     /// By default a comment renders as *nothing at all* — not even the newline that
     /// ends it, which is exactly what LaTeX does and why `A% note` followed by `B` is
     /// one word `AB`.
-    fn comment<LLL: LatexlikeLang<SourceOrigin = Option<String>>>(
-        &self,
-        node: NodeRef<'_, LLL>,
-    ) -> Flow {
+    fn comment<LLL: RenderLang>(&self, node: NodeRef<'_, LLL>) -> Flow {
         if !self.config.options.keep_comments {
             return Flow::new();
         }
@@ -304,7 +316,7 @@ impl<'a> TextRenderer<'a> {
     }
 
     /// A group (PLAN.md §9.1).
-    fn group<LLL: LatexlikeLang<SourceOrigin = Option<String>>>(
+    fn group<LLL: RenderLang>(
         &mut self,
         node: NodeRef<'_, LLL>,
         state: &RenderState,
@@ -356,7 +368,7 @@ impl<'a> TextRenderer<'a> {
     /// (PLAN.md §1.6). That is [`math::source_scope`]'s job rather than this method's,
     /// because a math group is only one of the ways a formula is opened — a math
     /// environment is another — and all of them have to answer alike.
-    fn math_group<LLL: LatexlikeLang<SourceOrigin = Option<String>>>(
+    fn math_group<LLL: RenderLang>(
         &mut self,
         node: NodeRef<'_, LLL>,
         state: &RenderState,
@@ -381,16 +393,12 @@ impl<'a> TextRenderer<'a> {
     }
 
     /// A callable: find its rule (PLAN.md §10.3), then run it (PLAN.md §10.4).
-    fn callable<LLL>(
+    fn callable<LLL: RenderLang>(
         &mut self,
         node: NodeRef<'_, LLL>,
         state: &RenderState,
         cx: &mut RecomposeContext<'_, LLL, ()>,
-    ) -> Recompose<Flow, RenderState>
-    where
-        LLL: LatexlikeLang<SourceOrigin = Option<String>>,
-        SlotExt<LLL>: BodySlotExt,
-    {
+    ) -> Recompose<Flow, RenderState> {
         // Read the configuration *out* of `self` first: it is a shared reference with
         // the converter's lifetime, so the rule it yields outlives the mutable borrow
         // the context below needs.
@@ -417,11 +425,7 @@ impl<'a> TextRenderer<'a> {
     }
 }
 
-impl<LLL> RendererOps<LLL> for TextRenderer<'_>
-where
-    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
-    SlotExt<LLL>: BodySlotExt,
-{
+impl<LLL: RenderLang> RendererOps<LLL> for TextRenderer<'_> {
     fn run(&self) -> &RunState {
         &self.run
     }
@@ -435,11 +439,7 @@ where
     }
 }
 
-impl<LLL> Recomposer<LLL, ()> for TextRenderer<'_>
-where
-    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
-    SlotExt<LLL>: BodySlotExt,
-{
+impl<LLL: RenderLang> Recomposer<LLL, ()> for TextRenderer<'_> {
     type State = RenderState;
     type Piece = Flow;
     /// The fold itself never fails: a rule that cannot render its construct becomes a
@@ -489,9 +489,7 @@ where
 ///
 /// The structural test is the reliable one: techy parses `\verb|x_1|` into a group of
 /// class [`GroupType::Verbatim`] holding one characters node.
-fn in_verbatim_group<LLL: LatexlikeLang<SourceOrigin = Option<String>>>(
-    node: NodeRef<'_, LLL>,
-) -> bool {
+fn in_verbatim_group<LLL: RenderLang>(node: NodeRef<'_, LLL>) -> bool {
     node.parent()
         .and_then(|parent| parent.group_type())
         .is_some_and(|group_type| group_type == LLL::GroupTypeId::verbatim_group())
@@ -499,24 +497,17 @@ fn in_verbatim_group<LLL: LatexlikeLang<SourceOrigin = Option<String>>>(
 
 /// Whether these characters are the raw body of a verbatim environment.
 ///
-/// Asked of the environment's definition rather than guessed from the text: a techxt
-/// environment records what its body is (`EnvBodyKind::Verbatim`), which is the whole
-/// point of one definition serving both parsing and rendering.
-fn in_verbatim_body<LLL>(node: NodeRef<'_, LLL>) -> bool
-where
-    LLL: LatexlikeLang<SourceOrigin = Option<String>>,
-    SlotExt<LLL>: BodySlotExt,
-{
+/// Asked of the environment's definition rather than guessed from the text — see
+/// [`is_verbatim_environment`], which is where the two definitions that can say so are
+/// consulted.
+fn in_verbatim_body<LLL: RenderLang>(node: NodeRef<'_, LLL>) -> bool {
     let Some(body_list) = node.parent() else {
         return false;
     };
     let Some(environment) = body_list.parent() else {
         return false;
     };
-    let Some(behavior) = crate::def::TechxtEnvironmentBehavior::of(environment) else {
-        return false;
-    };
-    if behavior.body_kind() != crate::def::EnvBodyKind::Verbatim {
+    if !is_verbatim_environment(environment) {
         return false;
     }
     // Only the characters the body parser *designated* are raw: the newline techy
@@ -525,6 +516,34 @@ where
     environment
         .body()
         .is_some_and(|body| body.iter().any(|content| content.id() == node.id()))
+}
+
+/// Whether this environment node's definition says its body is raw.
+///
+/// Two definitions can say so, and the order they are asked in is the point.
+///
+/// **techxt's own comes first.** A techxt [`EnvDef`](crate::def::EnvDef) records
+/// [`EnvBodyKind::Verbatim`](crate::def::EnvBodyKind), and when the tree is techxt's
+/// that record is authoritative: it is the very declaration the body was parsed from,
+/// so nothing else can be more accurate about it.
+///
+/// **techy's own is asked second**, and only when the first downcast missed — which is
+/// what a foreign tree looks like (PLAN.md §10.3 step 3). A foreign environment carries
+/// no techxt payload at all, and among everything it *can* carry, techy's
+/// [`VerbatimBehavior`] is the one thing that says *raw body*: it is the behaviour techy
+/// itself registers a `verbatim` environment with, and the parse it produced is exactly
+/// the parse techxt's own verbatim body kind produces. Consulting it is what makes a
+/// foreign `verbatim` render byte for byte as a native one does, instead of having its
+/// body reflowed into running words.
+fn is_verbatim_environment<LLL: RenderLang>(environment: NodeRef<'_, LLL>) -> bool {
+    if let Some(behavior) = crate::def::TechxtEnvironmentBehavior::of(environment) {
+        return behavior.body_kind() == crate::def::EnvBodyKind::Verbatim;
+    }
+    environment.spec().is_some_and(|spec| {
+        (&**spec as &dyn Any)
+            .downcast_ref::<EnvironmentSpec<LLL>>()
+            .is_some_and(|spec| (spec.behavior() as &dyn Any).is::<VerbatimBehavior<LLL>>())
+    })
 }
 
 /// The block of collected footnotes that follows the document (PLAN.md §9.8, §11.1).
@@ -821,9 +840,10 @@ mod tests {
         let tree = parse(&converter, "a");
         let mut renderer = converter.renderer();
         renderer.note_document_span(tree.root());
-        // The renderer recomposes *any* latexlike language now, so a `Recomposer`
+        // The renderer recomposes the tree of *any* `RenderLang`, so a `Recomposer`
         // method called on it directly — rather than through a fold, where the tree
-        // pins the language — has to say which one.
+        // pins the language — has to say which one. See "One renderer, every language"
+        // in the module documentation: this is the only call that needs it.
         Recomposer::<LatexlikeXp, ()>::observe_descent_warning(
             &mut renderer,
             DescentWarning {
