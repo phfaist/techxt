@@ -163,7 +163,9 @@
 //! the downward [`RenderState`](render::RenderState) and the [`Options`], raises
 //! diagnostics, and registers footnotes and document metadata. It must be `Send + Sync`
 //! and hold no per-document state — the converter is shared across threads — and it
-//! returns a [`Flow`](flow::Flow), never a string with newlines in it.
+//! returns a [`Flow`](flow::Flow), never a string with newlines in it. Neither the view
+//! nor the context names the language the tree was parsed in: a handler is compiled
+//! once and runs on a tree of any language techxt renders (see below).
 //!
 //! ```
 //! use std::sync::Arc;
@@ -236,6 +238,56 @@
 //! [`render`] documents how far a wrapper's overrides reach — and the one place
 //! they do not, which is inside a construct techxt's own rule renders.
 //!
+//! ## Converting a tree parsed elsewhere
+//!
+//! A converter *parses* with exactly one language — techy-xp's
+//! [`LatexlikeXp`](convert::LatexlikeXp), the latexlike preset carrying the expanding
+//! token reader — but it *renders* a tree of any latexlike language (PLAN.md §16 M10).
+//! [`Converter::tree_to_text`], [`Converter::tree_to_flow`] and the renderer behind
+//! [`Converter::renderer`] are generic over [`RenderLang`](render::RenderLang), an
+//! auto-implemented bound that both techy-xp's `LatexlikeXp` and techy's own
+//! [`Latexlike`](techy::latexlike::Latexlike) satisfy, and that asks for nothing of
+//! techy-xp's. So a tree parsed by somebody else's plain-techy setup converts through
+//! the same rules, handlers included; what such a tree cannot carry is a techxt rule
+//! *inside* its specs, so its constructs are matched by name instead (dispatch step 3,
+//! PLAN.md §10.3) and fall back to the unknown-construct policies from there.
+//!
+//! ```
+//! use techy::core::specs::Package;
+//! use techy::core::{Language, ParsingState};
+//! use techy::error::Recovery;
+//! use techy::latexlike::{argument_specs_named, CallableType, Latexlike, LatexlikeDriver, MacroSpec};
+//! use techxt::Converter;
+//!
+//! // Somebody else's parser: plain techy, its own vocabulary, no techxt in sight.
+//! let mut theirs = Package::<Latexlike>::new("theirs");
+//! let one_argument = argument_specs_named::<Latexlike, _, _, _>([("m", "text")])?;
+//! theirs.insert(CallableType::Macro, "textbf", MacroSpec::new(one_argument));
+//! let language = Language::new(
+//!     LatexlikeDriver::new(Recovery::Tolerant),
+//!     ParsingState::lang_initial_with_packages([theirs])?,
+//! );
+//! let tree = language.parse(r"a \textbf{b} c")?.tree;
+//!
+//! // techxt's shipped `\textbf` rule is found by name and renders it.
+//! let conversion = Converter::standard().tree_to_text(&tree);
+//! assert_eq!(conversion.text, "a 𝐛 c\n");
+//! assert!(conversion.diagnostics.is_empty());
+//! # Ok::<(), Box<dyn core::error::Error>>(())
+//! ```
+//!
+//! Rendering reads node *payloads* only (PLAN.md §1.6), which is also what makes the
+//! two languages' different span regimes invisible to it. The tree annotation is fixed
+//! to `()`; annotate a tree away with techy's zero-copy `tree.annotate(|_| ())` first.
+//!
+//! One thing to know when the definitions are not the ones that parsed the tree: a
+//! rule asks for arguments by the *names its own definition declares* (`text` above),
+//! and the parsed invocation carries the names the foreign spec declared. Where they
+//! agree, everything works; where a foreign spec names an argument differently, a
+//! handler or a named template reference reports `techxt.handler-failed` for it, while
+//! [`TextRule::Content`](def::TextRule::Content) and positional template references
+//! never mind the names.
+//!
 //! ## Crate dependencies and panic policy
 //!
 //! **no_std + alloc:** the crate depends on `core` and `alloc` only, and builds for
@@ -255,7 +307,8 @@
 //! **One dependency for an embedder:** every upstream type that appears in techxt's
 //! public API — [`Diagnostics`](convert::Diagnostics), [`Severity`](convert::Severity),
 //! [`Recovery`](convert::Recovery), [`SourceResolver`](convert::SourceResolver),
-//! [`NodeRef`](convert::NodeRef), [`TreeRecomposer`](convert::TreeRecomposer), techy-xp's
+//! [`NodeRef`](convert::NodeRef), [`TreeRecomposer`](convert::TreeRecomposer),
+//! [`LatexlikeLang`](convert::LatexlikeLang), techy-xp's
 //! [`LatexlikeXp`](convert::LatexlikeXp) and the rest — is re-exported from [`convert`].
 //! They are the upstream crates' own types, not wrappers, so naming `techy` or
 //! `techy_xp` directly stays exactly equivalent.
@@ -349,9 +402,14 @@
 //!   [`NodeSlice`](convert::NodeSlice): techy's recomposer takes a whole tree, and its
 //!   context has no public constructor. Convert the tree, or drive the renderer
 //!   yourself as shown above.
-//! - **Generalization over the language.** Every type here is concrete over techy-xp's
-//!   `LatexlikeXp` — techy's latexlike preset plus the expanding reader the definers of
-//!   [`defs::preamble`] write into — and over the `()` tree annotation.
+//! - **Generalization of the parse side, and of the tree annotation.** The render side
+//!   is generic over the language (see *Converting a tree parsed elsewhere* above); the
+//!   parse side is not, by design. A converter parses with techy-xp's
+//!   [`LatexlikeXp`](convert::LatexlikeXp) alone — techy's latexlike preset plus the
+//!   expanding reader the definers of [`defs::preamble`] write into — and every spec
+//!   type in [`def`] is built for it, because the definers, the refusals and the
+//!   expansion budgets are techy-xp's and have no counterpart in a language that does
+//!   not expand. The tree annotation stays `()` on both sides.
 //! - **Python and JavaScript bindings.** Planned as sibling folders (`python/`, `js/`)
 //!   of the repository root; the module-based organization of [`defs`] was chosen with
 //!   wasm dead-code elimination in mind.

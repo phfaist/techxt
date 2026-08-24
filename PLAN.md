@@ -110,7 +110,11 @@ techxt/                        # repo root (language-neutral)
 techxt uses the `techy::latexlike` preset, **concretely**: all techxt types are
 non-generic over the language (`Latexlike`) and over the tree annotation (`A = ()`).
 (Settled API decision — see §11.1. Generalization over `LatexlikeLang` is future
-work.) techy facts to rely on (narrative guides: techy `docs/ai-guide*.md`):
+work.) **Amended for M9 and M10:** the parse side is concrete over techy-xp's
+`LatexlikeXp` (§16 M9); the *render* side — everything that consumes a `NodeTree` —
+is generic over any `LatexlikeLang` (§16 M10, bounded by `RenderLang`), and the
+annotation stays `A = ()` on both sides. techy facts to rely on (narrative guides:
+techy `docs/ai-guide*.md`):
 
 **Parsing.**
 ```rust
@@ -775,7 +779,8 @@ render-side detection (§9.1, §9.4) never guesses.
    `pub enum CallableKind { Macro, Environment, Specials }`.
 2. **Embedded rule** — downcast `node.spec()` to a techxt spec type.
 3. **Name fallback table** — from the `DefinitionSet` (covers foreign/plain-techy
-   trees).
+   trees — since M10, trees of any `LatexlikeLang`, not only ones parsed with techxt's
+   own language by somebody else's definitions).
 4. **Unknown policy** (§10.5).
 
 ### 10.4 `TextRule` and execution
@@ -794,6 +799,15 @@ pub trait TextHandler: Send + Sync + core::fmt::Debug {
         -> Result<Flow, RenderError>;
 }
 ```
+**Amended for M10:** the handler's node is techxt's own language-erased view,
+`fn render(&self, node: NodeView<'_>, cx: &mut RenderCx<'_, '_>)`. `NodeView` (in
+`techxt::render`, `Copy`) answers the payload-only questions a handler may ask —
+`id()`, `name()`, `callable_kind()`, `chars()`, `span()` (diagnostic positions only),
+`parent()`, `children()`, `descendants()`, `source()` (the reassembled LaTeX of the
+subtree), `argument_source(name)` — and offers no way back to a `NodeRef`, so a
+handler never learns which `LatexlikeLang` its tree is in. `TextRule` is unchanged.
+See §16 M10 for why erasure was chosen over a language parameter on the trait.
+
 Execution semantics: `Literal` → `flow::from_plain_text` (segmented into math atoms
 when in Fancy math). `Template` → substitute (below), same text treatment.
 `Skip` → empty. `Content` → macros: provided arguments' content rendered in
@@ -807,11 +821,17 @@ specials: the trigger characters as text. `Handler` → call; on `Err`, emit
 (= `render_inline` of the arg's flow), `arg_with_state(name, RenderState)`,
 `body()`, `body_with_state(RenderState)`, `attached() -> Result<Option<Flow>, _>`,
 `state() -> &RenderState`, `options() -> &Options`,
-`source_of(node) -> Result<String, RenderError>` (via `SourceRecomposer`),
+`source_of(node) -> Result<String, RenderError>` (via `SourceRecomposer`; **amended
+for M10:** takes a `NodeView` and is `NodeView::source` behind a `Result`, kept for
+the method list's sake),
 `diag(Diagnostic<Option<String>>)`, `set_doc_title/author/date(Flow)`,
 `doc_title/author/date() -> Option<&Flow>`, `push_footnote(Flow) -> usize`.
 Crate-internal handlers may use additional `pub(crate)` accessors (heading counters,
-list counter stack) — mechanical.
+list counter stack) — mechanical. **Amended for M10:** `RenderCx<'a, 't>` keeps its
+shape but erases the tree's language internally — it holds one trait object (a
+crate-private `Fold<'t>`) behind which the renderer, techy's `RecomposeContext<LLL>`
+and the `NodeRef<LLL>` all sit; `'t` is the tree's lifetime, the one a `NodeView`
+read out of the context keeps.
 
 `RenderError` (`#[non_exhaustive]`): `Region { detail }` (wraps techy
 `RecomposeError` variants from region ops), `Handler { construct, detail }`.
@@ -912,7 +932,18 @@ Settled API constraints: annotation fixed to `A = ()` — callers with annotated
 use techy's cheap zero-copy `tree.annotate(|_| ())`; language fixed to `Latexlike`
 (**amended for M9:** to techy-xp's `LatexlikeXp`, techy's latexlike preset carrying
 the expanding token reader — read `Latexlike` as `LatexlikeXp` throughout the block
-above, and see §16 M9); **no `NodeSlice` entry point in v1** (techy's driver folds
+above, and see §16 M9; **amended for M10:** that reading holds for `language()` and
+for what `latex_to_text` parses with, but the two tree entry points are generic —
+`pub fn tree_to_text<LLL: RenderLang>(&self, tree: &NodeTree<LLL>) -> Conversion` and
+`pub fn tree_to_flow<LLL: RenderLang>(&self, tree: &NodeTree<LLL>) -> (Flow,
+Diagnostics<Option<String>>)`, the language inferred from the tree so every
+`NodeTree<LatexlikeXp>` caller compiles unchanged — and `renderer()` still answers the
+non-generic `TextRenderer<'_>`, which implements `Recomposer<LLL, ()>` for every
+`LLL: RenderLang`. `RenderLang` (in `techxt::render`, re-exported from `convert`) is an
+auto-implemented marker: `LatexlikeLang` plus `SourceOrigin = Option<String>` and a
+body-marked slot extension, which techy's `Latexlike` and techy-xp's `LatexlikeXp` both
+satisfy; no techy-xp trait appears in it, so rendering a plain techy tree pulls in no
+expansion machinery. See §16 M10); **no `NodeSlice` entry point in v1** (techy's driver folds
 whole trees; if a subtree entry exists in techy at implementation time it may be
 added as `node_to_text(NodeRef)`, otherwise omit). `tree_to_text`/`tree_to_flow` are
 infallible (§10.4). For wrapping consumers: drive `TreeRecomposer` over
@@ -1145,6 +1176,81 @@ kind ⇒ first-level numbering) — that is the intended semantics.
   for what techy-xp declines (conditionals, category codes, registers, counters);
   then tests and the CLI surface for the new diagnostics; then the web app and the
   documentation. Every phase ends green under full CI, not just the milestone.
+- **M10 — the render side generic over `LatexlikeLang`.** *Amendment to the list
+  above.* M9's language switch cost one capability 0.1.0 had by accident: rendering a
+  *foreign* tree — a `NodeTree<Latexlike>` parsed by somebody else's plain-techy
+  `Language<Latexlike>` + `LatexlikeDriver` — which had worked only because every
+  crate in the ecosystem named the same concrete type. M10 restores it properly, and
+  retires the render half of §17's generalization entry. Scope: only the
+  tree-consuming path generalizes — `tree_to_text`/`tree_to_flow`, `TextRenderer`,
+  `RenderCx`, the dispatch chain, source re-emission — while the parse side
+  (`DefinitionSet::build`, the techxt spec types, `SpecBuildCx`, `XpDriver`) stays
+  concrete over `LatexlikeXp`, because a definer, a refusal and an expansion budget are
+  techy-xp's and have no meaning in a language that does not expand.
+
+  **The design decision, and why.** The contagion path was `TextRenderer` ⇒
+  `RenderCx` ⇒ the public `TextHandler` trait, whose `render` took a
+  `NodeRef<'_, LatexlikeXp>` ⇒ every shipped and embedder handler ⇒
+  `TextRule::Handler(Arc<dyn TextHandler>)` stored in the converter's rule tables. Two
+  architectures were prototyped end to end (each compiled, each rendered foreign
+  `Latexlike` trees through a `TextRule::Handler`, each ran the whole suite green)
+  before one was committed:
+
+  - **A — a language parameter on the trait**, `TextHandler<LLL = LatexlikeXp>`,
+    `RenderCx<'a, 't, LLL = LatexlikeXp>`, shipped handlers implemented generically.
+    Existing handler impls compiled unchanged, which was its strength. Its crux is
+    that a `TextRule` is stored *once*, in tables the (concrete) parse side builds, so
+    a rule holds one `Arc<dyn TextHandler<LatexlikeXp>>` — and no cast turns that
+    into the `TextHandler<Latexlike>` a foreign tree needs. An object-safe factory
+    cannot be generic over the language it makes a handler for, and Rust has no
+    higher-ranked bound over types, so the prototype had to *enumerate*: a sealed
+    `RenderLang` with a `call_handler` impl per language, a `PortableHandler:
+    TextHandler<LatexlikeXp> + TextHandler<Latexlike>` supertrait pair, and an
+    opt-in `TextHandler::portable()` hook. That made the render side closed over
+    exactly two languages (a third is an edit inside techxt); an embedder who wrote
+    the generic impl but forgot the one-line opt-in got no compile error and no
+    foreign dispatch; and every shipped handler not converted to the generic form —
+    62 of 63 registrations after the prototype — raised an *error* diagnostic on a
+    foreign tree instead of rendering, so `has_errors()` and the CLI exit code went
+    true for any real document. It lost on all three counts.
+  - **B — language erasure** (chosen). `TextHandler` and `TextRule` stay non-generic;
+    the handler receives a techxt-owned `NodeView<'_>` instead of a `NodeRef`, and
+    `RenderCx` erases the language behind one crate-private trait object (`Fold<'t>`,
+    the same move `RendererOps` already made for the renderer's own type). The
+    handler survey justified it: of ~40 shipped handlers all but six ignore their
+    node, and the six read only `name()`, the node's own reassembled source, one
+    argument's source, and — in `tabular` alone — a descendants/ancestor walk for
+    the one-diagnostic-per-table rule; §10.4's contract already said handlers "never
+    walk the tree — they ask the context". The surface `NodeView` needs is therefore
+    small and payload-only, one rule table serves a tree of *any* `LatexlikeLang`
+    with every rule kind including every shipped handler, and the design is open: the
+    bound is an auto-implemented marker (`RenderLang`), not a list of languages. Its
+    cost is one mechanical signature edit per embedder handler
+    (`NodeRef<'_, LatexlikeXp>` → `NodeView<'_>`) and the loss of direct `NodeRef`
+    access from handlers, which the plan never granted.
+
+  What the two share: `TextRenderer` needed no type parameter (its run state is
+  concrete over `Option<String>` origins), so `Converter::renderer()` is unchanged
+  and one struct implements `Recomposer<LLL, ()>` for every `RenderLang` — with the
+  single consequence that a `Recomposer` method whose arguments do not name the
+  language (`observe_descent_warning`, in practice) has to be called as
+  `Recomposer::<LatexlikeXp, ()>::…` on a bare renderer. Dispatch step 2's downcasts
+  keep their concrete targets (`TechxtMacroSpec`, `TechxtSpecialsSpec`,
+  `TechxtEnvironmentBehavior`, `RefusalSpec<LatexlikeXp>`) and simply miss on a
+  foreign tree, which is the designed outcome; group and callable classes are asked
+  through techy's role traits (`LatexlikeGroupType`, `LatexlikeCallableType`) rather
+  than by matching the preset enums, so a language with vocabulary enums of its own
+  renders too. Beyond the letter of the milestone, `in_verbatim_body` additionally
+  recognises techy's own `VerbatimBehavior<LLL>` after techxt's behaviour downcast
+  misses, so a foreign `verbatim` renders raw rather than as words. One caveat is
+  inherent to name-keyed dispatch and documented in the crate docs: a rule asks for
+  arguments by the names *its* definition declares while a foreign invocation carries
+  the names the foreign spec declared, so a handler or a named template reference on
+  a foreign spec with other names reports `techxt.handler-failed`, whereas `Content`
+  and positional references are indifferent to names. Two phases —
+  the erasure itself, then `RenderLang`, the verbatim fallback and the foreign-tree
+  test matrix — then this documentation; each green under the six gates plus
+  `web/crate`'s tests, the pre-existing suite byte-identical throughout.
 
 ## 17. Deliberate omissions / future work (documented, not implemented)
 
@@ -1161,6 +1267,14 @@ dead-code elimination in mind.
 it through techy-xp, as of phase 2. The entry stays in the list above as the record of
 what the first shape omitted. What techy-xp itself declines stays omitted: TeX's
 conditionals, category codes, registers and counters are reported, not acted on.
+
+**Amended for M10:** generalization over `LatexlikeLang` is no longer deferred for
+the *render* side — §16 M10 delivers it: `tree_to_text`/`tree_to_flow` and
+`TextRenderer` accept a tree of any `RenderLang`, and handlers are written once against
+a language-erased `NodeView`. The entry stays in the list above as the record of what
+the first shape omitted; what remains omitted, by design, is the *parse* side (a
+`Converter` parses with `LatexlikeXp` only, and the spec types in `techxt::def` are
+built for it) and generalization over the tree annotation (`A = ()` on both sides).
 
 Three things phase 2 leaves for later, each documented where a reader meets it:
 
