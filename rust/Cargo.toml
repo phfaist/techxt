@@ -58,11 +58,7 @@ techy = { git = "https://github.com/phfaist/techy", rev = "aa71c83" }
 # git revision like techy, and to a revision that itself pins the *same* techy
 # revision as this workspace — cargo cannot unify two revs of one git dependency,
 # so the two pins move in lockstep.
-#
-# TEMP: path dependency while the pinned revision awaits its push to GitHub; flip to
-#   techy-xp = { git = "https://github.com/phfaist/techy-xp", rev = "a57ce04" }
-# as soon as that rev is public. A committed manifest must use the git form.
-techy-xp = { path = "../../techy-xp" }
+techy-xp = { git = "https://github.com/phfaist/techy-xp", rev = "9869be0" }
 # East-Asian-width-aware display width of the rendered text, for the layout engine's
 # column accounting (PLAN.md §7). no_std-capable and dependency-free.
 unicode-width = "0.2"

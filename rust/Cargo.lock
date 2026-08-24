@@ -496,6 +496,7 @@ dependencies = [
 [[package]]
 name = "techy-xp"
 version = "0.1.0"
+source = "git+https://github.com/phfaist/techy-xp?rev=9869be0#9869be0cf89a951b8d2e6a44e7237c3cbd8b78f7"
 dependencies = [
  "hashbrown",
  "techy",
