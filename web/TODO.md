@@ -259,7 +259,7 @@ second conversion.
 
 ## The binding and the protocol
 
-> **Done** — 2026-08-28, `9fb55cf`. `ConversionResultDto.regions` is a
+> **Done** — 2026-08-28, `d237825`. `ConversionResultDto.regions` is a
 > `Vec<MathRegionDto>`, filtered to `MathSource` in `diag::math_regions` and mapped to
 > UTF-16 through the *same* `OffsetMap` a diagnostic's span goes through — a second
 > instance of it, built over the output rather than the input, which is where these
@@ -319,7 +319,7 @@ section was written against:
 
 ## Shipping MathJax
 
-> **Done** — 2026-08-28, `9fb55cf`, except the two boxes named below. MathJax 4.1.3's
+> **Done** — 2026-08-28, `d237825`, except the two boxes named below. MathJax 4.1.3's
 > `tex-svg.js` is copied into `dist/mathjax/<version>/` by a `techxt:mathjax` plugin in
 > `vite.config.ts` (which also serves it from `node_modules` in `vite dev`, so the mode
 > is usable without a build); `src/mathjax.ts` injects it with a `<script>` tag on first
