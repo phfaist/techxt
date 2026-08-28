@@ -44,11 +44,29 @@
 //! assert_eq!(converter.latex_to_text(r"\shout{hi} \me")?.text, "hi Philippe\n");
 //! # Ok::<(), Box<dyn core::error::Error>>(())
 //! ```
+//!
+//! # Reading definitions back
+//!
+//! The same structures read as well as they write. [`Category`] hands back the entries
+//! it holds, and [`DefinitionSet::symbols`] resolves the whole stack — shadowing and
+//! all — into a [`SymbolIndex`], which is how an embedder answers *what does this
+//! converter know?* for a completion list, a `--list-symbols` flag or a generated
+//! reference page.
+//!
+//! ```
+//! use techxt::def::CallableKind;
+//!
+//! let definitions = techxt::defs::standard();
+//! let symbols = definitions.symbols();
+//! let alpha = symbols.get(CallableKind::Macro, "alpha").expect("the library has it");
+//! assert_eq!(alpha.replacement, Some("α"));
+//! ```
 
 mod entry;
 mod rule;
 mod set;
 mod spec;
+mod symbols;
 mod template;
 
 pub use entry::{EnvDef, MacroDef, SpecialsDef};
@@ -58,6 +76,7 @@ pub use spec::{
     CallableSpecSource, EnvBodyKind, SpecBuildCx, TechxtEnvironmentBehavior, TechxtMacroSpec,
     TechxtSpecialsSpec,
 };
+pub use symbols::{ModeVisibility, SymbolEntry, SymbolIndex};
 pub use template::{Template, TemplateError};
 
 pub(crate) use set::{BuiltDefinitions, RuleTable, ScopeFrame};

@@ -905,6 +905,74 @@ is rendered by the unknown-construct policy above but **not** diagnosed a second
 as `techxt.unknown-macro` (dispatch step 4 recognizes techy-xp's `RefusalSpec`). One
 occurrence, one diagnostic — the one that names the missing feature.
 
+### 10.7 Reading a definition set back
+
+The entry builders of §10.1 are the writing half; this is the reading half. A
+definitions database you can only write to is half a database, and *what does this
+converter know?* is a question any embedder putting a user interface in front of techxt
+has to be able to ask — an editor offering completions as the author types a command
+name, `techxt-cli --list-symbols`, a reference page generated from the table rather than
+maintained beside it.
+
+`Category` hands back the entries it holds, in declaration order:
+
+```rust
+impl Category {
+    pub fn macros(&self) -> impl Iterator<Item = &MacroDef>;
+    pub fn environments(&self) -> impl Iterator<Item = &EnvDef>;
+    pub fn specials(&self) -> impl Iterator<Item = &SpecialsDef>;
+}
+```
+
+and a whole set resolves into a shadowing-aware index over all of them:
+
+```rust
+pub enum ModeVisibility { Anywhere, TextOnly, MathOnly }
+
+#[derive(Clone, Copy)]
+pub struct SymbolEntry<'a> {
+    pub name: &'a str,              // no escape character; a specials' trigger characters
+    pub kind: CallableKind,         // §10.3's Macro | Environment | Specials
+    pub category: &'a str,          // the category the winning definition came from
+    pub replacement: Option<&'a str>,  // Some only for TextRule::Literal (`\alpha` → `α`)
+    pub arity: usize,               // arguments declared
+    pub modes: ModeVisibility,
+}
+
+pub struct SymbolIndex<'a> { /* entries sorted by (kind, name), one per key */ }
+impl<'a> SymbolIndex<'a> {
+    pub fn entries(&self) -> &[SymbolEntry<'a>];
+    pub fn len(&self) -> usize;
+    pub fn is_empty(&self) -> bool;
+    pub fn of_kind(&self, kind: CallableKind) -> &[SymbolEntry<'a>];
+    pub fn get(&self, kind: CallableKind, name: &str) -> Option<&SymbolEntry<'a>>;
+    pub fn starts_with(&self, kind: CallableKind, prefix: &str) -> &[SymbolEntry<'a>];
+}
+
+impl DefinitionSet { pub fn symbols(&self) -> SymbolIndex<'_>; }
+```
+
+**One name, one answer.** The index applies §10.2's shadowing rule as it is built — later
+categories win, and within a category the later entry wins — so it holds one entry per
+`(kind, name)` pair rather than a list of candidates. What a reader wants to know is what
+the converter will *do*, not everything that was written on the way to deciding it. The
+key is the pair because §10.3's keys are: a macro and an environment may share a name.
+
+**Built once, then searched.** `symbols()` walks every category once; the table it
+returns is sorted by kind and then by name, so entries of one kind are contiguous,
+`of_kind` and `starts_with` are subslices found by binary search rather than filters, and
+`get` is a binary search. The shipped library is around 1 400 names, so the split matters:
+a caller answering a keystroke rebuilds nothing. Everything borrows from the set, and
+`SymbolEntry` is `Copy`.
+
+**The one simplification.** techy's resolution is mode-aware — an entry hidden in the
+current mode is skipped and an outer definition of the same name may answer instead — so
+a set whose innermost `\foo` is math-only, stacked over an unrestricted `\foo`, really
+does resolve to two different definitions in the two modes, and the index reports the
+innermost. `techxt::defs` never does this: the generated long tail is where the mode
+restrictions live and every curated category sits above it. `tests/def_symbols.rs` pins
+that as an invariant of the shipped library rather than leaving it to chance.
+
 ---
 
 ## 11. Public API (`techxt::convert`)
