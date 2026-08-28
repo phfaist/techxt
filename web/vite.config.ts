@@ -38,7 +38,8 @@ const MATHJAX_DIR = `mathjax/${MATHJAX_VERSION}`;
  * named in `src/mathjax.ts`'s `TEX_INPUT.packages` and *not* copied here would be a 404
  * at startup on a page whose whole promise is that it asks nobody for anything.
  *
- * Two of these three are the packages TODO item 9 chose; `boldsymbol` is here because
+ * Two of these three are the packages the coverage measurement chose (§9.1);
+ * `boldsymbol` is here because
  * `mathtools` depends on it, which is the kind of thing only the loader knows —
  * `tools/mathjax_coverage.mjs` runs MathJax under the app's own package list, asks the
  * loader what it loaded, and fails if the answer is not covered by this list.
@@ -54,7 +55,7 @@ export const MATHJAX_TEX_EXTENSIONS: readonly string[] = [
  * above, the font's dynamically loaded character ranges, and the woff2 faces those
  * ranges are metrics for.
  *
- * The ranges are the surprise in MathJax 4 (see §9.1 and the note in TODO item 2): the
+ * The ranges are the surprise in MathJax 4 (see §9.1): the
  * bundle carries the common characters, and a formula reaching outside them —
  * `\mathbb{R}`, `\mathcal{H}` — asks for one more file, which by default comes from
  * jsdelivr. Serving the whole set ourselves is what keeps "no CDN, ever" true. Everything

@@ -1,6 +1,6 @@
 /**
  * `splitMathRuns` — the region → element mapping, minus the elements (web/PLAN.md
- * §4.3, §6.3; TODO item 2).
+ * §4.3, §6.3).
  *
  * The pane's own half is four lines of `createElement`; this is the half worth
  * testing, and the property every case below re-checks is the one the whole design

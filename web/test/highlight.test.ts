@@ -1,5 +1,5 @@
 /**
- * The editor's lexer and its chunking (web/PLAN.md §6.12; TODO item 5).
+ * The editor's lexer and its chunking (web/PLAN.md §6.12).
  *
  * The DOM half is a loop over `editorChunks` in `ui/panes.ts`; this is the half worth
  * testing, and the property every case re-checks is the one the overlay rests on: **the

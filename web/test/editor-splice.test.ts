@@ -1,5 +1,5 @@
 /**
- * The mirror's incremental rebuild (web/PLAN.md §6.12; TODO item 7).
+ * The mirror's incremental rebuild (web/PLAN.md §6.12).
  *
  * `ui/panes.ts` keeps a record of the runs the mirror is holding and, on every repaint,
  * asks `chunkSplice` what changed. Two properties make that safe, and both are asserted

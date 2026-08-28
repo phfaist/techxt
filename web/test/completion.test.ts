@@ -1,6 +1,5 @@
 /**
- * When the chip row fires, what it offers, and where Tab goes next (web/PLAN.md §6.13;
- * TODO item 5).
+ * When the chip row fires, what it offers, and where Tab goes next (web/PLAN.md §6.13).
  *
  * The row itself is elements and a keyboard handler in `ui/panes.ts`; the rules it is
  * judged by are here, because they are rules about strings and indices. Three of them

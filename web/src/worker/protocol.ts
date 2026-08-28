@@ -202,7 +202,7 @@ export interface ConversionResult {
  *
  * The JS side does no matching, no merging and no ranking: it sends a prefix and
  * renders what comes back, so every rule about what is offered and in what order lives
- * next to the symbol table it is drawn from (TODO item 5).
+ * next to the symbol table it is drawn from (§4.9).
  */
 export interface Completion {
   /** The name without its backslash, e.g. `alpha`. */

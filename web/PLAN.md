@@ -1232,6 +1232,14 @@ a text search over title and source, sorted by most recently updated. Delete off
 Undo in the toast; **Clear library** demands a typed confirmation and names the count
 and the starred count in it.
 
+**The pane loads every entry in full to render the list**, because the text search reads
+the source. That is a deliberate trade rather than an oversight: listing from the
+`updatedAt` index without `source` and fetching a source when an entry is selected would
+be the obvious economy, but the search would then have to fetch every source anyway or
+stop searching sources, so it buys nothing for the libraries a person plausibly
+accumulates. It is written down because the day a library *is* slow to open, this
+paragraph is the first place to look and the index is already there to list from.
+
 **The detail reads the entry**, which is the other half of keeping one: the whole
 `source` in its own scrolling region, and under it the stored `preview` — the rendered
 output as it was — in a second one. Nothing new is stored for this, since an entry has
@@ -2217,7 +2225,11 @@ per line rather than more. Nothing here argues for revisiting `opt-level`.
 
 While that 200 KB document converts, the main thread answers in 2–20 ms and a keystroke
 round-trips in about 100 ms — which is the Worker of D3 doing its job, and the reason
-§6.2's Cancel button is a safety net rather than a routine control.
+§6.2's Cancel button is a safety net rather than a routine control. **The pane's own
+share of that 100 ms was halved afterwards** and this figure is left as it was measured:
+most of it was the input pane rebuilding its mirror from the whole document on every
+keystroke, which the last subsection of this section takes apart. Nobody asked what the
+100 ms was for four milestones, because a number beside a Worker reads as the Worker's.
 
 Fonts as committed (§8.3 estimated "roughly 250–700 KB of woff2 each"; the default
 face is half again the top of that range, which is what moved the §11 per-file budget
@@ -2425,7 +2437,7 @@ the decision.
 
 ### Measured at the size pass — SVG against CHTML, on the wire
 
-What a reader actually fetches, which is the measurement TODO item 6 asked for and the
+What a reader actually fetches, which is the measurement the size pass asked for and the
 one nobody had taken: a cold browser profile, *Math: MathJax* selected, all six shipped
 examples opened in turn through the Load ▾ menu, every request logged. Priced as a real
 static host serves these files — gzip for the JavaScript, as-is for the already
@@ -2456,7 +2468,7 @@ worker's cache; and **not one request left the origin in any run**.
 
 ### Measured after the size pass — what MathJax does not know that techxt does
 
-The first comparison of the two vocabularies (§9.1, TODO item 9). Every name
+The first comparison of the two vocabularies (§9.1). Every name
 `techxt::defs::standard()` resolves, through `DefinitionSet::symbols()`, typeset one at a
 time by MathJax 4.1.3 under the app's own TeX configuration and classified by
 `noundefined`'s marker in the MathML. **1 406 names in the table; 1 394 walked**, the 12
@@ -2748,8 +2760,20 @@ installed — wasm-pack supplies both.
   which rejects the bulk-memory operations rustc 1.97 emits:
   `[wasm-validator error] Bulk memory operations require bulk memory`. The fix is the
   metadata block of §4.7 (`--enable-bulk-memory --enable-nontrapping-float-to-int
-  --enable-sign-ext`), verified to build. `wasm-opt = false` is the fallback; it costs
-  little (§14).
+  --enable-sign-ext`), verified to build. **`wasm-opt = false` is not the fallback it
+  once was**: since the size pass took `-Os` alongside `opt-level = "s"` (§4.7), a build
+  with `wasm-opt` disabled is no longer the build that ships, so turning it off to get
+  past an error measures something nobody deploys.
+- **`wasm-opt` cannot always fetch itself.** wasm-pack downloads binaryen 117 from
+  GitHub releases with an HTTP client of its own, which does not go through a sandbox's
+  proxy, and the build then dies at its last step with `failed to download from
+  https://github.com/WebAssembly/binaryen/releases/…`. `curl` fetches that same URL, so
+  seed wasm-pack's cache by hand rather than disabling the step: download the tarball,
+  extract it into `~/.cache/.wasm-pack/wasm-opt-<hash>/` with `--strip-components=1`,
+  and check `bin/wasm-opt --version`. The `<hash>` is the one in the `.wasm-opt-*.lock`
+  file wasm-pack leaves in `~/.cache/.wasm-pack/`; list that directory rather than
+  copying a hash from here, and change the version in the URL if the error names a
+  different one.
 - **MSRV does not apply to `web/crate`** (§3). `rust/`'s 1.86 floor is for library
   consumers; the binding builds on stable.
 - **Measurements in §14** came from a scratch crate with a `path` dependency on

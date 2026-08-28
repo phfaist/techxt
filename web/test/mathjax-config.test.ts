@@ -1,6 +1,6 @@
 /**
  * The MathJax TeX configuration, held to the three properties a unit test can reach
- * (web/PLAN.md §9.1, TODO item 9).
+ * (web/PLAN.md §9.1).
  *
  * The measurement itself — which of techxt's ~1 400 names MathJax understands — needs
  * MathJax, the symbol table and half a second, and lives in

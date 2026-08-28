@@ -224,7 +224,7 @@ fn a_commented_out_definer_is_not_offered_and_an_escaped_percent_is_not_a_commen
 ///
 /// Recognizing the body would mean tracking `\begin`/`\end` pairs, `\verb` with its
 /// arbitrary delimiter, and every listing package a document might use, which is the
-/// parse the design declined (item 5 of `web/TODO.md`, and §4.9). Comments are filtered
+/// parse the design declined (web/PLAN.md §4.9). Comments are filtered
 /// because `%` is one unambiguous character and the scan is already walking escapes;
 /// verbatim is not, because it is not. The cost is one chip offering a name that will not
 /// fire, and this test is here so that the day someone decides that is too high, they

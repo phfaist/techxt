@@ -48,7 +48,7 @@ env:
   #
   # ## The wasm module
   #
-  # Set at the size pass (TODO item 6) against a module built `opt-level = "s"` +
+  # Set at the size pass (§14) against a module built `opt-level = "s"` +
   # `wasm-opt -Os`: **971 601 B raw / 370 323 B gzipped**. That profile is itself the
   # outcome of the pass. The wire had by then fired twice — the gzip line at M10, and
   # the raw line as items 1-5 landed (1 241 264 B against a 1 150 000 B ceiling) — and

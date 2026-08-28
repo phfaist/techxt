@@ -2,7 +2,7 @@
 /**
  * Report which constructs techxt defines that MathJax does not understand.
  *
- * web/PLAN.md §9.1, TODO item 9. The *Math: MathJax* mode hands the typesetter a
+ * web/PLAN.md §9.1. The *Math: MathJax* mode hands the typesetter a
  * formula's own LaTeX, post-expansion (§4.3), so what MathJax has to understand is not
  * the user's macros but techxt's: the ~1 400 names `DefinitionSet::symbols()` reports.
  * Nobody had ever compared the two lists, and the answer turned out to be 770 names — so

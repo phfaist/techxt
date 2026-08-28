@@ -1,5 +1,5 @@
 /**
- * MathJax, wrapped in four functions (web/PLAN.md §9.1, TODO item 2).
+ * MathJax, wrapped in four functions (web/PLAN.md §9.1).
  *
  * The rest of the app never imports MathJax, never names a MathJax option and never
  * touches `window.MathJax`. It asks for a formula to be typeset and gets a promise back.
@@ -48,7 +48,7 @@
  *
  * {@link TEX_INPUT} is the TeX input configuration, and it is exported because
  * `tools/mathjax_coverage.mjs` typesets every name techxt defines under *this* object to
- * find the ones MathJax does not know (§9.1, TODO item 9). A checker that read a copy of
+ * find the ones MathJax does not know (§9.1). A checker that read a copy of
  * the package list would be checking a copy.
  */
 
@@ -125,7 +125,7 @@ export const TEX_INPUT: {
   // throwing, because the document is the user's and techxt will happily re-emit a macro
   // no engine has heard of.
   //
-  // The last two were chosen against the measurement of TODO item 9 rather than against
+  // The last two were chosen against the measurement recorded in §9.1 rather than against
   // a bug report, and each closes a group of names techxt defines and the five above do
   // not: `mathtools` the `psmallmatrix`/`bsmallmatrix`/`dcases` family — and
   // `\overbracket`, `\underbracket` and `\coloneqq` with them — and `upgreek` the 41

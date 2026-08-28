@@ -97,7 +97,7 @@ describe('resolveOptions: math', () => {
 
   it('turns MathJax into Source, which is the whole of what the library is told', () => {
     // The app typesets what Source re-emits; the library has never heard of MathJax
-    // and this is the one place that stays true (§5, TODO item 2).
+    // and this is the one place that stays true (§5).
     expect(resolveOptions({ math: 'mathjax' }, 72, NOON)).toEqual(
       resolveOptions({ math: 'source' }, 72, NOON),
     );
@@ -196,7 +196,7 @@ describe('resolveOptions: what reaches the worker', () => {
 
   it('never lets the word mathjax reach an OptionsPayload, whatever else is set', () => {
     // The binding deserializes this object into `techxt::convert::Options`, where
-    // `mathjax` is not a `MathMode` and never will be (§5, TODO item 2).
+    // `mathjax` is not a `MathMode` and never will be (§5).
     for (const payload of [
       resolveOptions({ math: 'mathjax' }, 72, NOON),
       resolveOptions({ math: 'mathjax', wrap: 'fit', todayMode: 'library' }, 40, NOON),

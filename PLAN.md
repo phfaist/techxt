@@ -732,6 +732,14 @@ name still resolves through the catch-all, as a *zero-argument* callable whose b
 are then read as an ordinary group — while the rest of mathcore is unrestricted anyway.
 Tests: `techxt/tests/defs_math_conveniences.rs`.
 
+**`\braket` takes two arguments here, and the `braket` package's own spelling is one.**
+techxt reads `\braket{\phi}{\psi}`; a document written against the LaTeX package writes
+`\braket{\phi|\psi}`, which this library reads as one argument followed by whatever
+comes next and reports as a missing mandatory argument. Both spellings are in the wild
+and the two cannot both be `\braket` without looking inside the argument for a bar, so
+this is recorded rather than quietly resolved: the name came from the generated table,
+which is where the two-argument form came with it.
+
 ### 9.6 Tables (defs::tables)
 
 `tabular`/`tabular*`/`tabularx` (leading width args parsed and ignored; colspec arg
@@ -1066,8 +1074,9 @@ key is the pair because §10.3's keys are: a macro and an environment may share 
 **Built once, then searched.** `symbols()` walks every category once; the table it
 returns is sorted by kind and then by name, so entries of one kind are contiguous,
 `of_kind` and `starts_with` are subslices found by binary search rather than filters, and
-`get` is a binary search. The shipped library is around 1 400 names, so the split matters:
-a caller answering a keystroke rebuilds nothing. Everything borrows from the set, and
+`get` is a binary search. The shipped library resolves to **1 406** names — 1 311 macros,
+83 environments and 12 specials, out of 1 757 macro declarations before shadowing — so
+the split matters: a caller answering a keystroke rebuilds nothing. Everything borrows from the set, and
 `SymbolEntry` is `Copy`.
 
 **The one simplification.** techy's resolution is mode-aware — an entry hidden in the

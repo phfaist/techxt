@@ -1,5 +1,5 @@
 /**
- * The stylesheet's half of the editor overlay (web/PLAN.md §6.12; TODO item 5).
+ * The stylesheet's half of the editor overlay (web/PLAN.md §6.12).
  *
  * The invariant the overlay lives or dies by is a fact about pixels: **every character
  * in the mirror sits underneath the same character in the textarea, at every width, with
