@@ -525,6 +525,42 @@ and the door stays open.
 
 **L2 — the library change: reading a `DefinitionSet` back.**
 
+> **Done** — 2026-08-28, `324b6fd`. `Category::macros/environments/specials` and
+> `DefinitionSet::symbols() -> SymbolIndex<'_>`, with `SymbolEntry` as sketched below.
+> Three things the sketch left open: `modes` is a `ModeVisibility { Anywhere, TextOnly,
+> MathOnly }`, the index carries the borrow it obviously must (`SymbolIndex<'a>`), and it
+> has the query API a completion list needs — `entries`, `len`, `is_empty`, `of_kind`,
+> `get(kind, name)`, `starts_with(kind, prefix)`. The table is sorted by `(kind, name)`,
+> so entries of one kind are contiguous, `of_kind` and `starts_with` are subslices found
+> by binary search rather than filters, and a caller answering a keystroke rebuilds
+> nothing — `defs::standard()` resolves to **1 406** names (1 311 macros, 83
+> environments, 12 specials). Root `PLAN.md` gains §10.7; tests in
+> `rust/techxt/tests/def_symbols.rs`. Nothing here touches `web/`, and nothing reaches
+> `dist/`: the module is reachable only through `symbols()`, so a binding that never
+> calls it drops the whole thing.
+>
+> **Verified fact 6 is now stale, in both halves.** Its second half — that `Category`
+> exposes no way to read the macros back — is what this change removes. Its first half
+> undercounts: the shipped library declares **1 757** macros (991 in `symbols_extra`, 766
+> across the curated categories), resolving after shadowing to **1 311** distinct names,
+> not ~1 100. Corrected here rather than up there, so that this diff stays in one place;
+> fold the real numbers in when this file is folded into the plans.
+>
+> **What the sketch could not have known.** "Later categories win, so the index resolves
+> each name once" is true of the *set*, but techy's resolution is also **mode-aware**: an
+> entry hidden in the current mode is skipped and an outer definition of the same name
+> answers instead. So a name whose innermost definition is mode-restricted over an
+> unrestricted one really does resolve to two different definitions in the two modes, and
+> one index entry cannot say so. The situation is common in shape — **223** shipped macro
+> names are declared in two categories with *different* mode restrictions (`\Delta` is
+> math-only in the generated `symbols_extra`, unrestricted in `mathcore`) — and harmless
+> in direction, because the restricted layer is always the outermost one. That was
+> measured rather than assumed, and it is now pinned by
+> `the_shipped_library_never_shadows_a_name_with_a_narrower_one`, which fails if a future
+> category ever shadows a name with a narrower one. If that day comes the index needs a
+> second answer for such a name, not a vaguer one: whoever offers `\Delta` in a chip row
+> is entitled to know it will fire.
+
 *What.* `Category` can be built but not read: it has `add_macro`/`with_macro` and
 friends, and no accessor at all. Add the reading half, then a shadowing-aware index
 over a whole set.
