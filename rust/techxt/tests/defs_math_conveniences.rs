@@ -10,6 +10,8 @@
 //! that already worked, and `\coloneqq` against the bare `≔` that a plain replacement
 //! would have produced.
 
+use techy::error::Severity;
+
 use techxt::diag::UnknownMacro;
 use techxt::Converter;
 
@@ -153,4 +155,44 @@ fn none_of_the_three_is_restricted_to_math_mode() {
     // behavior, not something these three brought with them.
     assert_eq!(text(r"a \coloneqq b"), "a ≔b\n");
     assert_eq!(text(r"a \leq b"), "a ≤b\n");
+}
+
+// --------------------------------------------------------- the family they joined
+
+/// `\braket` takes two arguments, and that is a decision rather than an accident of
+/// the table it came from.
+///
+/// The `braket` LaTeX package writes `\braket{\phi|\psi}` — one argument with the bar
+/// inside it — and techxt takes `\braket{\phi}{\psi}`. Both spellings are in the wild
+/// and the two cannot both be `\braket` without looking inside an argument for a bar,
+/// so the library keeps the two-argument form (root PLAN.md §9.5) and a document
+/// written for the package gets a diagnostic rather than a guess.
+///
+/// This is pinned because it can regress *silently* in two directions at once.
+/// `\braket` is a row of the **generated** table, so regenerating it from a pylatexenc
+/// whose spec had changed would move the arity with nobody deciding anything; and the
+/// web app's MathJax configuration defines its own two-argument `\braket` to match this
+/// one, so the day they disagree is the day one formula renders two ways.
+#[test]
+fn braket_takes_two_arguments_and_says_so_when_it_gets_one() {
+    assert_eq!(text(r"$\braket{a}{b}$"), "⟨𝑎|𝑏⟩\n");
+
+    // The package's own spelling: the bar is inside the first argument, so the second
+    // is missing. It renders — with a bar the author did not write — *and* reports.
+    let conversion = Converter::standard()
+        .latex_to_text(r"$\braket{\phi|\psi}$")
+        .expect("parses");
+    assert_eq!(conversion.text, "⟨ϕ|ψ|⟩\n");
+    assert!(
+        conversion
+            .diagnostics
+            .iter()
+            .any(|d| d.severity() == Severity::Error),
+        "the one-argument spelling must not pass silently: {:?}",
+        conversion
+            .diagnostics
+            .iter()
+            .map(|d| d.identifier())
+            .collect::<Vec<_>>()
+    );
 }

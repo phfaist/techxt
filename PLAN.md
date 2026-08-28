@@ -732,13 +732,18 @@ name still resolves through the catch-all, as a *zero-argument* callable whose b
 are then read as an ordinary group — while the rest of mathcore is unrestricted anyway.
 Tests: `techxt/tests/defs_math_conveniences.rs`.
 
-**`\braket` takes two arguments here, and the `braket` package's own spelling is one.**
-techxt reads `\braket{\phi}{\psi}`; a document written against the LaTeX package writes
-`\braket{\phi|\psi}`, which this library reads as one argument followed by whatever
-comes next and reports as a missing mandatory argument. Both spellings are in the wild
-and the two cannot both be `\braket` without looking inside the argument for a bar, so
-this is recorded rather than quietly resolved: the name came from the generated table,
-which is where the two-argument form came with it.
+**`\braket` always keeps two arguments.** techxt reads `\braket{\phi}{\psi}`, where the
+`braket` LaTeX package writes `\braket{\phi|\psi}` — one argument with the bar inside
+it. Both spellings are in the wild, and the two cannot both be `\braket` without looking
+inside an argument for a bar and changing the shape of the call according to what is
+found there, which is a kind of guessing this library does not do. So the two-argument
+form is the definition, and a document written for the package renders `⟨ϕ|ψ|⟩` and
+reports a missing mandatory argument rather than being silently reinterpreted. The name
+arrived with the generated table and the arity arrived with it;
+`tests/defs_math_conveniences.rs` pins it, because a regeneration from a changed
+upstream spec could otherwise move it with nobody deciding anything — and because the
+web app's MathJax configuration defines a two-argument `\braket` of its own to match
+this one, so the day the two disagree is the day one formula renders two ways.
 
 ### 9.6 Tables (defs::tables)
 
