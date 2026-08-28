@@ -761,7 +761,7 @@ library export."* while the library stayed exactly as it was.
 
 # 5. A lighter editor: highlighting and completion
 
-> **Done** — 2026-08-28, `COMMIT`. The app half: the worker answers `complete`, the
+> **Done** — 2026-08-28, `1dc8e60`. The app half: the worker answers `complete`, the
 > source pane is highlighted by a lexer painting the mirror it already had, and a row of
 > chips under the input completes a name on Tab. `src/highlight.ts` and
 > `src/completion.ts` are the pure halves (44 vitest cases between them), `ui/panes.ts`
