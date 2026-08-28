@@ -1249,6 +1249,80 @@ and the release checklist's item 5 can say so with a number.
 
 ---
 
+# 8. The library, after using it: sealing an entry, and reading one
+
+Feedback from the owner running the branch. Two problems, both about the library
+being *silent*: the current entry is overwritten without the user seeing it happen,
+and an entry cannot be read once it is saved.
+
+## The problem
+
+Saving is automatic and one "current entry" absorbs edits as you type. Item 3 lists
+what starts a new entry — a Load, a file open, a share link, an import, a reload, a
+long idle gap — and a select-all-and-paste is none of them. It looks like typing. So
+pasting a fresh document over an old one overwrites the old entry's source and the
+old document is gone.
+
+## The decision: the user seals, the heuristic only catches what they missed
+
+**Three verbs over one primitive.** *Sealing* an entry means it stops absorbing edits;
+the next edit starts a new one. The buttons differ only in what happens after:
+
+| button | where | does |
+|---|---|---|
+| **New** | input pane header, beside `Load ▾` | seal the current entry, clear the input |
+| **Save** | output pane header, after Copy/Download | seal it, keep it on screen |
+| **★** | output pane header, icon-only toggle | seal it *and* star it |
+
+**Placement is by moment of use, not by what the button acts on.** You reach for New
+when you are about to type something new and your attention is on the input; you reach
+for Save or ★ when you are happy with a *result* and your attention is on the output.
+That beats grouping them by the fact that all three act on the document. It also means
+nothing that already shipped moves — Save stays where item 3 put it, and only New is
+added.
+
+★ is an icon-only toggle rather than a fourth labelled button: that header is four
+controls plus the ⇅ Focus button on a phone, and it already hides labels below 620 px.
+Star on an already-sealed entry just toggles the flag — no second seal.
+
+## Five things to get right
+
+- [ ] **Save must not create a phantom empty entry.** Seal the current entry, then
+      create the next one **lazily, on the first edit** — never eagerly. Otherwise
+      pressing Save and walking away leaves an empty entry in the log.
+- [ ] **The per-event fork rule, as the safety net underneath.** While a draft is
+      unsealed, **a single input event that removes more than ~30 % of the document
+      starts a new entry.** Measure the change *in that one event*, never cumulatively
+      against the stored source: ordinary typing changes one character and can never
+      trip it; appending or pasting at the end removes nothing and can never trip it;
+      select-all-and-paste and select-all-and-delete trip it every time. A cumulative
+      rule drifts — a long session that rewrites a section at a time crosses any
+      threshold while genuinely being one document.
+      **Bias toward forking.** A wrong fork costs one extra entry in a log that is
+      filterable and only ever pruned deliberately; a wrong non-fork loses work. That
+      asymmetry is the whole argument for a low threshold and against cleverness.
+- [ ] **Make the current entry visible.** The real complaint is silence, and no
+      heuristic fixes that. Show which entry is being written to, and say so when one
+      is sealed or forked — a toast on an automatic fork, with an undo that merges the
+      new draft back into the previous entry. Then a wrong guess costs a click instead
+      of the user's work, and the behaviour is legible whether or not it guessed right.
+- [ ] **New needs an Undo**, in the toast, restoring the document and unsealing. The
+      app's existing single-level-undo idiom — Load ▾ already does exactly this.
+- [ ] **"Save" is now slightly a lie**, since everything is already saved
+      continuously and the button really means *stop changing this one*. Carry the
+      truth in the tooltip: "Keep this version — further edits start a new entry."
+
+## Reading an entry
+
+- [ ] **The detail pane shows the entry's full source, in its own scrolling region.**
+      Nothing new to store: an entry already keeps the whole `source`. The small
+      stored `preview` is the *rendered* output and stays what it is — a card
+      preview, not the document.
+- [ ] Keep the source and the rendered preview both reachable in the detail view, per
+      item 3's split; on a phone the list → detail shape already there still applies.
+
+---
+
 # Order of work
 
 1. **Item 1** — independent, small, unblocks nothing but costs nothing.
@@ -1259,7 +1333,10 @@ and the release checklist's item 5 can say so with a number.
    get right while the entry model is still being written.
 4. **L2 + item 5** — the largest, and the one most likely to want its scope trimmed
    after the survey.
-5. **Item 6 last**, once nothing else is going to move the number.
+5. **Items 7 and 8** — both found by using the app rather than by planning it. Item 8
+   is owner feedback from running the branch and outranks item 6; item 7 is a
+   latency bug that predates all of this work and is independent of everything.
+6. **Item 6 last**, once nothing else is going to move the number.
 
 Item 7 was added while item 5 was being measured and is independent of all of them; it
 touches the pane and not the module, so it does not have to wait for item 6.
