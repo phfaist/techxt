@@ -15,11 +15,12 @@
  * itself: calling `panes.setDocument(…)` must not fire `onInput`.
  */
 
+import type { TriggerKind } from '../completion';
 import type { FontId } from '../fonts';
 import type { LibraryEntry, LibraryStats, PruneProposal } from '../library';
 import type { ImportChoice } from '../library-io';
 import type { AppOptions, ExampleDoc, UiState } from '../types';
-import type { ConversionResult, Diagnostic, MathRegion } from '../worker/protocol';
+import type { Completion, ConversionResult, Diagnostic, MathRegion } from '../worker/protocol';
 
 /* ------------------------------------------------------------------ ui/toast.ts */
 
@@ -45,6 +46,23 @@ export interface Toaster {
 
 /* ------------------------------------------------------------------ ui/panes.ts */
 
+/**
+ * One question the editor asks about a name being typed (§6.13).
+ *
+ * The object *is* the token that pairs an answer with its question: the pane hands it
+ * out with {@link PanesInit.onCompletionQuery} and gets it back with
+ * {@link Panes.setCompletions}, and anything else is an answer to a keystroke that has
+ * since been typed over. `main.ts` passes it through untouched.
+ */
+export interface CompletionQuery {
+  /** Whether the caret is after a `\` or inside a `\begin{`. */
+  kind: TriggerKind;
+  /** What has been typed, without the escape character or the brace. */
+  prefix: string;
+  /** How many entries the binding should answer with at most. */
+  limit: number;
+}
+
 /** What the pane region reports upwards. */
 export interface PanesInit {
   mount: HTMLElement;
@@ -66,6 +84,12 @@ export interface PanesInit {
   onConvertNow(): void;
   /** A gutter marker was clicked: reveal that diagnostic in the panel. */
   onMarkerSelect(diagnostic: Diagnostic): void;
+  /**
+   * The editor wants the completions for a name being typed (§6.13). The answer comes
+   * back through {@link Panes.setCompletions} carrying this same object; an unanswered
+   * query costs nothing but a row that never appears.
+   */
+  onCompletionQuery(query: CompletionQuery): void;
 }
 
 export interface Panes {
@@ -95,6 +119,15 @@ export interface Panes {
    * (error/warning only — a note has nothing to point at that is worth the ink).
    */
   setDiagnostics(diagnostics: readonly Diagnostic[]): void;
+  /**
+   * The answer to a {@link CompletionQuery} the pane asked for — the chips, in the order
+   * the binding ranked them (§4.9, §6.13).
+   *
+   * Handing back the query object is what makes an answer identifiable: one for a prefix
+   * the user has already typed past is dropped, exactly as a superseded conversion
+   * result is.
+   */
+  setCompletions(query: CompletionQuery, items: readonly Completion[]): void;
   /** The current fit-to-pane column count for the output pane (§6.5). */
   columns(): number;
   /**

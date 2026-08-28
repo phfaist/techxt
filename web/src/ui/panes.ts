@@ -1,6 +1,6 @@
 /**
  * The two panes: a textarea for the source, a `<pre>` for the answer (web/PLAN.md
- * §6.1, §6.3, §6.5, §6.6).
+ * §6.1, §6.3, §6.5, §6.6, §6.12, §6.13).
  *
  * Three properties of this module are load-bearing rather than decorative:
  *
@@ -16,19 +16,29 @@
  *   pane's width in pixels becomes a column count the library can wrap to.
  * - The textarea turns off every helpful thing a phone does to prose. An editor that
  *   capitalises `\alpha` is worse than useless (§6.6).
+ * - **The textarea stays a textarea.** Highlighting is a `<pre>`-like mirror behind it
+ *   (§6.12), not a `contenteditable`, because `contenteditable` breaks
+ *   `setSelectionRange` and {@link Panes.selectSpan} — the diagnostics' jump-to-source —
+ *   depends on it. The same mirror carries the diagnostic underline, so the two share
+ *   one element and cannot drift apart; they use different channels of it, colour for
+ *   the lexer and a tint plus an underline for the diagnostics.
  *
  * Nothing here knows what a conversion is. Every user action leaves through a
  * callback of {@link PanesInit}; every state change the app makes arrives through a
  * method of {@link Panes} and fires nothing.
  */
 
+import { candidatesFor, completionTrigger, nextInCycle } from '../completion';
+import type { CompletionTrigger, TriggerKind } from '../completion';
 import { applyFont } from '../fonts';
 import type { FontId } from '../fonts';
+import { editorChunks, tokenize } from '../highlight';
+import type { Mark } from '../highlight';
 import { splitMathRuns } from '../math-regions';
 import { MIN_FIT_COLUMNS, columnsFor } from '../state';
 import type { ExampleDoc } from '../types';
-import type { Diagnostic, MathRegion, Span } from '../worker/protocol';
-import type { Panes, PanesInit } from './api';
+import type { Completion, Diagnostic, MathRegion, Span } from '../worker/protocol';
+import type { CompletionQuery, Panes, PanesInit } from './api';
 
 /**
  * The 62 alphanumerics and a space (§6.5). Its mean advance is the advance itself for
@@ -61,6 +71,48 @@ const MAX_SPLIT = 0.8;
 /** A visual-viewport this much shorter than the layout viewport means a keyboard. */
 const KEYBOARD_THRESHOLD = 120;
 
+/**
+ * Up to this many characters are lexed and spanned whole; past that, only a window
+ * around what is on screen is (§6.12).
+ *
+ * Both numbers were measured rather than chosen. A mirror rebuild costs about 4.5 ms
+ * for the text alone and **5.3 µs per span** on top of it, and a densely marked-up
+ * LaTeX document carries roughly 120 spans per kilobyte — so the cost of highlighting
+ * is the size of the window and almost nothing else. A window of the screenful in view
+ * plus this margin on each side is a few hundred spans and a few milliseconds; the whole
+ * of a 20 KB document is 2 400 spans and 17 ms, which is a keystroke a typist would
+ * feel.
+ */
+const HIGHLIGHT_WHOLE_LIMIT = 6_000;
+/**
+ * How much text on each side of the visible region is highlighted anyway — enough to
+ * absorb both a scroll and the error in the estimate that places the window.
+ *
+ * That estimate is proportional (a character is a character's share of the content
+ * height) because the alternative, measuring, means a forced layout inside the keystroke
+ * that provoked it. Measured against the truth — a binary search with a `Range` over the
+ * mirror — on a deliberately uneven 200 KB document, mixing wrapped prose with blocks of
+ * short lines, it was wrong by at most **1 033 characters**, so this margin is that error
+ * plus about a screenful of scrolling.
+ */
+const HIGHLIGHT_MARGIN = 3_000;
+
+/** The chips the row shows, which is also the length of the Tab cycle (§6.13). */
+const CHIP_CAP = 5;
+/**
+ * How many entries a macro query asks for. A few more than the row shows, because the
+ * app folds `\begin` and `\end` in at the head and a cap applied before that would let
+ * two literals push two real suggestions off the end.
+ */
+const MACRO_QUERY_LIMIT = 8;
+/**
+ * How many an environment query asks for. `complete()` takes no kind and ranks macros
+ * above environments, so the only way to be sure the environments are in the answer at
+ * all is to ask for enough of it to reach them (§6.13). It is a cap and not a count: a
+ * prefix that matches twelve names answers with twelve.
+ */
+const ENVIRONMENT_QUERY_LIMIT = 250;
+
 export function initPanes(init: PanesInit): Panes {
   const { mount, ui, examples } = init;
   mount.classList.add('panes-host');
@@ -86,6 +138,29 @@ export function initPanes(init: PanesInit): Panes {
   /** Each button's vertical offset within the *content*, independent of scrolling. */
   let gutterContentTops: number[] = [];
   let gutterLineHeight = 0;
+
+  /**
+   * Whether the syntax colours are painted at all (§6.12).
+   *
+   * One flag for the whole feature, on purpose: it gates the lexing and the class that
+   * makes the textarea's own glyphs transparent together, so turning it off leaves the
+   * pane exactly as it was before highlighting existed. That is the escape hatch if a
+   * real device ever disagrees with the overlay.
+   */
+  let highlighting = true;
+  /**
+   * Whether an IME is composing right now, which suspends the colours until it is done.
+   *
+   * The composing run is the one thing in the textarea the mirror cannot reproduce: the
+   * browser draws it with its own underline and its own candidate window, and hiding it
+   * behind a transparent-text overlay is how an overlay editor eats an input method. So
+   * composition puts the real text back on screen for as long as it lasts, which costs a
+   * colourless second rather than a broken editor.
+   */
+  let composing = false;
+  /** The window `rebuildBackdrop` last spanned, in characters — see `highlightWindow`. */
+  let windowFrom = 0;
+  let windowTo = 0;
 
   /* ------------------------------------------------------------------ DOM */
 
@@ -155,7 +230,26 @@ export function initPanes(init: PanesInit): Panes {
   const editorShell = el('div', 'pane-editor');
   editorShell.append(gutter, editorArea);
 
-  inPane.append(inHead, inputLabel, editorShell);
+  /* --- the completion chips (§6.13) */
+
+  /**
+   * A row under the input, never a popup: it works the same on a desktop and on a
+   * phone, it never covers what is being typed, and it is nothing at all when there is
+   * nothing to suggest.
+   */
+  const completionRow = el('div', 'completion-row');
+  completionRow.hidden = true;
+  completionRow.setAttribute('role', 'group');
+  completionRow.setAttribute('aria-label', 'Completions');
+  const completionChips = el('div', 'completion-chips');
+  const completionHint = el('span', 'completion-hint', 'Tab to cycle');
+  completionHint.setAttribute('aria-hidden', 'true');
+  /** What a screen reader is told as the cycle moves; the chips themselves are visual. */
+  const completionStatus = el('span', 'sr-only');
+  completionStatus.setAttribute('aria-live', 'polite');
+  completionRow.append(completionChips, completionHint, completionStatus);
+
+  inPane.append(inHead, inputLabel, editorShell, completionRow);
 
   /* --- divider */
 
@@ -248,6 +342,7 @@ export function initPanes(init: PanesInit): Panes {
 
   applySplit();
   applyFocus();
+  editorArea.classList.toggle('is-highlighted', highlighting);
 
   /* ------------------------------------------------------- the Load ▾ menu */
 
@@ -514,52 +609,106 @@ export function initPanes(init: PanesInit): Panes {
     paintDiagnostics = next;
   }
 
-  /**
-   * The backdrop's text, split into plain runs and one `<span>` per error/warning
-   * run — merged by worst severity where two diagnostics overlap. `buildMirror`'s
-   * technique (below) would work here too, but the backdrop *is* a styled mirror
-   * already, kept live in the DOM, so it needs no throwaway element of its own.
-   */
-  function backdropRuns(text: string): Node[] {
-    const spans = paintDiagnostics
+  /** The diagnostics as the mirror wants them: clamped ranges with a severity. */
+  function marks(text: string): Mark[] {
+    return paintDiagnostics
       .map((d) => ({
         start: clamp(d.span.start, 0, text.length),
         end: clamp(d.span.end, 0, text.length),
-        rank: d.severity === 'error' ? 2 : 1,
+        severity: d.severity === 'error' ? ('error' as const) : ('warning' as const),
       }))
-      .filter((s) => s.end > s.start);
+      .filter((mark) => mark.end > mark.start);
+  }
 
+  /**
+   * Which characters are worth turning into elements (§6.12).
+   *
+   * A short document is all of them: it is a few hundred spans and the whole question
+   * does not arise. Past {@link HIGHLIGHT_WHOLE_LIMIT} the mirror still holds every
+   * character — the alignment with the textarea above it depends on that — but only a
+   * window of them is *spanned*, and the rest is one text node per side.
+   *
+   * The window is estimated from the scroll offset rather than measured — see
+   * {@link HIGHLIGHT_MARGIN} for what that costs in accuracy and what the margin does
+   * about it — and it is re-taken on every keystroke and every scroll. What an error
+   * would cost is a screenful of uncoloured text, never a character out of place: the
+   * mirror holds the same characters either way, and only their colour is at stake.
+   */
+  function highlightWindow(text: string): {
+    from: number;
+    to: number;
+    seenFrom: number;
+    seenTo: number;
+  } {
+    if (text.length <= HIGHLIGHT_WHOLE_LIMIT) {
+      return { from: 0, to: text.length, seenFrom: 0, seenTo: text.length };
+    }
+    const height = input.scrollHeight;
+    if (!(height > 0)) {
+      const to = Math.min(text.length, HIGHLIGHT_WHOLE_LIMIT);
+      return { from: 0, to, seenFrom: 0, seenTo: to };
+    }
+    const perPixel = text.length / height;
+    const seenFrom = Math.round(input.scrollTop * perPixel);
+    const seenTo = Math.round((input.scrollTop + input.clientHeight) * perPixel);
+    return {
+      from: Math.max(0, seenFrom - HIGHLIGHT_MARGIN),
+      to: Math.min(text.length, seenTo + HIGHLIGHT_MARGIN),
+      seenFrom,
+      seenTo,
+    };
+  }
+
+  /**
+   * Repaint the mirror: the lexer's colours and the diagnostics' underline, in one flat
+   * list of spans (§6.12, §7).
+   *
+   * Every node is built here from slices of the textarea's own value — no markup is
+   * parsed and no `innerHTML` is assigned — and the slices tile the text exactly, which
+   * is what keeps every character in the mirror underneath the character it belongs to.
+   */
+  function rebuildBackdrop(): void {
+    const text = input.value;
     const nodes: Node[] = [];
-    if (spans.length === 0) {
-      nodes.push(document.createTextNode(text));
-    } else {
-      const bounds = Array.from(
-        new Set([0, text.length, ...spans.flatMap((s) => [s.start, s.end])]),
-      ).sort((a, b) => a - b);
-      for (let i = 0; i < bounds.length - 1; i += 1) {
-        const start = bounds[i];
-        const end = bounds[i + 1];
-        if (start === undefined || end === undefined || start >= end) continue;
-        let rank = 0;
-        for (const s of spans) {
-          if (s.start <= start && s.end >= end) rank = Math.max(rank, s.rank);
+    const painting = highlighting && !composing;
+    const view = painting ? highlightWindow(text) : { from: 0, to: 0, seenFrom: 0, seenTo: 0 };
+    windowFrom = view.from;
+    windowTo = view.to;
+
+    const tokens = painting ? tokenize(text, view.from, view.to) : [];
+    // Outside the window the diagnostics still have to be painted: there are a handful
+    // of them, they are the older of the two channels, and a warning that stopped being
+    // underlined when the document grew would be a regression.
+    const spans = marks(text);
+    const cuts = painting
+      ? [
+          { from: 0, to: view.from, tokens: [] as ReturnType<typeof tokenize> },
+          { from: view.from, to: view.to, tokens },
+          { from: view.to, to: text.length, tokens: [] as ReturnType<typeof tokenize> },
+        ]
+      : [{ from: 0, to: text.length, tokens: [] as ReturnType<typeof tokenize> }];
+
+    for (const cut of cuts) {
+      if (cut.to <= cut.from) continue;
+      for (const chunk of editorChunks(text, cut.tokens, spans, cut.from, cut.to)) {
+        if (chunk.token === null && chunk.severity === null) {
+          nodes.push(document.createTextNode(chunk.text));
+          continue;
         }
-        const chunk = text.slice(start, end);
-        if (rank === 0) {
-          nodes.push(document.createTextNode(chunk));
-        } else {
-          nodes.push(el('span', rank === 2 ? 'hl-error' : 'hl-warning', chunk));
+        const classes: string[] = [];
+        if (chunk.token !== null) {
+          classes.push(`tk-${chunk.token}`);
+          if (chunk.inMath) classes.push('tk-in-math');
         }
+        if (chunk.severity !== null) classes.push(`hl-${chunk.severity}`);
+        nodes.push(el('span', classes.join(' '), chunk.text));
       }
     }
+
     // A textarea shows a trailing blank line when the value ends in `\n`; without
     // this, the mirror's last line falls a row short and every marker below it drifts.
     if (text === '' || text.endsWith('\n')) nodes.push(document.createTextNode(' '));
-    return nodes;
-  }
-
-  function rebuildBackdrop(): void {
-    backdrop.replaceChildren(...backdropRuns(input.value));
+    backdrop.replaceChildren(...nodes);
   }
 
   /** Rebuild the gutter's buttons and cache each one's position within the content. */
@@ -633,6 +782,13 @@ export function initPanes(init: PanesInit): Panes {
     backdrop.scrollTop = input.scrollTop;
     backdrop.scrollLeft = input.scrollLeft;
     positionGutter();
+    // A document large enough to be windowed can be scrolled out of its window, and
+    // the colours have to follow (§6.12). Cheap to ask, and the margin means the answer
+    // is almost always no.
+    if (highlighting && !composing && input.value.length > HIGHLIGHT_WHOLE_LIMIT) {
+      const view = highlightWindow(input.value);
+      if (view.seenFrom < windowFrom || view.seenTo > windowTo) syncBackdrop();
+    }
   });
 
   // Wrapping depends on the pane's width, so every resize — the split drag, a focus
@@ -640,11 +796,295 @@ export function initPanes(init: PanesInit): Panes {
   const editorObserver = new ResizeObserver(scheduleRelayoutDiagnostics);
   editorObserver.observe(input);
 
+  /* --------------------------------------------------- completion (§6.13) */
+
+  /** What the row is currently about, kept in step with the caret. */
+  let trigger: CompletionTrigger | null = null;
+  /** The query whose answer the row is waiting for; the object itself is the token. */
+  let pendingQuery: CompletionQuery | null = null;
+  /** What the row shows, left to right, which is the order Tab walks. */
+  let candidates: Completion[] = [];
+  let chips: HTMLButtonElement[] = [];
+  /**
+   * The cycle, which exists only between its first Tab and whatever ends it.
+   *
+   * `typed` is the user's own text, kept so that both ends of the ring come back to it;
+   * `end` moves as each candidate replaces the last one, since that is the range the
+   * next press has to replace. The candidate list is *not* re-queried while this lives:
+   * re-filtering on the text a press just inserted would collapse it to that one entry
+   * and the press after it would have nowhere to go.
+   */
+  let cycle: {
+    kind: TriggerKind;
+    start: number;
+    end: number;
+    typed: string;
+    index: number | null;
+  } | null = null;
+  /** A Tab pressed while the answer was still in flight, honoured when it lands. */
+  let queuedStep: 1 | -1 | null = null;
+  /** Where Escape put the row away; it stays away until a different escape character. */
+  let dismissedAt: number | null = null;
+  /**
+   * The answers already given about the name being typed *now*, so that a backspace is
+   * not a round trip through the worker (§6.13).
+   *
+   * Deliberately no bigger than one name: it is emptied the moment the trigger moves to
+   * a different `\`, which is what makes it impossible for it to answer with a table
+   * that predates a definition the document has since gained — while the caret sits in
+   * one name, the only thing changing in the document is that name.
+   *
+   * It is worth having because the worker is shared with the conversion, and on a 200 KB
+   * document a completion issued just after the debounce fired waits about a quarter of a
+   * second behind it. What it cannot do is make *new* prefixes faster: a letter nobody
+   * has typed yet is a question nobody has asked yet. That is measured in §6.13, and it
+   * is why the answer to a slow document is not a second wasm instance.
+   */
+  const answers = new Map<string, Completion[]>();
+  let answersFor: number | null = null;
+  /** The caret this pane set itself, so that its own selection change is not a move. */
+  let expectedCaret = -1;
+  /** True while the pane is editing the buffer itself; see {@link replaceRange}. */
+  let applying = false;
+
+  function hideRow(): void {
+    completionRow.hidden = true;
+    completionRow.classList.remove('is-pending');
+    completionChips.replaceChildren();
+    completionStatus.textContent = '';
+    chips = [];
+    candidates = [];
+    cycle = null;
+    pendingQuery = null;
+    queuedStep = null;
+  }
+
+  /** One chip: the name, what it renders as if that is a fixed thing, and its source. */
+  function chipFor(item: Completion, index: number): HTMLButtonElement {
+    const chip = el('button', 'completion-chip');
+    chip.type = 'button';
+    // Not a tab stop: Tab belongs to the cycle while the row is up, and a row of five
+    // more tab stops would be five more places for a keyboard user to be surprised.
+    chip.tabIndex = -1;
+    const spelling = trigger?.kind === 'environment' ? item.name : `\\${item.name}`;
+    chip.append(el('span', 'completion-chip-name', spelling));
+    if (item.replacement !== null && item.replacement !== '') {
+      chip.append(el('span', 'completion-chip-replacement', item.replacement));
+    }
+    if (item.fromDocument) {
+      chip.classList.add('is-from-document');
+      chip.append(el('span', 'sr-only', ' — defined in this document'));
+      chip.title = `${spelling} — defined in this document`;
+    } else {
+      chip.title = spelling;
+    }
+    // Taking the pointer without taking the focus: a chip that blurred the textarea
+    // would close the phone's keyboard to insert three characters into it.
+    chip.addEventListener('pointerdown', (event) => event.preventDefault());
+    chip.addEventListener('mousedown', (event) => event.preventDefault());
+    chip.addEventListener('click', () => applyChip(index));
+    return chip;
+  }
+
+  function renderChips(): void {
+    chips = candidates.map((item, index) => chipFor(item, index));
+    completionChips.replaceChildren(...chips);
+    completionRow.classList.remove('is-pending');
+    completionRow.hidden = false;
+    markChips();
+  }
+
+  /** The highlight follows the cycle, so that a third Tab is a visible act. */
+  function markChips(): void {
+    const current = cycle?.index ?? null;
+    for (const [index, chip] of chips.entries()) {
+      const on = index === current;
+      chip.classList.toggle('is-current', on);
+      chip.setAttribute('aria-pressed', String(on));
+    }
+  }
+
+  /**
+   * Ask what the caret is asking, if anything, and put the row in the state that
+   * answers it. Called after every keystroke; never during a cycle, whose list is
+   * frozen by design.
+   */
+  function refreshCompletions(): void {
+    const found = completionTrigger(input.value, input.selectionStart, input.selectionEnd);
+    trigger = found;
+    if (!found) {
+      dismissedAt = null;
+      hideRow();
+      return;
+    }
+    if (dismissedAt !== null && dismissedAt !== found.start) dismissedAt = null;
+    if (dismissedAt !== null) {
+      hideRow();
+      return;
+    }
+    if (pendingQuery && pendingQuery.kind === found.kind && pendingQuery.prefix === found.prefix) {
+      return;
+    }
+    if (answersFor !== found.start) {
+      answers.clear();
+      answersFor = found.start;
+    }
+    const remembered = answers.get(`${found.kind}\u0000${found.prefix}`);
+    if (remembered) {
+      pendingQuery = null;
+      show(found, remembered);
+      return;
+    }
+    const query: CompletionQuery = {
+      kind: found.kind,
+      prefix: found.prefix,
+      limit: found.kind === 'environment' ? ENVIRONMENT_QUERY_LIMIT : MACRO_QUERY_LIMIT,
+    };
+    pendingQuery = query;
+    // The chips already up stay up, dimmed, until the new answer replaces them: the
+    // round trip is a millisecond, and blanking the row on every keystroke would make
+    // the pane jump under the hands of anyone typing a long macro name.
+    if (!completionRow.hidden) completionRow.classList.add('is-pending');
+    init.onCompletionQuery(query);
+  }
+
+  /** Put an answer on the screen, or take the row away if it turns out to be empty. */
+  function show(asked: CompletionTrigger, items: readonly Completion[]): void {
+    candidates = candidatesFor(items, asked.kind, asked.prefix, CHIP_CAP);
+    if (candidates.length === 0) {
+      hideRow();
+      return;
+    }
+    renderChips();
+    // A Tab pressed while the answer was in flight: the user asked for the first
+    // candidate before there was one, and now there is.
+    if (queuedStep !== null) {
+      const direction = queuedStep;
+      queuedStep = null;
+      step(direction);
+    }
+  }
+
+  /** Tab, or Shift-Tab: one position around the ring of candidates and typed text. */
+  function step(direction: 1 | -1): void {
+    // Mid-flight: the row is showing yesterday's chips and applying one of them would
+    // insert something the prefix no longer matches. Remember the press instead — the
+    // answer is milliseconds away — rather than let the focus escape the textarea.
+    if (pendingQuery !== null) {
+      queuedStep = direction;
+      return;
+    }
+    if (!trigger || candidates.length === 0) return;
+    if (!cycle) {
+      cycle = {
+        kind: trigger.kind,
+        start: trigger.start,
+        end: trigger.end,
+        typed: trigger.prefix,
+        index: null,
+      };
+    }
+    applyIndex(nextInCycle(cycle.index, candidates.length, direction));
+  }
+
+  /**
+   * Replace `[start, end)` with `name` in a way the browser's own undo can see.
+   *
+   * `execCommand('insertText')` is deprecated and is used anyway, because it is the only
+   * way a script can edit a textarea and leave Ctrl+Z working: `setRangeText` and an
+   * assignment to `value` both drop the undo stack on the floor, so a Tab would cost the
+   * user every keystroke they had typed before it. Where it is refused — it returns
+   * `false` rather than throwing — the assignment is the fallback, and Shift-Tab back
+   * through the cycle is then the only undo there is (§6.13).
+   *
+   * It fires an `input` event of its own, which `applying` tells the handler to leave
+   * alone: this edit does its own bookkeeping below, and is not a keystroke that should
+   * end the cycle it is part of.
+   */
+  function replaceRange(start: number, end: number, name: string): void {
+    applying = true;
+    try {
+      input.focus({ preventScroll: true });
+      input.setSelectionRange(start, end);
+      let inserted = false;
+      try {
+        inserted = document.execCommand('insertText', false, name);
+      } catch {
+        inserted = false;
+      }
+      if (!inserted) input.setRangeText(name, start, end, 'end');
+    } finally {
+      applying = false;
+    }
+  }
+
+  /** Put candidate `index` — or, for `null`, the user's own text — into the buffer. */
+  function applyIndex(index: number | null): void {
+    if (!cycle) return;
+    const name = index === null ? cycle.typed : candidates[index]?.name;
+    if (name === undefined) return;
+    const caret = cycle.start + name.length;
+    replaceRange(cycle.start, cycle.end, name);
+    cycle.end = caret;
+    cycle.index = index;
+    expectedCaret = caret;
+    trigger = trigger ? { ...trigger, end: caret } : null;
+
+    // Everything the `input` handler does for a keystroke, because this *is* an edit —
+    // one the handler was told to ignore, since it must not end the cycle it belongs to.
+    remapPaintDiagnostics(paintDiagnosticsText, input.value);
+    paintDiagnosticsText = input.value;
+    syncBackdrop();
+    scheduleRelayoutDiagnostics();
+    init.onInput(input.value, 'type');
+
+    markChips();
+    // The chips are visual; this is the same news for a screen reader.
+    completionStatus.textContent =
+      index === null
+        ? `${cycle.typed}, as you typed it`
+        : cycle.kind === 'environment'
+          ? name
+          : `\\${name}`;
+  }
+
+  /** A click or a tap: that chip, and the cycle is over — this was a choice. */
+  function applyChip(index: number): void {
+    if (!trigger) return;
+    if (!cycle) {
+      cycle = {
+        kind: trigger.kind,
+        start: trigger.start,
+        end: trigger.end,
+        typed: trigger.prefix,
+        index: null,
+      };
+    }
+    const start = cycle.start;
+    applyIndex(index);
+    dismissedAt = start;
+    hideRow();
+    input.focus({ preventScroll: true });
+  }
+
+  function endCycle(): void {
+    if (!cycle) return;
+    cycle = null;
+    markChips();
+  }
+
   /* ------------------------------------------------------- the input events */
 
   input.addEventListener('input', (event) => {
+    // The cycle's own edit, which announces itself through `execCommand`: it has already
+    // done everything below, and it must not be read as the keystroke that ends it.
+    if (applying) return;
     const inputType = (event as InputEvent).inputType ?? '';
     const bulk = inputType.startsWith('insertFromPaste') || inputType === 'insertFromDrop';
+    // A keystroke is the one thing that ends a cycle *and* may start the next row: the
+    // text the cycle inserted is now just text, and what is under the caret now is a
+    // fresh question (§6.13).
+    endCycle();
     // The diagnostics themselves are stale until the next result arrives — same as
     // the panel above — but their *offsets* still have to track every keystroke, or
     // an edit before a span paints the highlight over the wrong characters until
@@ -659,13 +1099,83 @@ export function initPanes(init: PanesInit): Panes {
     // Only the gutter still waits: it measures in a throwaway mirror, which forces a
     // layout, so it stays debounced rather than paying for that on every keystroke.
     scheduleRelayoutDiagnostics();
+    refreshCompletions();
   });
 
   input.addEventListener('keydown', (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
       event.preventDefault();
       init.onConvertNow();
+      return;
     }
+    // Enter, space and everything else are never intercepted: the row hangs off Tab
+    // precisely so that the user's newlines stay their own (§6.13).
+    if (event.key === 'Escape' && !completionRow.hidden) {
+      // "Stop bothering me", not "undo": whatever the cycle applied stays where it is,
+      // and the row does not come back until the next escape character.
+      event.preventDefault();
+      dismissedAt = trigger?.start ?? null;
+      endCycle();
+      hideRow();
+      return;
+    }
+    if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey) return;
+    // The obligation this rule exists for: while there is no row, Tab moves focus out
+    // of the textarea exactly as it always did. A keyboard-only user who could not
+    // leave the editor would be trapped in it (§6.9, §6.13).
+    if (completionRow.hidden) return;
+    event.preventDefault();
+    step(event.shiftKey ? -1 : 1);
+  });
+
+  /* ------------------------------------------------------- composition (§6.12) */
+
+  input.addEventListener('compositionstart', () => {
+    composing = true;
+    editorArea.classList.add('is-composing');
+    syncBackdrop();
+    hideRow();
+  });
+
+  input.addEventListener('compositionend', () => {
+    composing = false;
+    editorArea.classList.remove('is-composing');
+    syncBackdrop();
+  });
+
+  /* ----------------------------------------------- the caret, and losing focus */
+
+  /**
+   * A cursor move ends the cycle (§6.13). The caret this pane put there itself does
+   * not: applying a candidate moves the selection as a matter of course, and a cycle
+   * that ended on its own first step would be a cycle of one.
+   */
+  function onCaretMoved(): void {
+    if (input.selectionStart === expectedCaret && input.selectionEnd === expectedCaret) return;
+    if (cycle) {
+      endCycle();
+      hideRow();
+    }
+  }
+
+  document.addEventListener('selectionchange', () => {
+    if (document.activeElement !== input) return;
+    onCaretMoved();
+  });
+  // Safari has been unreliable about `selectionchange` for form controls, and a cycle
+  // that outlived an arrow key would apply its next candidate somewhere else entirely.
+  input.addEventListener('keyup', (event) => {
+    if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') {
+      onCaretMoved();
+    }
+  });
+  input.addEventListener('pointerup', onCaretMoved);
+
+  input.addEventListener('blur', () => {
+    // A chip takes the pointer without taking the focus (see `chipFor`), so a blur here
+    // really is the user leaving the editor.
+    endCycle();
+    hideRow();
   });
 
   /* ----------------------------------------------- the on-screen keyboard (§6.6) */
@@ -712,7 +1222,27 @@ export function initPanes(init: PanesInit): Panes {
       // document, and the old spans would light up unrelated text.
       paintDiagnostics = [];
       paintDiagnosticsText = value;
+      // The row was about a name in the document that has just been replaced.
+      trigger = null;
+      dismissedAt = null;
+      answers.clear();
+      answersFor = null;
+      hideRow();
       relayoutDiagnostics();
+    },
+
+    setCompletions(query: CompletionQuery, items: readonly Completion[]) {
+      // The query object is the token: an answer to anything but the question the row
+      // is waiting for is an answer to a keystroke that has been typed over (§6.2).
+      if (query !== pendingQuery) return;
+      pendingQuery = null;
+      const asked = trigger;
+      if (!asked) {
+        hideRow();
+        return;
+      }
+      answers.set(`${query.kind}\u0000${query.prefix}`, items.slice());
+      show(asked, items);
     },
 
     setOutput(value: string) {

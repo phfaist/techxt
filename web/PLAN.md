@@ -32,8 +32,8 @@ Goals, in priority order:
 
 Non-goals: rendering the *document* visually — this is a converter to text, not a
 previewer, and the output pane shows what techxt produced; a file tree or multi-file
-projects; `\input` resolution (there is no filesystem — the diagnostic explains it);
-editing features beyond a textarea (no syntax highlighting, no CodeMirror); accounts;
+projects; `\input` resolution (there is no filesystem — the diagnostic explains it); an
+editor *component* in place of the textarea (no CodeMirror — §16); accounts;
 server-side anything.
 
 **The formulas are the one exception, and an opt-in one.** *Math: MathJax* (§5)
@@ -43,6 +43,25 @@ the one part of a conversion that reads badly however well it is done, so being 
 see a formula while judging the *structure* around it is what the option is for; and it
 costs the rest of the page nothing, because it is a fourth answer to a question the bar
 already asks and 1.8 MB that only the readers who choose it ever fetch (§9.1).
+
+**Syntax highlighting and completion were non-goals here and in §16, and are now
+features — on exactly the terms the non-goal set.** The old wording was *"editing
+features beyond a textarea (no syntax highlighting, no CodeMirror)"*, and its reasons
+were that a textarea is honest and fast and that a code editor would outweigh the
+engine. Both are still true, and both are now the constraints the two features are held
+to rather than an argument against having them: **the textarea stays a textarea**, the
+colours are a mirror painted behind it (§6.12), the completions are a row of chips under
+it (§6.13), and neither adds a dependency or a byte of library to `dist/` — the whole of
+it is about 11 KB of the app's own JavaScript and CSS, 3.7 KB gzipped.
+
+What changed is the *reason to want them*.
+Goal 1 is pasting LaTeX and reading text on a phone, and goal 3 is showing diagnostics
+where they belong; both are about the person in the input pane, and that pane had less
+help in it than a `<textarea>` on any other site — no colour to tell a comment from a
+command, and no way to reach the eleven hundred macros techxt knows about except by
+remembering their spelling. The line that survives from the old non-goal is *no editor
+component*: no folding, no multiple cursors, no minimap, nothing that would make this a
+place to write a paper rather than a place to check one.
 
 ## 2. Decisions taken
 
@@ -81,6 +100,8 @@ web/
     library-io.ts         the export format, and what an import is allowed to do
     mathjax.ts            MathJax in four functions: load, loaded, typeset, reset
     math-regions.ts       cutting the output into the runs the pane wraps in elements
+    highlight.ts          the editor's lexer, and the chunking the mirror renders
+    completion.ts         when the chip row fires, and where the Tab cycle goes next
     worker/
       convert.worker.ts   loads wasm, answers convert requests
       protocol.ts         message types shared by both sides
@@ -129,7 +150,10 @@ arrive as parameters — so the retention policy and the import rules are reacha
 vitest, while `library-store.ts` is the only file in the app that opens a database.
 `math-regions.ts` and `mathjax.ts` are the same split again: the arithmetic of cutting
 the output at the region boundaries is pure and tested, and the file that fetches a
-typesetter and hands it elements has nothing in it worth a unit test.
+typesetter and hands it elements has nothing in it worth a unit test. `highlight.ts` and
+`completion.ts` are the editor's half of it (§6.12, §6.13): the lexing, the chunking, the
+trigger and the cycle are strings and indices and are covered; the elements and the
+keyboard handler they feed are in `ui/panes.ts`, where they belong.
 
 `web/crate/` is deliberately *not* a member of the `rust/` workspace and is not
 reachable from it: the repository root has no `Cargo.toml`, so a package under `web/`
@@ -523,6 +547,14 @@ second matcher to keep in step with the first, a second copy of a fourteen-hundr
 table in the bundle, and two places to change when the order is wrong. `complete.rs`
 holds all of it, next to the table it is drawn from.
 
+**The two exceptions, both of them places where this function cannot answer at all.**
+The app adds `\begin` and `\end` as literals of its own, because techxt defines neither
+and no ranking can offer a name that is not in the table; and an `\begin{…}` trigger
+keeps the environments out of an answer that is ranked macros-first, because
+`complete(latex, prefix, limit)` has no way to be asked for one kind. Neither is a
+matcher and neither re-sorts anything — §6.13 has both in full, and the second would
+disappear the day this signature grew a kind argument.
+
 **The two sources.** The first is techxt's own declared symbols, read through
 `DefinitionSet::symbols()` (root PLAN §10.7) — 1 406 names, with the literal each one
 renders to where it has one, which is what makes a row worth reading rather than a list
@@ -593,7 +625,10 @@ against the text's length and hash, without moving it out of this signature.
 than a browser (2026-08-28 container): the first call costs **7.4 ms**, which is the
 table being built and is why it is built lazily; after that a call is **0.03 ms** on an
 empty or an ordinary 2 KB document and **1.1 ms** on a 197 KB one, where the linear scan
-is the whole of the difference. So the cost is the document's length and not the table's
+is the whole of the difference. In the browser, keystroke to chips on screen, the same
+work is 5 ms on an ordinary document — the rest of it being the worker round trip and a
+repaint — and §6.13 has the case where it is not, which is a large document whose
+conversion got to the worker first. So the cost is the document's length and not the table's
 size, and even the large case is well inside a keystroke. Placing a candidate in the
 curated list is a walk over a hundred short names, which is cheap once and not cheap
 inside a comparator, so each candidate's sort key is computed once and carried beside it
@@ -778,9 +813,11 @@ header, so `dvh` handles the mobile URL bar.
 ### 6.2 Worker protocol (`src/worker/protocol.ts`)
 
 ```ts
-type ToWorker   = { type: 'convert'; id: number; text: string; options: OptionsPayload };
+type ToWorker   = { type: 'convert';  id: number; text: string; options: OptionsPayload }
+                | { type: 'complete'; id: number; text: string; prefix: string; limit: number };
 type FromWorker = { type: 'ready'; version: string }
                 | { type: 'result'; id: number; result: ConversionResult }
+                | { type: 'completions'; id: number; items: Completion[] }
                 | { type: 'fatal';  message: string };
 ```
 
@@ -801,6 +838,14 @@ Client rules:
 
 Requests send full text (`postMessage` copies the string; at document sizes that
 matter this is microseconds compared to conversion).
+
+**`complete` shares the worker and nothing else.** It carries the document too — the
+binding scans it for the user's own definitions (§4.9) — and it runs the same
+monotonic-id discipline on **a counter of its own**, so that a keystroke asking what
+`\alp` could be never invalidates the conversion in flight beside it. It is never
+debounced: it answers a keystroke that has already happened, and the answer is a table
+lookup. Only the latest question is answered; a superseded one's callback is dropped and
+never called. What the two requests do share is the thread, which §6.13 measures.
 
 ### 6.3 Rendering the output
 
@@ -995,6 +1040,13 @@ contrast in both; `prefers-reduced-motion` respected by every transition and the
 Keyboard: Ctrl/Cmd+Enter converts, Ctrl/Cmd+Shift+C copies output, Escape closes the
 options disclosure.
 
+**Tab is intercepted only while the completion row is showing** (§6.13), and the row
+only appears after an escape character and at least one letter — so for all the rest of
+the time Tab moves focus out of the textarea exactly as it always did. This is an
+obligation and not a nicety: a keyboard-only user who could not leave the editor would
+be trapped in it. Escape puts the row away, which is the second exit; the chips
+themselves are not tab stops, since Tab is already walking them.
+
 ### 6.10 The library
 
 Every document that goes through the app is kept, on the device, in a library the user
@@ -1165,6 +1217,188 @@ rather than truncated, a size cap ahead of `JSON.parse`, and a read that never t
 A refusal names what was wrong with the file — a foreign file, a truncated one and one
 from a future format version send a person to three different places, and a single
 "could not read that" would send them nowhere.
+
+### 6.12 Highlighting the source
+
+The input pane paints the LaTeX it is given: commands, comments, braces, math
+delimiters and their contents, and the environment name in a `\begin{…}`. It is the
+smallest thing that answers *what am I looking at* and it is deliberately not more (§16).
+
+**It is a mirror, not an editor.** The `<textarea>` stays exactly what it was; behind it
+sits a `<div>` carrying the same classes, the same padding and the same font, holding the
+same characters, and with `.is-highlighted` the real glyphs go transparent while the
+mirror's become the ones on screen. The caret, the selection, the scrolling, the
+platform's own text handling and — decisively — `setSelectionRange` are all still the
+textarea's. `contenteditable` is what this is *not*: it breaks `setSelectionRange`, and
+`Panes.selectSpan`, the diagnostics' jump-to-source (§7), depends on it.
+
+The mirror is not new. It is the same element the diagnostic underline has been painted
+into since W4, which is why the two cannot drift apart — and they share it without
+fighting over it, because they use different channels: **the lexer owns the colour of the
+glyphs, the diagnostics own the tint behind them and the underline under them**, and a
+run that is both is both. Nothing in either channel may change a glyph's metrics: no
+italic, no weight, no letter-spacing, or the mirror stops sitting under the text it
+belongs to.
+
+**A lexer, not a parse.** `src/highlight.ts` walks characters and knows five things.
+It does not resolve a macro, does not know which `\end` closes which `\begin`, and does
+not know that a `verbatim` body is not markup. The alternative was available and was
+declined: the binding could expose techy's own token spans and get highlighting exactly
+as accurate as the parse, riding along on the conversion response for free — but the
+conversion is debounced 120 ms and goes through the worker, so the colours would trail
+the cursor by a visible fraction of a second on every keystroke. A dumb synchronous pass
+repaints with the character. The door stays open for anything only a parse can know,
+since enriching the mirror from a conversion result is additive.
+
+**The window, and the measurement that sized it.** A mirror rebuild costs about 4.5 ms
+for the text alone and **5.3 µs per span** on top of it, and densely marked-up LaTeX
+carries roughly 120 spans per kilobyte — so the cost of highlighting is the size of the
+region spanned and almost nothing else. Spanning a whole 20 KB document is 2 400 spans
+and **+17 ms** on a keystroke, which a typist feels. So documents up to 6 000 characters
+are highlighted whole, and larger ones only within the screenful in view plus 3 000
+characters of margin on each side. Measured on Chromium, keystroke to keystroke:
+
+| document | mirror without colour | with colour | spans |
+|---|---|---|---|
+| 5 KB (whole) | 2.9 ms | 7.6 ms | 608 |
+| 20 KB (windowed) | 8.5 ms | 12.5 ms | 478 |
+| 200 KB (windowed) | 83.0 ms | 83.6 ms | 479 |
+
+The window is *estimated* from the scroll offset — a character is a character's share of
+the content height — rather than measured, because measuring means a forced layout inside
+the keystroke that provoked it. The estimate was checked against the truth (a binary
+search with a `Range` over the mirror) on a deliberately uneven 200 KB document mixing
+wrapped prose with blocks of short lines: it was wrong by at most **1 033 characters**,
+which is why the margin is what it is. An error would cost a screenful of uncoloured
+text, never a character out of place — the mirror holds the same characters either way.
+
+**The 200 KB row is the honest finding of this section, and it is not the highlighting.**
+83 ms of it is what the pane already cost before any of this: `setRangeText` on a
+200 KB textarea, a forced layout to read `scrollTop`, and a mirror rebuilt whole on every
+keystroke. Highlighting adds 0.6 ms to it. The pane has been that slow on documents that
+size since the mirror arrived at W4, and nobody had measured it, because the conversion —
+the thing everyone expected to be slow — had a worker and a debounce in front of it while
+the keystroke did not. It is worth fixing and it is a separate piece of work: the mirror
+holds the whole text for alignment, but it does not have to be *rebuilt* whole, and an
+edit that changes one line could touch one node.
+
+**The failure modes an overlay has, and what is done about each.** *IME composition*: the
+composing run is drawn by the browser with its own underline and its own candidate
+window, and an overlay that hid it would eat the input method — so `compositionstart`
+puts the real text back on screen and `compositionend` takes the colours up again, which
+costs a colourless second and nothing else. *Scroll synchronisation*: the mirror's
+`scrollTop` and `scrollLeft` are set from the textarea's on every scroll, as they were for
+the gutter. *Font metrics*: the mirror carries the textarea's own classes rather than a
+copy of its style, so there is one declaration and not two. *Mobile autocorrect*: the
+textarea has turned off `autocapitalize`, `autocorrect`, `autocomplete` and `spellcheck`
+since W2 (§6.6), which is the same reason it always did. *Selection*: a textarea's
+selection paints over the mirror, so `::selection` is given a translucent background and
+the colours read through it.
+
+**It ships on touch too.** The mirror has been carrying the diagnostic underline on
+phones since W4, so the alignment machinery is not new there; what is new — transparent
+glyphs, a translucent selection, the composition fallback — was checked at 390 px under
+Chromium's touch emulation and behaves. The fallback if a real device disagrees is one
+flag: `highlighting` in `ui/panes.ts` gates the class and the lexing together, and with it
+off the pane is exactly the pane of W4.
+
+### 6.13 Completion: the chip row
+
+Typing `\alp` puts a row of chips under the input: `\alpha  α`, `\alph`, and a quiet
+"Tab to cycle" at the end of the row. The binding decides what is in it and in what
+order (§4.9); this section is when it appears, what Tab does to it, and how it stays out
+of the way.
+
+**A row, never a popup.** It sits under the textarea, identical on a desktop and on a
+phone, it never covers what is being typed, it takes its height back when there is
+nothing to suggest, and it needs no positioning, no z-index and no dismissal-on-outside-
+click. It is capped at **five** chips: the cap is also the length of the cycle, and a
+scrolling chip row would be a popup with extra steps.
+
+**Two triggers, one row.** A `\` followed by at least one letter is the first — never on
+`\` alone, which would be a row that is always open, and never in the middle of a word,
+where the name is being edited rather than written. The second is `\begin{` followed by
+at least one character, where what is being typed is an environment name. They are one
+mechanism: the same row, the same cycle, the same code, with a different `kind` on the
+query.
+
+**Tab is a cycle, not an accept.** The first Tab applies the first candidate, the next
+applies the second, and Shift-Tab steps back. Two properties make that work:
+
+- **The candidate list freezes when the cycle starts.** It is keyed to the prefix the
+  user typed, not to what is in the buffer now — re-filtering on the text the previous
+  press inserted would collapse the list to that one entry and the second Tab would have
+  nowhere to go.
+- **Both ends of the cycle come back to the user's own text.** Shift-Tab from the first
+  candidate restores exactly what was typed, which is the undo half and how someone who
+  Tabbed by accident gets their `\alp` back; Tab past the last candidate wraps to it as
+  well. Whichever direction you keep pressing in, your own text comes round again, and
+  the chip row's highlight moves with it — nothing is highlighted when the buffer holds
+  what you typed.
+
+The cycle ends on any other keystroke, on a cursor move, on Escape and on blur, and a
+click or a tap on a chip applies it and ends there. Escape is "stop bothering me" and not
+"undo": whatever is in the buffer stays, and the row does not come back until the next
+escape character. **Enter and space are never intercepted** — the user's newlines are
+their own, which is the whole point of hanging this off Tab — and Tab itself is
+intercepted only while the row is showing (§6.9).
+
+**Undo is the platform's where the platform allows it.** A candidate is inserted with
+`document.execCommand('insertText')`, deprecated and used anyway, because it is the only
+way a script can edit a textarea and leave Ctrl+Z working; `setRangeText` and an
+assignment to `value` both drop the undo stack, so a Tab would silently cost the user
+every keystroke they had typed before it. Where the call is refused, `setRangeText` is
+the fallback and Shift-Tab is then the only undo there is.
+
+**The app adds two names and one filter to the binding's answer, and nothing else.**
+§4.9's rule is that the JS side does no matching, no merging and no ranking; these are
+the two places where the binding cannot answer at all, and they are exceptions with
+names rather than a habit:
+
+- `\begin` and `\end` are **app-side literals**. techxt defines neither — they are
+  structure the parser handles itself rather than entries in a `DefinitionSet` — so
+  `complete()` answers `\begi` with nothing however it is ranked. They are folded in at
+  the head, where a curated list would have started, *except* where the binding's own
+  first rule applies: an exact match on what was typed still leads.
+- An environment trigger **keeps the environments** out of the answer. `complete()` takes
+  no kind and ranks macros above environments, so the app asks for a long answer (250
+  entries, a cap and not a count) and renders the entries the trigger is about, in the
+  order the binding gave them. A filter, never a re-sort. If the binding ever grows a
+  kind argument this is the code that should go.
+
+**Head-of-line blocking, measured.** Completion shares the worker with conversion, which
+is the one risk the design took knowingly. Chromium, keystroke to chips on screen:
+
+| document | inside a typing burst | just behind a conversion |
+|---|---|---|
+| 2 KB | 5.1 ms | 5.7 ms |
+| 200 KB | 47.8 ms | 249.2 ms |
+
+On an ordinary document there is nothing there: the conversion is debounced 120 ms, so a
+burst of typing leaves the worker idle. On a 200 KB document a keystroke that lands just
+after the debounce fired waits about a quarter of a second behind the conversion — on a
+document where the pane already spends 83 ms of every keystroke on itself (§6.12).
+Nothing is lost while it waits: the row keeps the previous chips, dimmed, and a Tab
+pressed in that window is *queued* rather than dropped, so it applies the first candidate
+the moment the answer lands, and the focus never escapes the textarea.
+
+The remedy the plan held in reserve was a JS-side prefix→results cache, and it is in —
+**scoped to one name**. It remembers the answers about the name being typed now and is
+emptied the moment the caret moves to a different `\`, which is what makes it impossible
+for it to answer with a table that predates a definition the document has since gained:
+while the caret sits in one name, the only thing changing in the document is that name.
+It makes a backspace free. What it cannot do is make a *new* prefix faster — a letter
+nobody has typed yet is a question nobody has asked yet — so it is a mitigation and not
+an answer, and the measurement above is the one to hold a second wasm instance up
+against. A second instance is a megabyte of memory for a nicety, and it is still not
+worth it.
+
+**Where the pieces live.** `src/completion.ts` is the pure half — the trigger, the two
+literals, the kind filter, the ring the cycle walks — and is what vitest covers.
+`src/ui/panes.ts` owns the elements and the keyboard. `main.ts` is wiring: it carries the
+query to the worker and the answer back, and the query object is the token that pairs
+them, so an answer to a keystroke that has since been typed over is dropped exactly as a
+superseded conversion result is.
 
 ## 7. The diagnostics panel
 
@@ -1584,9 +1818,10 @@ noting in `web/README.md`, since the first deploy silently does nothing otherwis
 
 **Automated**: `cargo test` in `web/crate` (§4.8); vitest over the pure logic — state
 codec, options diffing, fit-to-pane arithmetic, the region → run cutting behind the
-MathJax mode, worker-protocol sequencing with a mocked worker, the document-title rules,
-and the library's model, retention policy and import/export codec against an in-memory
-backend; `tsc --noEmit`; the glyph coverage check.
+MathJax mode, the editor's lexer and its chunking, the completion trigger and its Tab
+cycle, worker-protocol sequencing with a mocked worker, the document-title rules, and the
+library's model, retention policy and import/export codec against an in-memory backend;
+`tsc --noEmit`; the glyph coverage check.
 
 **Manual checklist**, run before each release and recorded in `web/README.md`:
 
@@ -1594,7 +1829,8 @@ backend; `tsc --noEmit`; the glyph coverage check.
 2. iOS Safari: install to Home Screen, launch offline, keyboard up, copy works.
 3. Android Chrome: install, offline, share link from the sheet.
 4. DevTools offline reload after a cold cache.
-5. A 200 KB document: typing stays responsive (worker), status shows the time.
+5. A 200 KB document: typing stays responsive (worker), status shows the time, and the
+   colours follow a scroll into the middle of it (§6.12).
 6. A pathological document (deeply nested braces, `\frac` 200 deep): a diagnostic,
    not a dead tab — the descent-guard calibration of §4.6.
 7. A document mixing `\emph{…}`, CJK, Hebrew and emoji: no tofu in any of the six
@@ -1609,7 +1845,12 @@ backend; `tsc --noEmit`; the glyph coverage check.
    scrolls in its own box rather than dragging the pane; and — the one that has failed
    before — a reload with the network off, after the mode has been used once, still
    typesets, with no request leaving the origin at any point.
-10. Lighthouse: PWA installable, performance ≥ 95, accessibility 100.
+10. The editor (§6.12, §6.13): typing `\alp` offers `\alpha  α`, Tab cycles through the
+    row and Shift-Tab back to what was typed, Enter still inserts a newline while the row
+    is showing, a `\newcommand` written earlier in the document is offered and says it is
+    yours, `\begin{` completes an environment name, Tab with no row moves the focus out
+    of the textarea, and the row is usable by thumb on a 390 px screen.
+11. Lighthouse: PWA installable, performance ≥ 95, accessibility 100.
 
 ## 14. Measured baselines
 
@@ -1750,6 +1991,30 @@ The **raw** ceiling was left untouched, and the same build sits 19 608 B (1.7 %)
 it — proportionally tighter than the gzip line now is. Raw is the likelier of the two to
 fire next.
 
+### Measured with the editor overlay — in a browser, on Chromium
+
+The two numbers the editor is judged by, and the two that surprised. Same machine, same
+build, keystroke to keystroke; the method and what follows from each are in §6.12 and
+§6.13.
+
+| Quantity | Value |
+|---|---|
+| one mirror rebuild, text only | 4.5 ms |
+| …per span on top of that | 5.3 µs |
+| spans a densely marked-up LaTeX document carries | ~120 per KB |
+| a keystroke in a 5 KB document, mirror without / with colour | 2.9 → **7.6 ms** |
+| a keystroke in a 20 KB document (windowed) | 8.5 → **12.5 ms** |
+| a keystroke in a 200 KB document (windowed) | 83.0 → **83.6 ms** |
+| the window estimate's error against a `Range` binary search, 200 KB uneven document | ≤ **1 033 characters** |
+| completion, keystroke to chips: 2 KB document | 5.1 ms (5.7 ms behind a conversion) |
+| completion, keystroke to chips: 200 KB document | 47.8 ms — **249.2 ms** behind a conversion |
+| `dist/` cost of the whole editor, raw | +9 105 B of `index.js` · +2 317 B of CSS |
+| …gzipped | **+3 257 B** · +476 B — no dependency, no change to the module |
+
+**The 83 ms is not the highlighting** (§6.12): it is what a keystroke in a 200 KB
+document already cost, and the colour adds 0.6 ms to it. **The 249 ms is the head-of-line
+blocking** §6.13 predicted, on the one document size where it is visible.
+
 ## 15. Milestones
 
 Each is a working, deployable state.
@@ -1797,13 +2062,34 @@ Each is a working, deployable state.
 
 ## 16. Deliberate omissions
 
-Syntax highlighting or a code editor component (a textarea is honest and fast, and
-CodeMirror would outweigh the engine); rendering the document visually for comparison —
-*Math: MathJax* typesets the formulas of the answer, in the answer's own pane, and there
-is no second pane showing what LaTeX would have produced (§1, §5);
-multi-file/`\input`; a definitions playground (the extension API is a crate-docs
-subject, not a UI); server-side conversion for very large documents; i18n of the UI;
-any analytics.
+A code editor component — CodeMirror, Monaco, Ace or any of their kind; rendering the
+document visually for comparison — *Math: MathJax* typesets the formulas of the answer,
+in the answer's own pane, and there is no second pane showing what LaTeX would have
+produced (§1, §5); multi-file/`\input`; a definitions playground (the extension API is a
+crate-docs subject, not a UI); server-side conversion for very large documents; i18n of
+the UI; any analytics.
+
+**Syntax highlighting and completion used to be on that list, and the survey that took
+them off it concluded against the component anyway.** CodeMirror 6 was the candidate: it
+is the well-made answer, it is modular, and a minimal `@codemirror/state` +
+`@codemirror/view` + `@codemirror/lang-*` build is on the order of 150–250 KB of
+JavaScript before a language mode — against an app bundle of about 105 KB in total. It
+would also have to be *unpicked* rather than merely added: `Panes.selectSpan` drives the
+diagnostics' jump-to-source through `setSelectionRange`, the gutter markers are
+positioned from the textarea's own metrics (§7), and the fit-to-pane measurement (§6.5)
+reads a computed style off a real element — three pieces of working machinery that would
+have to be rewritten against somebody else's document model to buy colour. So the
+decision, recorded here so that it is not re-taken from scratch: **hand-rolled, in a
+mirror behind the textarea we already have.** A lexer for five kinds of token is about
+300 lines (§6.12) and the completion row about the same (§6.13), they add no dependency,
+and every part of the app that already worked still works because nothing underneath it
+moved.
+
+What that leaves genuinely omitted, and what the two features must never grow into: code
+folding, multiple cursors, a minimap, bracket-pair *matching* as an interactive
+behaviour, autocompletion that fires without being asked, and any editing affordance
+that would make this a place to write a paper rather than a place to check one. The
+engine is the product; the editor is a window onto it.
 
 The library of §6.10 is a log on the device, and stays one: no accounts, no sync
 between devices, and no server to sync with. **Export is the answer** to "I want this

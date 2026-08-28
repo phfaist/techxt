@@ -219,12 +219,14 @@ export interface Completion {
 
 /**
  * Both requests carry a monotonic `id` and are answered under the same rule: a reply
- * whose id is not the latest is dropped by the client rather than rendered.
+ * whose id is not the latest is dropped by the client rather than rendered — but on a
+ * counter of its own for each, so that a keystroke asking what `\alp` could be never
+ * invalidates the conversion in flight beside it (PLAN §6.2, §6.13).
  *
- * `complete` belongs to TODO item 5 — the editor's completion chips. Its wire shape is
- * declared here, with the rest of the contract, ahead of the handler that answers it:
- * this file is the one place the Rust side and the app agree on a message, so the shape
- * has to exist before either end can be written against it.
+ * `complete` answers the editor's completion chips. It carries the whole document
+ * because the binding scans it for the user's own definitions, and it is never
+ * debounced: it answers a keystroke that has already happened, and the answer is a
+ * lookup in a table the session already holds.
  */
 export type ToWorker =
   | {

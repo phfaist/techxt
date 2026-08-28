@@ -104,6 +104,26 @@
   --sev-note: #506b86;
   --sev-note-bg: #e6edf3;
 
+  /*
+   * The editor's syntax colours (§6.12). Deliberately quiet and deliberately few: the
+   * source pane is a place to read your own document, not a christmas tree, and the
+   * severities above own the loud end of the palette. The formula tint is a background
+   * rather than a hue so that a `$…$` reads as a region while its own macros keep the
+   * colour they have everywhere else.
+   *
+   * **Nothing here may change a glyph's metrics.** These rules paint a mirror that sits
+   * exactly under the real text, so no italic, no weight, no letter-spacing — colour and
+   * background only, or the two drift apart character by character.
+   */
+  --syn-command: #2b6a7f;
+  --syn-comment: #8a9089;
+  --syn-brace: #94824f;
+  --syn-math: #6a4b86;
+  --syn-math-bg: rgb(106 75 134 / 7%);
+  --syn-environment: #7a5a2b;
+  /* Semi-transparent on purpose: the mirror's colours read *through* a selection. */
+  --syn-selection: rgb(47 111 95 / 22%);
+
   /* Two shadows: one that lifts a pane off the page, one that floats a popup. */
   --shadow-sm: 0 1px 2px rgb(32 44 38 / 4%), 0 6px 16px rgb(32 44 38 / 5%);
   --shadow: 0 2px 6px rgb(32 44 38 / 6%), 0 16px 40px rgb(32 44 38 / 12%);
@@ -161,6 +181,14 @@
     --sev-warn-bg: #302819;
     --sev-note: #a5bad0;
     --sev-note-bg: #1f2731;
+
+    --syn-command: #8fc7dc;
+    --syn-comment: #7f867f;
+    --syn-brace: #c3b184;
+    --syn-math: #c0a5e0;
+    --syn-math-bg: rgb(192 165 224 / 12%);
+    --syn-environment: #ddb98a;
+    --syn-selection: rgb(124 196 177 / 26%);
 
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 24%), 0 6px 16px rgb(0 0 0 / 24%);
     --shadow: 0 2px 6px rgb(0 0 0 / 30%), 0 16px 40px rgb(0 0 0 / 42%);
@@ -912,6 +940,176 @@ select.control {
 .hl-warning {
   background: var(--sev-warn-bg);
   text-decoration-color: var(--sev-warn);
+}
+
+/*
+ * Syntax highlighting (§6.12): the same mirror, its other channel.
+ *
+ * With `.is-highlighted` the real textarea's glyphs go transparent and the mirror's
+ * become the ones on screen — the caret and the selection stay the platform's, which is
+ * the whole reason this is a `<textarea>` and not a `contenteditable`. The two channels
+ * never collide: the lexer owns the colour of the glyphs, the diagnostics own the tint
+ * behind them and the underline under them, and a run that is both is both.
+ *
+ * `is-composing` puts it all back for the duration of an IME composition. A composing
+ * run is drawn by the browser with its own underline and its own candidate window, and
+ * an overlay that hid it would be an overlay that ate the input method.
+ */
+.pane-editor-area.is-highlighted .pane-input {
+  color: transparent;
+  caret-color: var(--fg);
+}
+
+.pane-editor-area.is-highlighted .pane-input-backdrop {
+  color: var(--fg);
+}
+
+/* Translucent, so the mirror's colours read through a selection rather than under it. */
+.pane-editor-area.is-highlighted .pane-input::selection {
+  background: var(--syn-selection);
+}
+
+.pane-editor-area.is-highlighted.is-composing .pane-input {
+  color: var(--fg);
+  caret-color: auto;
+}
+
+.pane-editor-area.is-highlighted.is-composing .pane-input-backdrop {
+  color: transparent;
+}
+
+.tk-command {
+  color: var(--syn-command);
+}
+
+.tk-comment {
+  color: var(--syn-comment);
+}
+
+.tk-brace {
+  color: var(--syn-brace);
+}
+
+.tk-delimiter {
+  color: var(--syn-math);
+  background: var(--syn-math-bg);
+}
+
+.tk-math {
+  color: var(--syn-math);
+  background: var(--syn-math-bg);
+}
+
+.tk-environment {
+  color: var(--syn-environment);
+}
+
+/* Inside a formula everything sits on the formula's own wash, whatever colour it is. */
+.tk-in-math {
+  background: var(--syn-math-bg);
+}
+
+/*
+ * The completion chips (§6.13): a row under the input, never a popup. It is the same
+ * row on a desktop and on a phone — the one thing that made a popup unnecessary — and
+ * it is nothing at all when there is nothing to suggest, so the editor gets its
+ * height back.
+ *
+ * `completion-chip` rather than `chip`, which the diagnostics panel's severity filters
+ * already wear (§7): two rows of pills in one app, and only one of them is a control.
+ */
+.completion-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.3rem 0.9rem 0.5rem;
+}
+
+/*
+ * Dimmed while the answer to the newest keystroke is still in the worker. The row is a
+ * millisecond behind rather than blank, because blanking it on every keystroke would
+ * make the pane jump under the hands of anyone typing a long name.
+ */
+.completion-row.is-pending {
+  opacity: 0.45;
+}
+
+.completion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.completion-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.1rem 0.55rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--field);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.completion-chip:hover {
+  background: var(--field-hover);
+}
+
+/* Where the cycle stands, so that a third Tab is a visible act rather than a guess. */
+.completion-chip.is-current {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+/* A name the document defines for itself, wearing the accent's own quiet wash. */
+.completion-chip.is-from-document {
+  background: var(--accent-soft);
+}
+
+.completion-chip.is-from-document:hover {
+  background: var(--accent-soft);
+  filter: brightness(0.97);
+}
+
+.completion-chip-name {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.completion-chip-replacement {
+  color: var(--fg-muted);
+}
+
+.completion-chip.is-current .completion-chip-replacement {
+  color: var(--accent-fg);
+  opacity: 0.85;
+}
+
+.completion-hint {
+  margin-left: auto;
+  color: var(--fg-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* A thumb is not a mouse pointer: the chips grow to a real target on a touch screen. */
+@media (pointer: coarse) {
+  .completion-chip {
+    padding: 0.3rem 0.7rem;
+    font-size: 14px;
+  }
+
+  .completion-chip-name {
+    font-size: 13.5px;
+  }
 }
 
 /*
@@ -2290,6 +2488,11 @@ select.control {
 
   /* The gutter and the backdrop go with the textarea they annotate (§7). */
   .panes[data-focus="output"] .pane-in .pane-editor {
+    display: none;
+  }
+
+  /* And so does the completion row, which is about what is being typed in it (§6.13). */
+  .panes[data-focus="output"] .pane-in .completion-row {
     display: none;
   }
 

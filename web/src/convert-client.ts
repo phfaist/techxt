@@ -14,6 +14,9 @@
  * - Requests carry a monotonic id and only the latest answer counts. There is no
  *   cancellation in wasm, so a superseded conversion runs to completion and its
  *   result is discarded.
+ * - Completions run the same discipline on a counter of their own, so that a keystroke
+ *   asking what `\alp` could be never invalidates the conversion in flight beside it
+ *   (§6.13).
  * - {@link DEBOUNCE_MS} after the last keystroke; immediately on an option change, a
  *   paste, or Ctrl/Cmd+Enter.
  * - {@link CONVERTING_MS} in, the caller is told the conversion is slow;
@@ -26,7 +29,13 @@
 import { systemClock } from './state';
 import type { Clock } from './state';
 import type { BusyState } from './ui/api';
-import type { ConversionResult, FromWorker, OptionsPayload, ToWorker } from './worker/protocol';
+import type {
+  Completion,
+  ConversionResult,
+  FromWorker,
+  OptionsPayload,
+  ToWorker,
+} from './worker/protocol';
 
 /** Quiet period after the last keystroke before a conversion is issued. */
 export const DEBOUNCE_MS = 120;
@@ -65,6 +74,9 @@ export class ConvertClient {
 
   private worker: Worker;
   private lastId = 0;
+  private lastCompleteId = 0;
+  /** Who is waiting for the completion in flight, if anyone still is. */
+  private completeCallback: ((items: Completion[]) => void) | null = null;
   private inFlight: number | null = null;
   private pending: { text: string; options: OptionsPayload } | null = null;
   private debounceHandle: number | null = null;
@@ -138,6 +150,34 @@ export class ConvertClient {
   }
 
   /**
+   * Ask what `prefix` could be, for the editor's chip row (§6.13).
+   *
+   * Never debounced: this answers a keystroke that has already happened and the answer
+   * is a table lookup, so waiting would only make the row late. Only the latest request
+   * is answered — `onItems` for a superseded one is dropped and never called, which is
+   * the conversions' rule on a counter of its own — and the callback is per-call rather
+   * than per-client because each answer belongs to one query and to nothing else.
+   */
+  complete(
+    text: string,
+    prefix: string,
+    limit: number,
+    onItems: (items: Completion[]) => void,
+  ): void {
+    if (this.disposed) return;
+    this.lastCompleteId += 1;
+    this.completeCallback = onItems;
+    const message: ToWorker = {
+      type: 'complete',
+      id: this.lastCompleteId,
+      text,
+      prefix,
+      limit,
+    };
+    this.worker.postMessage(message);
+  }
+
+  /**
    * Terminate the conversion in flight. wasm cannot be interrupted, so the worker is
    * killed and a fresh one spawned; the caller restores its last good output.
    */
@@ -152,6 +192,7 @@ export class ConvertClient {
     this.clearTimers();
     this.pending = null;
     this.inFlight = null;
+    this.completeCallback = null;
     try {
       this.worker.terminate();
     } catch {
@@ -195,6 +236,13 @@ export class ConvertClient {
         this.setBusy('idle');
         this.init.onResult(message.result);
         return;
+      case 'completions': {
+        if (message.id !== this.lastCompleteId) return;
+        const callback = this.completeCallback;
+        this.completeCallback = null;
+        callback?.(message.items);
+        return;
+      }
       case 'fatal':
         this.respawn();
         this.init.onFatal(message.message);
@@ -204,8 +252,10 @@ export class ConvertClient {
 
   private respawn(): void {
     this.clearTimers();
-    // Bump the id so an answer already in the message queue is stale by definition.
+    // Bump both ids so an answer already in the message queue is stale by definition.
     this.lastId += 1;
+    this.lastCompleteId += 1;
+    this.completeCallback = null;
     this.inFlight = null;
     this.pending = null;
     try {

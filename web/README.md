@@ -109,7 +109,8 @@ gate, and deploys `web/dist` to GitHub Pages on a push to `main`.
 
 [`PLAN.md`](PLAN.md) §13. Several of these were driven headlessly in Chromium at W7
 and are noted below with what was measured; the ones that need a real device, or a
-browser engine that is not Blink, still have to be done by hand.
+browser engine that is not Blink, still have to be done by hand. The numbers are §13's
+own; its items 8 and 9 — the library, and *Math: MathJax* — have no row here yet.
 
 | # | Check | Status |
 |---|---|---|
@@ -117,10 +118,11 @@ browser engine that is not Blink, still have to be done by hand.
 | 2 | iOS Safari: install to the Home Screen, launch offline, keyboard up, copy works | **By hand — needs a device.** |
 | 3 | Android Chrome: install, offline, share link from the share sheet | **By hand — needs a device.** The `share_target` itself is verified: a `?text=` visit wins over the stored document and converts on arrival. |
 | 4 | DevTools offline reload after a cold cache | **Passes.** Service worker installs, and a reload with the network off serves the app and converts. |
-| 5 | A 200 KB document stays responsive | **Passes.** 157 ms in the worker, 338 ms wall including the debounce; the main thread answers in 2–20 ms throughout and a keystroke round-trips in ~100 ms. |
+| 5 | A 200 KB document stays responsive | **Passes, with a caveat now measured.** 157 ms in the worker, 338 ms wall including the debounce; the main thread answers in 2–20 ms throughout and a keystroke round-trips in ~100 ms. That last figure is the pane and not the conversion — 83 ms of a keystroke in a document that size goes on rebuilding the mirror behind the textarea, which highlighting adds 0.6 ms to and did not cause ([`PLAN.md`](PLAN.md) §6.12). |
 | 6 | A pathological document is a diagnostic, not a dead tab | **Passes.** Every nesting shape refuses at 100–150 levels; a document 20 000 levels deep still returns a diagnostic and the same session converts afterwards. Since M9 a *macro-expanding* pathological document is covered too, and refuses sooner (65 levels of a one-construct body, 50 of a two-construct one), measured natively — see [`PLAN.md`](PLAN.md) §4.6 for both calibrations and for why the plan's byte budget had to become a depth limit. |
 | 7 | Markup mixed with CJK, Hebrew and emoji: no tofu in any of the six fonts | **Passes** in all six. |
-| 8 | Lighthouse: PWA installable, performance ≥ 95, accessibility 100 | **Accessibility: axe-core reports zero violations** at 1280×800 and 390×844. **Lighthouse itself still to run by hand.** |
+| 10 | The editor: highlighting and the completion row | **Chromium: passes**, at 1280×820 and at 390 px with touch emulation. `\alp` offers `\alpha  α` then `\alph`; Tab cycles and Shift-Tab steps back, both ends returning what was typed; Enter still inserts a newline while the row is showing; Tab with no row moves focus to the pane divider; a `\newcommand` above is offered and marked as the document's; `\begin{ali` offers five environments; a chip applies by tap, keeping the keyboard up; Ctrl+Z undoes a completion; a composition puts the plain text back and takes the colours up again afterwards. **A real IME, and a real phone keyboard, still to do by hand.** |
+| 11 | Lighthouse: PWA installable, performance ≥ 95, accessibility 100 | **Accessibility: axe-core reports zero violations** at 1280×800 and 390×844. **Lighthouse itself still to run by hand.** |
 
 To re-drive the automated ones you need a browser and Playwright, which the repository
 deliberately does not depend on — install them outside it, build with `npm run build`,

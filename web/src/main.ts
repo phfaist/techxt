@@ -499,6 +499,16 @@ async function start(): Promise<void> {
       persistence.ui(state.ui);
       diagnostics.reveal(diagnostic);
     },
+    onCompletionQuery(query) {
+      // Wiring, and nothing more: the pane decides when to ask, the binding decides what
+      // the answer is and in what order (§4.9), and this carries the question to the
+      // worker and the answer back. The document goes with it because the binding scans
+      // it for the user's own `\newcommand`s, which is why `state.doc` is the argument
+      // rather than the prefix alone (§6.13).
+      client.complete(state.doc, query.prefix, query.limit, (items) => {
+        panes.setCompletions(query, items);
+      });
+    },
   });
 
   /* ------------------------------------------------------------ the controls */

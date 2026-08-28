@@ -761,6 +761,79 @@ library export."* while the library stayed exactly as it was.
 
 # 5. A lighter editor: highlighting and completion
 
+> **Done** — 2026-08-28, `COMMIT`. The app half: the worker answers `complete`, the
+> source pane is highlighted by a lexer painting the mirror it already had, and a row of
+> chips under the input completes a name on Tab. `src/highlight.ts` and
+> `src/completion.ts` are the pure halves (44 vitest cases between them), `ui/panes.ts`
+> the elements and the keyboard, `convert-client.ts` a `complete()` on a counter of its
+> own. `web/PLAN.md` §1 and §16 are rewritten as this item requires, §6.12 and §6.13 are
+> new and normative, and §4.9, §6.2, §6.9, §13 and §14 are amended. **`dist/` cost:
+> +9 105 B of `index.js` and +2 317 B of CSS raw, +3 257 B and +476 B gzipped — no
+> dependency, and nothing at all to the wasm module.**
+>
+> **Observed in Chromium** (headless, `npm run preview`, Playwright installed outside the
+> repo), at 1280×820 and at 390 px with touch emulation — the *Done when* line and then
+> some: `\alp` offers `\alpha  α` then `\alph`; Tab applies the first and the next Tab
+> the second; Shift-Tab steps back and, from the first candidate, restores `\alp`; seven
+> Tabs in a row walk `\alp → \alpha → \alph → \alp → …`, so both ends of the ring come
+> back to the user's own text; Enter inserts a newline with the row showing; a
+> `\newcommand{\ketstate}` above is offered, flagged and tinted as the document's own;
+> `\beg` offers `\begin` and `\begin{ali` offers five environments; the row is one line
+> of 37 px chips at 390 px and a chip applies by tap without closing the keyboard; Tab
+> with no row moves focus to the pane divider. Screenshots in light and dark, and the
+> mirror checked character-for-character against the textarea's value.
+>
+> **Five things reality settled.**
+>
+> 1. **The window had to be small, and the measurement is what says so.** A mirror
+>    rebuild is 4.5 ms for the text plus **5.3 µs per span**, and dense LaTeX carries
+>    ~120 spans per KB — so spanning a whole 20 KB document costs **+17 ms on every
+>    keystroke**, which a typist feels. Documents up to 6 000 characters are highlighted
+>    whole and larger ones only within the screenful in view plus 3 000 characters each
+>    side; that brings 20 KB to +4.0 ms and 200 KB to +0.6 ms. The window is *estimated*
+>    from the scroll offset rather than measured (measuring means a forced layout inside
+>    the keystroke), and the estimate was checked against the truth — a `Range` binary
+>    search over the mirror — on a deliberately uneven 200 KB document: wrong by at most
+>    **1 033 characters**, which is where the margin comes from.
+> 2. **Head-of-line blocking is real, and only on a large document.** Keystroke to chips
+>    on screen: **5.1 ms** on a 2 KB document inside a typing burst and 5.7 ms just behind
+>    a conversion; **47.8 ms** and **249.2 ms** on a 200 KB one. The debounce is what
+>    saves the ordinary case — a burst of typing leaves the worker idle. The cache this
+>    item held in reserve is in, and **scoped to one name**: it is emptied the moment the
+>    caret moves to a different `\`, which makes it impossible for it to answer from a
+>    table that predates a definition the document has since gained, and it makes a
+>    backspace free. What it cannot do is make a *new* prefix faster — a letter nobody has
+>    typed yet is a question nobody has asked yet — so it is a mitigation and the 249 ms
+>    stands as the number a second wasm instance would have to be worth. It is not.
+> 3. **The environment trigger needs a filter, because `complete()` takes no kind.** It
+>    ranks macros above environments, so an answer capped at five would rarely reach one.
+>    The app asks for 250 (a cap, not a count) and renders the `kind: 'environment'`
+>    entries in the order they came back. That is a filter and never a re-sort, and it is
+>    named as an exception in PLAN §4.9 and §6.13 rather than left to be discovered. If
+>    the binding ever grows a kind argument, that filter is the code to delete. **Only
+>    `\begin{` triggers it**, as this item specifies; `\end{` was left alone rather than
+>    quietly added.
+> 4. **Inserting a completion had to go through `execCommand('insertText')`.**
+>    `setRangeText` and an assignment to `value` both drop the browser's undo stack, so
+>    the first Tab would have silently cost the user every keystroke they had typed
+>    before it — observed, before the fix, as a Ctrl+Z that did nothing at all. The
+>    deprecated call is the only one that edits a textarea and leaves Ctrl+Z working;
+>    `setRangeText` is the fallback where it is refused, and Shift-Tab is then the only
+>    undo there is.
+> 5. **Highlighting ships on touch as well.** The escape hatch this item allowed was not
+>    needed: the mirror has been carrying the diagnostic underline on phones since W4, so
+>    only the transparent glyphs, the translucent selection and the IME fallback were new,
+>    and all three behave at 390 px under Chromium's touch emulation. A real device and a
+>    real IME are still unverified — one flag in `ui/panes.ts` turns the colours off
+>    together with the lexing if a device disagrees.
+>
+> **What surprised, and it is not this item's doing:** a keystroke in a 200 KB document
+> already cost **83 ms** before any of this, on the mirror the diagnostics have been
+> painting since W4 — `setRangeText`, a forced layout to read `scrollTop`, and the whole
+> text rebuilt into the mirror every time. Highlighting adds 0.6 ms to that. Nobody had
+> measured it because the conversion, the thing everyone expected to be slow, has a worker
+> and a debounce in front of it while the keystroke does not. It is now **item 7** below.
+
 **This reverses `web/PLAN.md` §1 and §16**, which currently name syntax highlighting
 and a code editor component as non-goals ("a textarea is honest and fast, and
 CodeMirror would outweigh the engine"). The reversal is deliberate and must be written
@@ -769,16 +842,16 @@ whatever ships must not outweigh the engine, and must not make typing slower.
 
 ## Approach, decided
 
-- [ ] **Survey CodeMirror 6 and friends first**, then **hand-roll**, which is the
+- [x] **Survey CodeMirror 6 and friends first**, then **hand-roll**, which is the
       expected outcome. Record the survey's conclusion in `PLAN.md` §16's replacement
       so the decision is not re-taken from scratch later.
-- [ ] **Keep the `<textarea>`.** Highlighting is an overlay: a `<pre>` mirror behind a
+- [x] **Keep the `<textarea>`.** Highlighting is an overlay: a `<pre>` mirror behind a
       transparent-text textarea. `src/ui/panes.ts` **already maintains a hidden mirror
       element** for positioning diagnostic gutter markers, so half the machinery and
       all of the metric-agreement discipline is there to build on.
-- [ ] **`contenteditable` is out.** It breaks `setSelectionRange`, which
+- [x] **`contenteditable` is out.** It breaks `setSelectionRange`, which
       `Panes.selectSpan` — the diagnostics' jump-to-source — depends on.
-- [ ] Watch the known overlay failure modes, all of which get worse on a phone with the
+- [x] Watch the known overlay failure modes, all of which get worse on a phone with the
       keyboard up (a stated §6.6 priority): IME composition, scroll synchronisation,
       exact font-metric agreement between mirror and textarea, and mobile autocorrect.
       If the overlay cannot be made to behave on a touch device, ship highlighting on
@@ -786,11 +859,11 @@ whatever ships must not outweigh the engine, and must not make typing slower.
 
 ## Highlighting
 
-- [ ] Minimal and structural: commands, math delimiters and their contents, comments,
+- [x] Minimal and structural: commands, math delimiters and their contents, comments,
       braces, and environment `\begin`/`\end` pairs. Not a LaTeX grammar — a lexer.
-- [ ] It must survive a 200 KB document without making a keystroke feel slow. Highlight
+- [x] It must survive a 200 KB document without making a keystroke feel slow. Highlight
       the visible region plus a margin, not the whole buffer, if measurement demands.
-- [ ] It shares the pane with the existing diagnostic underline and gutter markers;
+- [x] It shares the pane with the existing diagnostic underline and gutter markers;
       they must not fight over the same visual channel.
 
 **Considered and declined: highlighting from the parser.** The binding could expose
@@ -1014,16 +1087,16 @@ Root `PLAN.md` entry and tests as usual.
       The document is passed in rather than remembered so the call stays stateless;
       if the scan ever shows up in a profile, cache it against the text's length and
       hash inside `Session` and leave the signature alone.
-- [ ] `src/worker/protocol.ts` grows
+- [x] `src/worker/protocol.ts` grows
       `{ type: 'complete', id, text, prefix, limit }` and
       `{ type: 'completions', id, items }`, with the same monotonic-id discipline
       conversions use: a stale answer is dropped.
-- [ ] **The one risk is head-of-line blocking** behind a slow conversion in the same
+- [x] **The one risk is head-of-line blocking** behind a slow conversion in the same
       worker. Conversions are debounced 120 ms and take 2–20 ms on ordinary documents,
       so there is normally a gap. Measure it on a 200 KB document. If it is laggy, add
       a small JS-side prefix→results cache before reaching for a second worker; a
       second wasm instance is a megabyte of memory for a nicety.
-- [ ] **`\begin` and `\end` need app-side help, and so do environment names.**
+- [x] **`\begin` and `\end` need app-side help, and so do environment names.**
       Building the curated list turned up that techxt defines neither `\begin` nor
       `\end` — they are structure the parser handles itself, not entries in a
       `DefinitionSet` — so `\begi` completes to nothing at all, which is arguably the
@@ -1035,53 +1108,53 @@ Root `PLAN.md` entry and tests as usual.
       the reason this was not in the original design: the chip row fires on `\` plus
       a letter, and this one fires on `\begin{` plus a letter. Treat it as a second
       trigger feeding the same row, not as a second mechanism.
-- [ ] **The JS side does no matching, no merging and no ranking.** It sends a prefix
+- [x] **The JS side does no matching, no merging and no ranking.** It sends a prefix
       and renders what comes back. Every rule about what is offered and in what order
       lives in one place, in Rust, next to the table it is drawn from.
 
 **The completion UI, decided.**
 
-- [ ] **A row of chips below the input**, not a popup. It works identically on desktop
+- [x] **A row of chips below the input**, not a popup. It works identically on desktop
       and on a phone, it never covers what you are typing, and it degrades to nothing
       when there is nothing to suggest.
-- [ ] Trigger only after `\` plus at least one letter. Never on `\` alone, never in the
+- [x] Trigger only after `\` plus at least one letter. Never on `\` alone, never in the
       middle of a word.
-- [ ] **Tab applies the first candidate; the Tab after it applies the second.** Tab is a
+- [x] **Tab applies the first candidate; the Tab after it applies the second.** Tab is a
       cycle, not an accept: each press replaces the text the previous press inserted with
       the next candidate, walking the row from left to right. **Shift-Tab steps back**
       through it. Tapping or clicking a chip applies that chip directly, and ends the
       cycle there.
-- [ ] **The candidate list freezes when the cycle starts**, keyed to the prefix the user
+- [x] **The candidate list freezes when the cycle starts**, keyed to the prefix the user
       typed rather than to what is in the buffer now. This is not an optimisation, it is
       what makes the cycle exist: re-filtering on the newly inserted text would collapse
       the list to the one entry just inserted, and the second Tab would have nowhere to
       go.
-- [ ] **Both ends of the cycle come back to the user's own text.** Shift-Tab from the
+- [x] **Both ends of the cycle come back to the user's own text.** Shift-Tab from the
       first candidate restores exactly what was typed — that is the undo half, and it is
       how a person who Tabbed by accident gets their `\alp` back — and Tab past the last
       candidate wraps to it as well. Whichever direction you keep pressing in, your own
       text comes round again.
-- [ ] **The chip row highlights the candidate currently applied**, moving the highlight
+- [x] **The chip row highlights the candidate currently applied**, moving the highlight
       as the cycle moves, so that pressing Tab three times is a visible act rather than a
       guess. With the user's own text restored, nothing is highlighted.
-- [ ] **The cycle ends** on any other keystroke, on a cursor move, on Escape and on blur.
+- [x] **The cycle ends** on any other keystroke, on a cursor move, on Escape and on blur.
       Once it has ended the inserted text is just text: the next Tab is the next Tab, not
       the fourth press of the old cycle.
-- [ ] **Tab is intercepted only while the row is showing**, and the row only appears
+- [x] **Tab is intercepted only while the row is showing**, and the row only appears
       after `\` plus at least one letter — so for all the rest of the time Tab moves
       focus out of the textarea exactly as it always did. State it as the obligation it
       is: a keyboard-only user who could not leave the editor would be trapped in it, and
       that is an accessibility failure and not a rough edge.
-- [ ] **Enter and space are never intercepted** — the user's newlines are their own.
+- [x] **Enter and space are never intercepted** — the user's newlines are their own.
       This is the whole point of hanging completion off Tab.
-- [ ] Escape dismisses the row until the next `\`. Mid-cycle it also ends the cycle,
+- [x] Escape dismisses the row until the next `\`. Mid-cycle it also ends the cycle,
       leaving the last applied candidate in place — Escape is "stop bothering me", not
       "undo"; the undo is Shift-Tab back to the start.
-- [ ] A tiny persistent hint on the row: **"Tab to cycle"** — it accepts nothing, it
+- [x] A tiny persistent hint on the row: **"Tab to cycle"** — it accepts nothing, it
       moves through them.
-- [ ] Show the replacement beside the name where there is one (`\alpha  α`), which is
+- [x] Show the replacement beside the name where there is one (`\alpha  α`), which is
       what makes the list worth reading.
-- [ ] Cap the row at a handful of entries; a scrolling chip row is a popup with extra
+- [x] Cap the row at a handful of entries; a scrolling chip row is a popup with extra
       steps. The cycle is over the row as shown, so the cap is also the length of the
       cycle — one more reason it stays small.
 - [x] **The order the cycle walks, decided and implemented in the binding.** The app
@@ -1144,6 +1217,38 @@ budget raise was recorded as a deferral rather than a decision.**
 
 ---
 
+# 7. The input pane's own keystroke cost, on a very large document
+
+*Found while measuring item 5, and not caused by it.* A keystroke in a 200 KB document
+costs about **83 ms** on the main thread before a single character is coloured, measured
+in Chromium: `setRangeText` on a textarea that size, a forced layout to read `scrollTop`
+so the mirror can be scrolled with it, and the mirror rebuilt from the whole text on
+every keystroke. Highlighting adds 0.6 ms to that, because it is windowed (§6.12); the
+83 ms is the machinery the diagnostic underline has used since W4.
+
+It went unnoticed because the expensive-looking half of the app is behind a worker and a
+120 ms debounce, and this half is not behind anything. The release checklist's item 5 has
+in fact recorded "a keystroke round-trips in ~100 ms" since W7 without anyone asking what
+the 100 ms was.
+
+- [ ] **Rebuild the mirror incrementally, not wholly.** It has to *hold* every character
+      — the alignment with the textarea above it is the whole mechanism — but an edit
+      that changes one line need not replace every node. The chunk list is already
+      computed from a window; keeping the nodes outside the edit and replacing only the
+      run that changed is the obvious shape.
+- [ ] **Stop forcing a layout inside the keystroke.** `backdrop.scrollTop =
+      input.scrollTop` reads a value the edit just invalidated. Deferring the scroll sync
+      to a `requestAnimationFrame` would let the browser lay out once instead of twice —
+      check that the mirror does not visibly lag the textarea by a frame when it does.
+- [ ] Re-measure with the A/B harness item 5 used (a 5 KB, a 20 KB and a 200 KB document,
+      median of fifteen keystrokes, with the forced layout timed separately), and record
+      the result in `web/PLAN.md` §6.12 and §14 beside the numbers it replaces.
+
+*Done when*: a keystroke in a 200 KB document costs a fraction of what it costs today,
+and the release checklist's item 5 can say so with a number.
+
+---
+
 # Order of work
 
 1. **Item 1** — independent, small, unblocks nothing but costs nothing.
@@ -1155,6 +1260,10 @@ budget raise was recorded as a deferral rather than a decision.**
 4. **L2 + item 5** — the largest, and the one most likely to want its scope trimmed
    after the survey.
 5. **Item 6 last**, once nothing else is going to move the number.
+
+Item 7 was added while item 5 was being measured and is independent of all of them; it
+touches the pane and not the module, so it does not have to wait for item 6.
+
 
 Every item edits `web/PLAN.md`; L1 and L2 also edit the root `PLAN.md`. vitest covers
 pure logic only, so the library store, the import/export codec, the region→element

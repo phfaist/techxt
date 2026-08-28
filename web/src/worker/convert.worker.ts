@@ -2,25 +2,28 @@
  * The conversion worker (web/PLAN.md §6.2).
  *
  * It owns the wasm instance and does exactly three things: load the module, answer
- * `convert` requests from the one `Session` it keeps, and — if anything at all goes
- * wrong — say so once and stop. A panic or a stack overflow leaves a wasm instance
- * unusable (§4.6), so there is no continuing after a `fatal`: the client discards
- * this worker and spawns another.
+ * `convert` and `complete` requests from the one `Session` it keeps, and — if anything
+ * at all goes wrong — say so once and stop. A panic or a stack overflow leaves a wasm
+ * instance unusable (§4.6), so there is no continuing after a `fatal`: the client
+ * discards this worker and spawns another.
  *
  * The message handler is installed *before* the module is loaded, because a request
- * can arrive during that load. Only the most recent one is kept: the client drops
+ * can arrive during that load. Only the most recent conversion is kept: the client drops
  * every result but the latest anyway, so an older queued request has no answer worth
- * computing.
+ * computing. A completion arriving that early is dropped outright rather than queued —
+ * it answers a keystroke, and a keystroke that has been waiting for the module to load
+ * has long since been followed by another.
  */
 
 import init, { Session, techxt_version } from '../../crate/pkg/techxt_web.js';
-import type { ConversionResult, FromWorker, ToWorker } from './protocol';
+import type { Completion, ConversionResult, FromWorker, ToWorker } from './protocol';
 
 // `lib.dom` and `lib.webworker` both declare `self`; this is the worker's.
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
-/** The one request shape this worker answers today; see the note below about the other. */
+/** The request that is worth queueing while the module loads; see the note above. */
 type ConvertRequest = Extract<ToWorker, { type: 'convert' }>;
+type CompleteRequest = Extract<ToWorker, { type: 'complete' }>;
 
 let session: Session | null = null;
 let ready = false;
@@ -60,13 +63,33 @@ function handle(request: ConvertRequest): void {
   }
 }
 
-// `protocol.ts` also declares a `complete` request, for the editor's completion chips.
-// Answering it is TODO item 5's — it needs a `Session.complete` the binding does not
-// export yet — so for now anything that is not a `convert` is ignored here rather than
-// mistaken for one.
+/**
+ * A completion request: the same `Session`, the same one-failure rule, and no queue.
+ *
+ * The two requests share this worker on purpose (§6.13). Completion is a table lookup —
+ * microseconds after the first call, which builds the table — so a second wasm instance
+ * to answer it would be a megabyte of memory for a nicety. What they do share is the
+ * thread, so a completion issued while a conversion is running waits for it; the client
+ * is where that is measured and, if it ever matters, cached.
+ */
+function suggest(request: CompleteRequest): void {
+  if (broken || !session) return;
+  try {
+    const items = session.complete(request.text, request.prefix, request.limit) as Completion[];
+    post({ type: 'completions', id: request.id, items });
+  } catch (error) {
+    fail(error);
+  }
+}
+
 ctx.addEventListener('message', (event: MessageEvent<ToWorker>) => {
   const message = event.data;
-  if (!message || message.type !== 'convert' || broken) return;
+  if (!message || broken) return;
+  if (message.type === 'complete') {
+    if (ready) suggest(message);
+    return;
+  }
+  if (message.type !== 'convert') return;
   if (!ready) {
     queued = message;
     return;

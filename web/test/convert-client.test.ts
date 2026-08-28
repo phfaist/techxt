@@ -15,7 +15,7 @@ import {
   DEBOUNCE_MS,
 } from '../src/convert-client';
 import type { Clock } from '../src/state';
-import type { ConversionResult, FromWorker, ToWorker } from '../src/worker/protocol';
+import type { Completion, ConversionResult, FromWorker, ToWorker } from '../src/worker/protocol';
 
 /* ------------------------------------------------------------------- fixtures */
 
@@ -356,5 +356,54 @@ describe('dispose', () => {
     app.clock.advance(10_000);
     expect(app.onResult).not.toHaveBeenCalled();
     expect(worker.sent).toHaveLength(1);
+  });
+});
+
+describe('completions', () => {
+  const items: Completion[] = [
+    { name: 'alpha', kind: 'macro', replacement: 'α', arity: 0, fromDocument: false },
+  ];
+
+  it('asks at once — a keystroke has already happened, and the answer is a lookup', () => {
+    const app = harness();
+    app.client.complete('doc', 'alp', 6, vi.fn());
+    expect(app.worker().last).toEqual({ type: 'complete', id: 1, text: 'doc', prefix: 'alp', limit: 6 });
+  });
+
+  it('counts on its own, so a completion never invalidates the conversion beside it', () => {
+    const app = harness();
+    app.client.convert('doc', {}, 'immediate');
+    const onItems = vi.fn();
+    app.client.complete('doc', 'alp', 6, onItems);
+
+    // The conversion's own id is untouched by the completion that overtook it.
+    app.worker().answer({ type: 'result', id: 1, result: result('out') });
+    expect(app.onResult).toHaveBeenCalledTimes(1);
+    app.worker().answer({ type: 'completions', id: 1, items });
+    expect(onItems).toHaveBeenCalledWith(items);
+  });
+
+  it('answers only the latest question', () => {
+    const app = harness();
+    const first = vi.fn();
+    const second = vi.fn();
+    app.client.complete('doc', 'al', 6, first);
+    app.client.complete('doc', 'alp', 6, second);
+
+    app.worker().answer({ type: 'completions', id: 1, items });
+    expect(first).not.toHaveBeenCalled();
+    app.worker().answer({ type: 'completions', id: 2, items });
+    expect(second).toHaveBeenCalledWith(items);
+  });
+
+  it('forgets whoever was waiting when the worker is replaced', () => {
+    const app = harness();
+    const onItems = vi.fn();
+    app.client.complete('doc', 'alp', 6, onItems);
+    app.worker().fail('gone');
+    // The new worker's first completion has a new id; the old answer is stale by
+    // definition and its callback is never called.
+    app.workers[0]?.answer({ type: 'completions', id: 1, items });
+    expect(onItems).not.toHaveBeenCalled();
   });
 });
