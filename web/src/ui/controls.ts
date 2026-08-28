@@ -21,18 +21,21 @@
 import { FONTS, MAX_SIZE, MIN_SIZE } from '../fonts';
 import type { FontId } from '../fonts';
 import { WRAP_PRESETS } from '../types';
-import type { AppOptions, TodayMode, WrapMode } from '../types';
+import type { AppOptions, MathSetting, TodayMode, WrapMode } from '../types';
 import type { Controls, ControlsInit } from './api';
 
-/** The library options the panel exposes — everything in `AppOptions` but the three app-level keys. */
-type LibKey = Exclude<keyof AppOptions, 'wrap' | 'todayMode' | 'todayCustom'>;
+/** The library options the panel exposes — everything in `AppOptions` but the four app-level keys. */
+type LibKey = Exclude<keyof AppOptions, 'wrap' | 'math' | 'todayMode' | 'todayCustom'>;
 
 /**
  * The library's own defaults (Appendix A of the plan). A value equal to one of these
  * is never emitted: absent *is* the default, and re-typing it here would freeze it.
+ *
+ * The *Math* control is not in here even though three of its four values are library
+ * ones: `math` is app-level (§5), so it is read and written beside `wrap` below, and
+ * {@link MATH_DEFAULT} is its share of this table.
  */
 const DEFAULTS: Record<LibKey, string | boolean> = {
-  mathMode: 'fancy',
   mathExpressionIn: 'parens',
   matrixDelimiters: 'unicode',
   keepComments: false,
@@ -46,6 +49,16 @@ const DEFAULTS: Record<LibKey, string | boolean> = {
   recovery: 'tolerant',
   macroDefinitions: 'honored',
 };
+
+/** `math_mode`'s own default, which is what an absent `math` means. */
+const MATH_DEFAULT = 'fancy';
+
+/** The rendering options *Math: MathJax* leaves with nothing to do (§5). */
+const MATH_RENDERING_KEYS = [
+  'mathExpressionIn',
+  'matrixDelimiters',
+  'mathFont',
+] as const satisfies readonly LibKey[];
 
 const DEFAULT_CUSTOM_COLUMNS = 72;
 const MIN_CUSTOM_COLUMNS = 20;
@@ -114,16 +127,25 @@ export function initControls(init: ControlsInit): Controls {
 
   /* --- Math */
 
-  const mathSelect = registerSelect('mathMode', 'opt-math', [
+  /*
+   * Four answers to one question, of which three are the library's and the fourth is
+   * the app's (§5). *MathJax* asks the library for Source and typesets the result in
+   * the pane, so it belongs in this list rather than in a toggle of its own: a reader
+   * choosing how their formulas should look is answering one question, and *typeset*
+   * is one of the answers to it.
+   */
+  const mathSelect = select('opt-math', [
     { value: 'fancy', label: 'Fancy (default)' },
     { value: 'plain', label: 'Plain' },
     { value: 'source', label: 'Source' },
+    { value: 'mathjax', label: 'MathJax' },
   ]);
   const mathField = field('opt-math', 'Math', mathSelect, {
-    hint: 'Fancy spaces a formula the way a typesetter would; Plain runs the pieces together; Source leaves the LaTeX.',
+    hint: 'Fancy spaces a formula the way a typesetter would; Plain runs the pieces together; Source leaves the LaTeX. MathJax typesets that LaTeX in the pane — Copy and Download still hand over the source, so this is the one setting where what you see is not what you copy.',
     className: 'field-math',
     bar: true,
   });
+  track(mathField, () => mathSelect.value !== MATH_DEFAULT);
 
   /* --- Display font */
 
@@ -213,8 +235,8 @@ export function initControls(init: ControlsInit): Controls {
     ),
     checkField(
       'opt-offline',
-      'Keep all fonts offline',
-      'Fetches all five display faces now, so they work with the network off.',
+      'Keep everything offline',
+      'Fetches all five display faces and the MathJax typesetter now, so they are there with the network off.',
     ),
   );
 
@@ -243,6 +265,21 @@ export function initControls(init: ControlsInit): Controls {
       hint: 'The Unicode alphabet variables are mapped into. Not the display font.',
     }),
   );
+
+  /*
+   * All three of the above are options of techxt's *renderer*, and MathJax mode does
+   * not use it: the formula is re-emitted as its own LaTeX and typeset in the pane, so
+   * there is nothing left for a delimiter or a Unicode alphabet to apply to. A control
+   * that cannot do anything is worse than no control, so they are disabled while
+   * MathJax is selected and this line says why (§5).
+   */
+  const mathInert = el(
+    'p',
+    'hint group-note',
+    'MathJax typesets each formula itself, so these three change nothing while it is selected.',
+  );
+  mathInert.hidden = true;
+  math.append(mathInert);
 
   /* Parsing */
   const parsing = group('Parsing');
@@ -368,6 +405,11 @@ export function initControls(init: ControlsInit): Controls {
     if (keepComments.checked !== DEFAULTS.keepComments) set(out, 'keepComments', keepComments.checked);
     if (strict.checked) set(out, 'recovery', 'strict');
 
+    // `math` is app-level but three of its four answers are the library's, so it
+    // follows the rule above rather than the one below: *Fancy* is the library's own
+    // default and is deleted rather than written.
+    if (mathSelect.value !== MATH_DEFAULT) out.math = mathSelect.value as MathSetting;
+
     // The two app-level keys (§5) are always explicit: they have no library default to
     // fall back to, and `resolveOptions` reads them directly.
     out.wrap = readWrap();
@@ -385,6 +427,19 @@ export function initControls(init: ControlsInit): Controls {
     wrapCustom.hidden = wrapSelect.value !== 'custom';
     todayInput.hidden = todaySel.value !== 'custom';
     sizeOut.textContent = `${size} px`;
+    applyMathInert();
+  }
+
+  /** Grey out the three rendering options MathJax mode bypasses, and say so. */
+  function applyMathInert(): void {
+    const typeset = mathSelect.value === 'mathjax';
+    for (const key of MATH_RENDERING_KEYS) {
+      const control = selects.get(key);
+      if (!control) continue;
+      control.disabled = typeset;
+      control.closest('.field')?.classList.toggle('is-inert', typeset);
+    }
+    mathInert.hidden = !typeset;
   }
 
   function emit(): void {
@@ -405,6 +460,8 @@ export function initControls(init: ControlsInit): Controls {
     }
     emit();
   });
+  // Not in `selects`, since `math` is app-level: it needs its own line here.
+  mathSelect.addEventListener('change', emit);
   wrapCustom.addEventListener('input', emitSoon);
   wrapCustom.addEventListener('change', () => {
     emit();
@@ -476,6 +533,7 @@ export function initControls(init: ControlsInit): Controls {
     }
     keepComments.checked = options.keepComments ?? false;
     strict.checked = options.recovery === 'strict';
+    mathSelect.value = options.math ?? MATH_DEFAULT;
     writeWrap(options.wrap);
     todaySel.value = options.todayMode ?? 'browser';
     customToday = options.todayCustom ?? customToday;

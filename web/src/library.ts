@@ -123,7 +123,7 @@ export function describeOptions(options: AppOptions): string {
 }
 
 const OPTION_LABELS: Record<string, string> = {
-  mathMode: 'Math',
+  math: 'Math',
   mathExpressionIn: 'Expression delimiters',
   matrixDelimiters: 'Matrix delimiters',
   keepComments: 'Comments',

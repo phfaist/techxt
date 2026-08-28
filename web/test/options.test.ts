@@ -10,6 +10,7 @@ import {
   MIN_FIT_COLUMNS,
   columnsFor,
   formatToday,
+  mathJax,
   resolveOptions,
   softWraps,
 } from '../src/state';
@@ -87,6 +88,35 @@ describe('softWraps', () => {
   });
 });
 
+describe('resolveOptions: math', () => {
+  it('sends the library its own three answers under its own key', () => {
+    expect(resolveOptions({ math: 'fancy' }, 72, NOON).mathMode).toBe('fancy');
+    expect(resolveOptions({ math: 'plain' }, 72, NOON).mathMode).toBe('plain');
+    expect(resolveOptions({ math: 'source' }, 72, NOON).mathMode).toBe('source');
+  });
+
+  it('turns MathJax into Source, which is the whole of what the library is told', () => {
+    // The app typesets what Source re-emits; the library has never heard of MathJax
+    // and this is the one place that stays true (§5, TODO item 2).
+    expect(resolveOptions({ math: 'mathjax' }, 72, NOON)).toEqual(
+      resolveOptions({ math: 'source' }, 72, NOON),
+    );
+  });
+
+  it('omits mathMode when the setting was pruned away, so the library decides', () => {
+    expect('mathMode' in resolveOptions({}, 72, NOON)).toBe(false);
+  });
+});
+
+describe('mathJax', () => {
+  it('is the one math setting the output pane typesets for', () => {
+    expect(mathJax({ math: 'mathjax' })).toBe(true);
+    expect(mathJax({ math: 'source' })).toBe(false);
+    expect(mathJax({ math: 'fancy' })).toBe(false);
+    expect(mathJax({})).toBe(false);
+  });
+});
+
 describe('resolveOptions: today', () => {
   it('sends the browser date for the browser mode', () => {
     expect(resolveOptions({ todayMode: 'browser' }, 72, NOON).today).toBe('August 20, 2026');
@@ -112,7 +142,7 @@ describe('resolveOptions: today', () => {
 
 describe('resolveOptions: what reaches the worker', () => {
   const everything: AppOptions = {
-    mathMode: 'plain',
+    math: 'plain',
     mathExpressionIn: 'braces',
     matrixDelimiters: 'ascii',
     keepComments: true,
@@ -140,6 +170,7 @@ describe('resolveOptions: what reaches the worker', () => {
   it('passes every library option through unchanged', () => {
     const payload = resolveOptions(everything, 72, NOON);
     expect(payload).toMatchObject({
+      // `math` is app-level, and the library's key for it is `mathMode` (§5).
       mathMode: 'plain',
       mathExpressionIn: 'braces',
       matrixDelimiters: 'ascii',
@@ -161,6 +192,21 @@ describe('resolveOptions: what reaches the worker', () => {
   it('sends nothing at all for the defaults, so the library decides', () => {
     const payload = resolveOptions({ wrap: 'off', todayMode: 'library' }, 72, NOON);
     expect(payload).toEqual({});
+  });
+
+  it('never lets the word mathjax reach an OptionsPayload, whatever else is set', () => {
+    // The binding deserializes this object into `techxt::convert::Options`, where
+    // `mathjax` is not a `MathMode` and never will be (§5, TODO item 2).
+    for (const payload of [
+      resolveOptions({ math: 'mathjax' }, 72, NOON),
+      resolveOptions({ math: 'mathjax', wrap: 'fit', todayMode: 'library' }, 40, NOON),
+      resolveOptions({ ...everything, math: 'mathjax' }, 72, NOON),
+    ]) {
+      expect(JSON.stringify(payload)).not.toContain('mathjax');
+      expect(Object.values(payload)).not.toContain('mathjax');
+      expect('math' in payload).toBe(false);
+      expect(payload.mathMode).toBe('source');
+    }
   });
 });
 

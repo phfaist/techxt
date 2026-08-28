@@ -10,6 +10,8 @@
  *   *Wrap: Soft* is the one exception, and an explicit one: it is the answer the app
  *   starts on, so {@link Panes.setSoftWrap} turns the folding on in CSS. The text
  *   itself is untouched either way — `getOutput` is what Copy and Download hand over.
+ *   {@link Panes.markMath} may wrap a run of that text in an element *after* it has
+ *   been set, for a typesetter to replace, and it too builds every node by hand.
  * - The fit-to-pane measurement (§6.5) is what makes *Wrap: Fit* mean anything: the
  *   pane's width in pixels becomes a column count the library can wrap to.
  * - The textarea turns off every helpful thing a phone does to prose. An editor that
@@ -22,9 +24,10 @@
 
 import { applyFont } from '../fonts';
 import type { FontId } from '../fonts';
+import { splitMathRuns } from '../math-regions';
 import { MIN_FIT_COLUMNS, columnsFor } from '../state';
 import type { ExampleDoc } from '../types';
-import type { Diagnostic, Span } from '../worker/protocol';
+import type { Diagnostic, MathRegion, Span } from '../worker/protocol';
 import type { Panes, PanesInit } from './api';
 
 /**
@@ -718,6 +721,34 @@ export function initPanes(init: PanesInit): Panes {
     },
 
     getOutput: () => outputText,
+
+    /**
+     * The one thing that is ever put in the output pane besides text: an element per
+     * formula, wrapped around the source that is already there (§6.3).
+     *
+     * Every node is built here, from a slice of `outputText` — no markup is parsed, no
+     * `innerHTML` is assigned, and `outputText` itself is not touched, so Copy,
+     * Download and the library are unaffected by anything that happens to these
+     * elements afterwards. The caller gets them back to hand to a typesetter; until it
+     * does, each one still reads as the LaTeX it wraps, which is the readable state
+     * the pane sits in while MathJax loads.
+     */
+    markMath(regions: readonly MathRegion[]): HTMLElement[] {
+      const elements: HTMLElement[] = [];
+      const nodes: Node[] = [];
+      for (const run of splitMathRuns(outputText, regions)) {
+        if (!run.math) {
+          nodes.push(document.createTextNode(run.text));
+          continue;
+        }
+        const span = el('span', run.math.display ? 'math math-display' : 'math math-inline');
+        span.append(document.createTextNode(run.text));
+        nodes.push(span);
+        elements.push(span);
+      }
+      output.replaceChildren(...nodes);
+      return elements;
+    },
 
     /**
      * Select `[start, end)` and make it visible. A textarea does not scroll a

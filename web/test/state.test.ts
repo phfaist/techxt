@@ -110,8 +110,8 @@ describe('defaults', () => {
 
   it('hands out a fresh object every time', () => {
     const first = defaultState();
-    first.opts.mathMode = 'plain';
-    expect(defaultState().opts.mathMode).toBeUndefined();
+    first.opts.math = 'plain';
+    expect(defaultState().opts.math).toBeUndefined();
   });
 });
 
@@ -119,8 +119,8 @@ describe('defaults', () => {
 
 describe('sanitizeOptions', () => {
   it('keeps what it knows', () => {
-    expect(sanitizeOptions({ mathMode: 'plain', wrap: 'off', keepComments: true })).toEqual({
-      mathMode: 'plain',
+    expect(sanitizeOptions({ math: 'plain', wrap: 'off', keepComments: true })).toEqual({
+      math: 'plain',
       wrap: 'off',
       keepComments: true,
     });
@@ -129,13 +129,28 @@ describe('sanitizeOptions', () => {
   it('drops keys and values it does not know', () => {
     expect(
       sanitizeOptions({
-        mathMode: 'interpretive-dance',
+        math: 'interpretive-dance',
         keepComments: 'yes',
         wrap: '80',
         listStyle: ['*'],
         __proto__: { evil: true },
       }),
     ).toEqual({});
+  });
+
+  it('keeps the app-level math answer the library has never heard of', () => {
+    expect(sanitizeOptions({ math: 'mathjax' }).math).toBe('mathjax');
+    expect(sanitizeOptions({ math: 'mathjacks' }).math).toBeUndefined();
+  });
+
+  it('still reads the mathMode a link written by an older build carries', () => {
+    // The *Math* control moved up to the app level when it grew a fourth answer, and
+    // the key moved with it; a link sent before that still says `mathMode` (§5).
+    expect(sanitizeOptions({ mathMode: 'source' })).toEqual({ math: 'source' });
+    // `mathjax` was never a `mathMode`, and reading the old key does not invent one.
+    expect(sanitizeOptions({ mathMode: 'mathjax' })).toEqual({});
+    // The new key wins where a file somehow carries both.
+    expect(sanitizeOptions({ math: 'plain', mathMode: 'source' })).toEqual({ math: 'plain' });
   });
 
   it('keeps Off, so a link that turns the folding off reproduces it', () => {
@@ -159,8 +174,8 @@ describe('sanitizeOptions', () => {
 
 describe('pruneOptions', () => {
   it('drops the values that are the app default anyway', () => {
-    expect(pruneOptions({ wrap: 'soft', todayMode: 'browser', mathMode: 'plain' })).toEqual({
-      mathMode: 'plain',
+    expect(pruneOptions({ wrap: 'soft', todayMode: 'browser', math: 'plain' })).toEqual({
+      math: 'plain',
     });
   });
 
@@ -173,8 +188,8 @@ describe('pruneOptions', () => {
   });
 
   it('is the inverse of withDefaults', () => {
-    const opts = withDefaults({ mathMode: 'source' });
-    expect(opts).toEqual({ wrap: 'soft', todayMode: 'browser', mathMode: 'source' });
+    const opts = withDefaults({ math: 'source' });
+    expect(opts).toEqual({ wrap: 'soft', todayMode: 'browser', math: 'source' });
     expect(withDefaults(pruneOptions(opts))).toEqual(opts);
   });
 });
@@ -224,12 +239,12 @@ describe('persistence', () => {
   it('writes the three keys of §6.4 and prunes the options on the way', () => {
     const persistence = createPersistence({ storage, clock });
     persistence.document('\\section{hi}');
-    persistence.options({ wrap: 'soft', todayMode: 'browser', mathMode: 'plain' });
+    persistence.options({ wrap: 'soft', todayMode: 'browser', math: 'plain' });
     persistence.ui({ ...DEFAULT_UI, font: 'stix' });
     persistence.flush();
 
     expect(storage.map.get(STORAGE_KEYS.doc)).toBe('\\section{hi}');
-    expect(JSON.parse(storage.map.get(STORAGE_KEYS.opts) ?? '')).toEqual({ mathMode: 'plain' });
+    expect(JSON.parse(storage.map.get(STORAGE_KEYS.opts) ?? '')).toEqual({ math: 'plain' });
     expect(JSON.parse(storage.map.get(STORAGE_KEYS.ui) ?? '').font).toBe('stix');
   });
 
@@ -275,7 +290,7 @@ describe('persistence', () => {
     };
     const persistence = createPersistence({ storage: hostile, clock });
     persistence.document('x'.repeat(MAX_STORED_DOC + 1));
-    persistence.options({ mathMode: 'plain' });
+    persistence.options({ math: 'plain' });
     expect(() => persistence.flush()).not.toThrow();
   });
 
@@ -306,12 +321,12 @@ describe('loadState', () => {
 
   it('reads what was stored, and is no longer a first visit', async () => {
     storage.setItem(STORAGE_KEYS.doc, '\\emph{stored}');
-    storage.setItem(STORAGE_KEYS.opts, JSON.stringify({ mathMode: 'plain' }));
+    storage.setItem(STORAGE_KEYS.opts, JSON.stringify({ math: 'plain' }));
     storage.setItem(STORAGE_KEYS.ui, JSON.stringify({ font: 'stix', size: 17 }));
 
     const loaded = await loadState({ storage, fragment: '' });
     expect(loaded.state.doc).toBe('\\emph{stored}');
-    expect(loaded.state.opts).toEqual({ wrap: 'soft', todayMode: 'browser', mathMode: 'plain' });
+    expect(loaded.state.opts).toEqual({ wrap: 'soft', todayMode: 'browser', math: 'plain' });
     expect(loaded.state.ui.font).toBe('stix');
     expect(loaded.state.ui.size).toBe(17);
     expect(loaded.source).toBe('storage');
@@ -327,7 +342,7 @@ describe('loadState', () => {
 
   it('lets a fragment win over storage, but never over the ui', async () => {
     storage.setItem(STORAGE_KEYS.doc, 'the stored one');
-    storage.setItem(STORAGE_KEYS.opts, JSON.stringify({ mathMode: 'plain' }));
+    storage.setItem(STORAGE_KEYS.opts, JSON.stringify({ math: 'plain' }));
     storage.setItem(STORAGE_KEYS.ui, JSON.stringify({ font: 'stix' }));
     const fragment = await encodeShare({
       v: 1,
@@ -355,7 +370,7 @@ describe('loadState', () => {
   });
 
   it('never throws over corrupt storage', async () => {
-    storage.setItem(STORAGE_KEYS.opts, '{"mathMode": "pla');
+    storage.setItem(STORAGE_KEYS.opts, '{"math": "pla');
     storage.setItem(STORAGE_KEYS.ui, 'not json either');
     storage.setItem(STORAGE_KEYS.doc, 'still here');
 

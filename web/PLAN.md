@@ -30,10 +30,19 @@ Goals, in priority order:
    uploaded, and is never trimmed behind the user's back.
 5. Be a credible landing page: what techxt is, how to get the crate and the CLI.
 
-Non-goals: rendering LaTeX visually; a file tree or multi-file projects; `\input`
-resolution (there is no filesystem — the diagnostic explains it); editing features
-beyond a textarea (no syntax highlighting, no CodeMirror); accounts; server-side
-anything.
+Non-goals: rendering the *document* visually — this is a converter to text, not a
+previewer, and the output pane shows what techxt produced; a file tree or multi-file
+projects; `\input` resolution (there is no filesystem — the diagnostic explains it);
+editing features beyond a textarea (no syntax highlighting, no CodeMirror); accounts;
+server-side anything.
+
+**The formulas are the one exception, and an opt-in one.** *Math: MathJax* (§5)
+typesets the mathematics in the output pane while everything around it stays the
+converted text it always was. It earns the exception because text-mode mathematics is
+the one part of a conversion that reads badly however well it is done, so being able to
+see a formula while judging the *structure* around it is what the option is for; and it
+costs the rest of the page nothing, because it is a fourth answer to a question the bar
+already asks and 1.8 MB that only the readers who choose it ever fetch (§9.1).
 
 ## 2. Decisions taken
 
@@ -48,6 +57,7 @@ anything.
 | D7 | Diagnostics in a collapsible panel, click to select the span in the input | The binding must return UTF-16 offsets, not byte offsets (§4.4) |
 | D8 | App fills the viewport; header is one line; About/Install/Library are modal sheets and the page never scrolls | Mobile layout has to work with the on-screen keyboard up (§6.6); a toast raised from inside a sheet has to move into it, since a modal makes everything else inert (§6.10) |
 | D9 | Every converted document is logged automatically to an IndexedDB library, and nothing in it is ever removed without the user saying so | A second store to keep honest: a quota story that proposes rather than prunes, and an export format that is the answer to a full disk (§6.10, §6.11) |
+| D10 | *MathJax* is a fourth value of the *Math* control, resolved to `math_mode: Source` before the binding sees it, and the formulas are typeset in the output pane | The library never hears the word, so the app has to be told where the formulas are (`regions`, §4.3), wrap each one in an element after the text is set (§6.3), and carry 11.8 MB in `dist/` that is fetched only by the readers who ask for it (§9.1) |
 
 ## 3. Folder layout
 
@@ -69,6 +79,8 @@ web/
     library.ts            the library's entry model, session and retention policy
     library-store.ts      the IndexedDB backend, and the quota facts around it
     library-io.ts         the export format, and what an import is allowed to do
+    mathjax.ts            MathJax in four functions: load, loaded, typeset, reset
+    math-regions.ts       cutting the output into the runs the pane wraps in elements
     worker/
       convert.worker.ts   loads wasm, answers convert requests
       protocol.ts         message types shared by both sides
@@ -106,7 +118,7 @@ web/
 
 Two files are contracts rather than implementation, and exist because the app is
 written by more than one pair of hands at a time. `src/types.ts` holds the app-level
-types the state codec and the UI both need — including the two settings of §5 that
+types the state codec and the UI both need — including the three settings of §5 that
 are the *app* answering a question the library leaves open. `src/ui/api.ts` holds the
 interfaces the five UI modules satisfy and `main.ts` programs against, so neither side
 can drift without `tsc` saying so.
@@ -115,6 +127,9 @@ The three `library*.ts` files are split along the same line: `library.ts` and
 `library-io.ts` are pure and know nothing about a browser — the backend and the clock
 arrive as parameters — so the retention policy and the import rules are reachable from
 vitest, while `library-store.ts` is the only file in the app that opens a database.
+`math-regions.ts` and `mathjax.ts` are the same split again: the arithmetic of cutting
+the output at the region boundaries is pure and tested, and the file that fetches a
+typesetter and hands it elements has nothing in it worth a unit test.
 
 `web/crate/` is deliberately *not* a member of the `rust/` workspace and is not
 reachable from it: the repository root has no `Cargo.toml`, so a package under `web/`
@@ -584,7 +599,7 @@ number and not the `BigInt` a 64-bit integer would have become.
 | Control | Maps to | Default |
 |---|---|---|
 | Wrap: Fit / Off / Soft / 40 / 60 / 72 / 80 / custom | `wrap_width(Option<usize>)` | **Soft** (see below) |
-| Math: Fancy / Plain / Source | `math_mode` | Fancy |
+| Math: Fancy / Plain / Source / MathJax | `math_mode` | Fancy |
 | Display font: JuliaMono / Fira Math / Latin Modern / STIX Two / Libertinus / System | CSS only | JuliaMono |
 
 *Soft* is the app's default, and it is the library's own answer shown kindly: it sends
@@ -607,6 +622,36 @@ one question with one answer: *where do the line breaks come from?* — the pane
 library, a column count — with the two library-default answers next to each other in
 the list.
 
+***Math: MathJax* is the same shape of app-level value.** The control asks one
+question — how should a formula be shown? — and *typeset it* is one of the answers to
+it, so it is a fourth value rather than a checkbox beside the other three. The whole
+control is therefore app-level: `AppOptions` carries `math`, not `mathMode`, and
+`resolveOptions` translates — `'mathjax'` becomes `mathMode: 'source'` and the other
+three pass through under the library's own name. The binding cannot be handed the word
+`mathjax`, which is exactly what makes it safe to put an app-level answer in the same
+list as three library ones. What Source re-emits is the formula's own post-expansion
+LaTeX (so MathJax only ever meets primitives, never a document's macros), and the app
+typesets each run the binding pointed at (§4.3, §6.3, §9.1).
+
+Three consequences are worth stating where the option is described. **Copy and Download
+hand over the source**, `$…$` and all: this is the one setting where what is on the
+screen is not what leaves the app, and the control's hint says so. **The three rendering
+options of the *Math* fieldset stop meaning anything** — `math_expression_in`,
+`matrix_delimiters` and `math_font` are the renderer's, and Source bypasses the
+renderer — so they are disabled while MathJax is selected, with one line saying why,
+rather than left as controls that do nothing. And **fit-to-pane measurement becomes
+approximate**: a typeset formula is not a number of columns wide, and *Fit* is still
+sent the column count the pane measured for text. That is a known and accepted
+imprecision rather than something to correct; *Fit* wraps the text around the formulas,
+which is what it can honestly do.
+
+`math` is app-level but is **not** in `DEFAULT_OPTIONS`, unlike `wrap` and `todayMode`:
+three of its four answers are the library's, and the one it starts on — *Fancy* — is
+the library's own default, so absent means for it what absent means everywhere else.
+The one accommodation for the move is on the way in: `sanitizeOptions` reads a
+`mathMode` in stored or shared data as `math`, because links and settings written
+before the mode existed carry the old spelling of the same choice. Nothing writes it.
+
 **No backwards compatibility was kept for the change of default.** A share link or a
 stored setting that omits `wrap` now means *Soft* where it used to mean *Fit*, and no
 migration writes an explicit `wrap: 'fit'` into older state. This is deliberate: absent
@@ -621,13 +666,14 @@ text viewer is equipped to fold.
 *Layout*: heading style (`heading_style`, 4 values) · footnote style
 (`footnote_style`, 3) · keep comments (`keep_comments`) · **text char styles**
 (`text_font`: on / off — off means `\textbf` stops producing 𝐛𝐨𝐥𝐝) · `\today`
-(browser date / `<today>` / custom → `today(Option<Box<str>>)`) · keep all fonts
-offline (§8.3, app-level).
+(browser date / `<today>` / custom → `today(Option<Box<str>>)`) · keep everything
+offline (§8.3, §9.1, app-level).
 
 *Math*: expression delimiters (`math_expression_in`: parens / braces / none) · matrix
 delimiters (`matrix_delimiters`: unicode / ascii) · **math char styles** (`math_font`:
 italic (default) / upright / off, and the other Unicode alphabets for anyone who wants
-their variables in 𝔣𝔯𝔞𝔨𝔱𝔲𝔯).
+their variables in 𝔣𝔯𝔞𝔨𝔱𝔲𝔯). All three are disabled, with a line of explanation, while
+*Math: MathJax* is selected (above).
 
 The two `*_font` options are Unicode *character* styles — which alphabet a letter is
 mapped into — and have nothing to do with the display font of the primary bar, which
@@ -734,6 +780,26 @@ only toggles a class, the `<pre>`'s `textContent` still holds the library's long
 and Copy and Download read `Panes.getOutput()` rather than anything the DOM has
 folded.
 
+**A math region may be wrapped in an element *after* the text has been set**, which is
+the one thing besides text that is ever in the pane, and the `textContent`-only rule
+above survives it intact. Under *Math: MathJax* (§5) the pane sets the string exactly as
+it always does, then walks the region table the binding reported beside it (§4.3) and
+wraps each range in a `<span>` — every node built with `createElement` and
+`createTextNode` around a slice of the string that is already there, no markup parsed,
+no `innerHTML` anywhere. `Panes.markMath` hands those elements back and `main.ts` gives
+them to `src/mathjax.ts`, which replaces each one's contents with an SVG; until it does,
+each span still reads as its own LaTeX, so the pane is never blank and never blocked.
+The cutting itself is `src/math-regions.ts`, a pure function whose one invariant is that
+the runs concatenate back to the text they came from — which is why `Panes.getOutput()`
+still returns the string that was set, and Copy, Download and the library still hand
+over the library's own bytes.
+
+Typesetting is asynchronous and can be slow, so it carries the same discipline the
+worker's requests do (§6.2): each pass is numbered, passes are chained rather than
+raced — MathJax holds one document's worth of state — and a pass whose conversion has
+been superseded before its turn comes is dropped rather than rendered into elements the
+pane has already replaced.
+
 Copy uses `navigator.clipboard.writeText` with a `<textarea>`+`execCommand` fallback
 for older iOS; Download builds a `Blob` and a temporary object URL, named after the
 first `\title`/`\section` if one exists, else `converted.txt`.
@@ -745,11 +811,14 @@ One versioned object:
 ```ts
 interface AppState { v: 1; doc: string; opts: AppOptions; ui: UiState }
 
-// AppOptions is Partial<Options> plus the two app-level settings of §5, which are not
-// library options and must not be sent to the binding as if they were:
+// AppOptions is Partial<Options> plus the three app-level settings of §5, which are
+// not library options and must not be sent to the binding as if they were:
 //   wrap: 'fit' | 'off' | 'soft' | number  →  wrapWidth, once the pane has been
 //       measured. 'soft' resolves exactly as 'off' does; its display half is read
 //       back out by `softWraps(opts)` and applied to the pane, not to the payload.
+//   math: 'fancy' | 'plain' | 'source' | 'mathjax'  →  mathMode. 'mathjax' resolves
+//       exactly as 'source' does; its display half is read back out by
+//       `mathJax(opts)` and typeset in the pane (§6.3).
 //   todayMode: 'browser' | 'library' | 'custom' (+ todayCustom)  →  today
 // `resolveOptions(opts, columns)` in state.ts is the single place that translation
 // happens, so the worker never sees an app-level value.
@@ -792,6 +861,12 @@ pane's horizontal scroll absorb the occasional long line.
 Cached per (display font, size) pair. Re-measured on a debounced (100 ms)
 `ResizeObserver`, on font or size change, and on orientation change; a conversion is
 re-issued only when the column count actually changes.
+
+Under *Math: MathJax* the measurement is knowingly approximate: a typeset formula is
+not a whole number of the gauge's characters wide, so a line the library wrapped to fit
+may render narrower or wider than the pane once its formula is an SVG. *Fit* is still
+sent the column count measured for text, which is what it can honestly measure, and the
+error is left uncorrected rather than guessed at (§5).
 
 ### 6.6 Mobile
 
@@ -1179,10 +1254,18 @@ TeX users who already have these installed download nothing at all.
 
 Offline follows from §9: no face is precached, and every face is runtime-cached on
 first use — so the default lands in the cache on first paint, and any other face the
-moment it is chosen. **Keep all fonts offline** in More options fetches all five
+moment it is chosen. **Keep everything offline** in More options fetches all five
 deliberately, for someone about to board a plane. If a face was never fetched and the
 network is gone, the swap simply does not happen and the chain of §8.2 renders —
 nothing to handle.
+
+The checkbox is *everything* rather than *all fonts* because the app has exactly two
+kinds of asset it fetches after the first load, and someone ticking this is answering
+the same question about both: the faces here and the MathJax bundle of §9.1, which the
+same tick asks for. One setting rather than two, which is what the box asks for — a
+second checkbox for the second lazy asset is how a preferences screen starts. The
+stored key stays `keepFontsOffline`, so a profile written before the label changed
+keeps its answer.
 
 Unsubsetted faces are large — expect roughly 250–700 KB of woff2 each (measured and
 recorded in §14 at W5). Only the *selected* face is ever fetched, so first load costs
@@ -1341,9 +1424,40 @@ and every range it asks for in a `CacheFirst` route, `techxt-mathjax`, exactly l
 one that holds the display faces: once fetched, the mode works with the network off and
 after a reload. Nothing MathJax is *pre*cached — `globIgnores` keeps `mathjax/**` out of
 the precache manifest — because putting 1.8 MB on the install path of every visitor to
-serve the few who want it is the trade the runtime route exists to avoid. An installed
-copy that wants the mode ready before it is asked for should call `loadMathJax()` in the
-background on first run, which is idempotent and does exactly this once.
+serve the few who want it is the trade the runtime route exists to avoid.
+
+**Lazy on the web, complete when installed.** `main.ts` asks for the bundle the moment
+the mode is selected rather than when the first formula arrives — a click, a share link,
+a library entry and a reload into the mode all go through the same idempotent call — so
+the fetch overlaps the conversion it belongs to. An **installed** copy asks for it once
+on every run, in the background and off the idle callback, whether or not anyone selects
+the mode: an app that was installed to work offline should not discover on a train that
+its typesetter is a download away, and after the first run the call is a cache read. The
+test is `display-mode: standalone`; on the web the same speculation would be 1.8 MB
+spent on visitors who never turn the mode on, which is the whole point of the route
+above. **Keep everything offline** (§8.3) asks for it too, deliberately, for the person
+who is about to lose the network on purpose.
+
+**Two things in the configuration are load-bearing and were both found in a browser
+rather than on paper**, because neither fails loudly:
+
+- The five `enableSpeech`/`enableBraille`/`enableEnrichment`/`enableExplorer`/
+  `enableMenu` options are **not enough on their own**. MathJax's contextual menu
+  applies its *own* settings to the document after the configuration is read, and its
+  defaults turn enrichment, speech and braille straight back on; `enableMenu: false`
+  hides the menu without stopping that. The document then reaches the `attachSpeech`
+  render action, starts a web worker for the speech-rule engine, and waits forever for
+  an answer — `tex2svgPromise` never settles, no error is raised, and not one formula is
+  typeset. `options.menuOptions.settings` turns the menu's own answers off as well,
+  which is what actually keeps the speech engine out of the picture.
+- The service worker's route matcher **cannot close over anything in
+  `vite.config.ts`**: workbox serializes the function by its source into `sw.js`. A
+  matcher written as `` url.pathname.startsWith(`${BASE}mathjax/`) `` compiled to a
+  reference to a variable the worker does not have, threw on every request, and the
+  route silently never matched — the mode worked online and failed offline, which is
+  precisely what it exists to prevent. It reads the base from the worker's own
+  `registration.scope` instead, which is `BASE` by construction and needs nothing from
+  the config module.
 
 **The version is the cache key.** These files are copied verbatim rather than passed
 through Rollup, so they carry no content hash. They are served from
@@ -1430,10 +1544,10 @@ noting in `web/README.md`, since the first deploy silently does nothing otherwis
 ## 13. Testing and acceptance
 
 **Automated**: `cargo test` in `web/crate` (§4.8); vitest over the pure logic — state
-codec, options diffing, fit-to-pane arithmetic, worker-protocol sequencing with a
-mocked worker, the document-title rules, and the library's model, retention policy and
-import/export codec against an in-memory backend; `tsc --noEmit`; the glyph coverage
-check.
+codec, options diffing, fit-to-pane arithmetic, the region → run cutting behind the
+MathJax mode, worker-protocol sequencing with a mocked worker, the document-title rules,
+and the library's model, retention policy and import/export codec against an in-memory
+backend; `tsc --noEmit`; the glyph coverage check.
 
 **Manual checklist**, run before each release and recorded in `web/README.md`:
 
@@ -1451,7 +1565,12 @@ check.
    export, then import the file back under each of the three answers; open an entry
    and see its options come back with it; the pane one-handed on a 390 px screen; and
    a profile with IndexedDB blocked, where the app must be whole and the pane honest.
-9. Lighthouse: PWA installable, performance ≥ 95, accessibility 100.
+9. *Math: MathJax* (§5, §9.1): the formulas typeset while the rest of the pane stays
+   readable; Copy still hands over the source, `$…$` and all; a wide display formula
+   scrolls in its own box rather than dragging the pane; and — the one that has failed
+   before — a reload with the network off, after the mode has been used once, still
+   typesets, with no request leaving the origin at any point.
+10. Lighthouse: PWA installable, performance ≥ 95, accessibility 100.
 
 ## 14. Measured baselines
 
@@ -1640,7 +1759,9 @@ Each is a working, deployable state.
 ## 16. Deliberate omissions
 
 Syntax highlighting or a code editor component (a textarea is honest and fast, and
-CodeMirror would outweigh the engine); rendering LaTeX visually for comparison;
+CodeMirror would outweigh the engine); rendering the document visually for comparison —
+*Math: MathJax* typesets the formulas of the answer, in the answer's own pane, and there
+is no second pane showing what LaTeX would have produced (§1, §5);
 multi-file/`\input`; a definitions playground (the extension API is a crate-docs
 subject, not a UI); server-side conversion for very large documents; i18n of the UI;
 any analytics.

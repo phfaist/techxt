@@ -662,6 +662,23 @@ select.control {
   color: var(--fg-muted);
 }
 
+/*
+ * A rendering option that the current *Math* setting bypasses (§5). The control is
+ * `disabled`, which the browser draws for us; this only takes the ink out of the
+ * label and the hint beside it, so the group reads as a whole rather than as one live
+ * control and two greyed boxes with black captions.
+ */
+.field.is-inert .field-label,
+.field.is-inert .hint {
+  opacity: 0.55;
+}
+
+/* The one line saying *why* those three are disabled, under the group they belong to. */
+.group-note {
+  margin: 0;
+  font-style: italic;
+}
+
 .check-row {
   display: flex;
   align-items: center;
@@ -935,6 +952,43 @@ select.control {
 /* A hard parse failure dims the last good answer rather than throwing it away. */
 .pane-output.is-stale {
   opacity: 0.45;
+}
+
+/*
+ * Math: MathJax (§5, §9.1). One element per formula, wrapped around the LaTeX that is
+ * already in the pane; MathJax replaces its contents with an SVG when it arrives, and
+ * until then the source shows, which is why nothing here hides anything.
+ *
+ * Inline formulas get nothing at all: MathJax does its own line-breaking inside one,
+ * and a rule here would only get in its way.
+ */
+.pane-output .math-display {
+  /*
+   * A box of its own, so a formula wider than the pane scrolls by itself instead of
+   * dragging the whole output sideways with it — which matters most under Soft wrap,
+   * the default, where nothing else in the pane scrolls horizontally at all.
+   *
+   * `inline-block` rather than `block`: the newlines around a display formula are in
+   * the text, and a block box here would add a line of its own to them.
+   */
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* A swipe that reaches the end of the formula stops there rather than dragging the
+     pane, or the page behind it, along with it. */
+  overscroll-behavior-x: contain;
+  vertical-align: top;
+}
+
+/*
+ * MathJax gives a display container a centring block of its own with a 1em margin,
+ * which is the right answer in a web page and the wrong one inside a `<pre>` whose
+ * blank lines are the document's. The box above is already on its own line.
+ */
+.pane-output .math-display mjx-container[display='true'] {
+  margin: 0;
+  text-align: left;
 }
 
 /*

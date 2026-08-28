@@ -19,7 +19,7 @@ import type { FontId } from '../fonts';
 import type { LibraryEntry, LibraryStats, PruneProposal } from '../library';
 import type { ImportChoice } from '../library-io';
 import type { AppOptions, ExampleDoc, UiState } from '../types';
-import type { ConversionResult, Diagnostic } from '../worker/protocol';
+import type { ConversionResult, Diagnostic, MathRegion } from '../worker/protocol';
 
 /* ------------------------------------------------------------------ ui/toast.ts */
 
@@ -77,6 +77,17 @@ export interface Panes {
   /** Assign the converted text (`textContent` only — never `innerHTML`). */
   setOutput(text: string): void;
   getOutput(): string;
+  /**
+   * Wrap each math region of the text last given to {@link setOutput} in an element,
+   * and hand those elements back in output order for the caller to typeset (§6.3).
+   *
+   * The text does not change — the elements are built with `createElement` and
+   * `createTextNode` around slices of the string that is already there, so
+   * {@link getOutput} still returns exactly what was set and Copy, Download and the
+   * library still hand over the library's own bytes. Whoever typesets the elements is
+   * `main.ts`; the pane has no idea what MathJax is.
+   */
+  markMath(regions: readonly MathRegion[]): HTMLElement[];
   /** Focus the textarea and select `[start, end)` in UTF-16 code units (§4.4). */
   selectSpan(start: number, end: number): void;
   /**
@@ -125,7 +136,11 @@ export interface ControlsInit {
   onOptionsChange(options: AppOptions): void;
   onFontChange(font: FontId, size: number): void;
   onMoreToggle(open: boolean): void;
-  /** "Keep all fonts offline" was ticked or unticked (§8.3). */
+  /**
+   * "Keep everything offline" was ticked or unticked (§8.3): the display faces, and
+   * the MathJax bundle that is the app's other lazily fetched asset (§9.1). The name
+   * keeps `Fonts` because the stored `UiState` key does.
+   */
   onKeepFontsOffline(enabled: boolean): void;
   /** The Library button beside *More options* — the second door of §6.10. */
   onOpenLibrary(): void;

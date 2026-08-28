@@ -120,6 +120,19 @@ function configure(): void {
       enableBraille: false,
       enableEnrichment: false,
       enableExplorer: false,
+      // **These five are not enough on their own**, which was found the only way it
+      // could be — by watching a built page fail to typeset a single formula. The
+      // contextual menu's own settings are applied to the document *after* the
+      // configuration is, and its defaults turn enrichment, speech and braille straight
+      // back on; `enableMenu: false` hides the menu without stopping that. The document
+      // then reaches the `attachSpeech` render action, starts a web worker for the
+      // speech-rule engine, and waits for an answer that never comes — the worker's
+      // script is not one of the two trees `vite.config.ts` copies, and even if it were,
+      // fetching locale tables is exactly what §9.1 says this app does not do. The
+      // symptom is not an error: `tex2svgPromise` simply never settles.
+      menuOptions: {
+        settings: { enrich: false, speech: false, braille: false, explorer: false, collapsible: false },
+      },
     },
   };
 }

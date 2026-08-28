@@ -40,7 +40,7 @@ afterEach(() => {
 
 /** Every field of AppOptions, each set to something that is not its default. */
 const EVERY_OPTION: AppOptions = {
-  mathMode: 'source',
+  math: 'source',
   mathExpressionIn: 'none',
   matrixDelimiters: 'ascii',
   keepComments: true,
@@ -73,10 +73,18 @@ describe('encodeShare / decodeShare', () => {
       v: 1,
       doc: 'hi',
       // `wrap: 'soft'` and `todayMode: 'browser'` are the app's own defaults.
-      opts: { wrap: 'soft', todayMode: 'browser', mathMode: 'plain' },
+      opts: { wrap: 'soft', todayMode: 'browser', math: 'plain' },
     });
     const decoded = await decodeShare(fragment);
-    expect(decoded?.opts).toEqual({ mathMode: 'plain' });
+    expect(decoded?.opts).toEqual({ math: 'plain' });
+  });
+
+  it('carries the MathJax mode, which is the app’s answer and not the library’s', async () => {
+    // A link reproduces the session it was made in, and the pane the sender was
+    // looking at was typesetting (§5). The value survives; it is `resolveOptions`
+    // that never lets it reach the binding, and options.test.ts holds it to that.
+    const fragment = await encodeShare({ v: 1, doc: '$a+b$', opts: { math: 'mathjax' } });
+    expect((await decodeShare(fragment))?.opts).toEqual({ math: 'mathjax' });
   });
 
   it('compresses: a repetitive document makes a much shorter link', async () => {
@@ -92,12 +100,12 @@ describe('encodeShare / decodeShare', () => {
     vi.stubGlobal('DecompressionStream', undefined);
     expect(canCompress()).toBe(false);
 
-    const fragment = await encodeShare({ v: 1, doc: 'plain and simple', opts: { mathMode: 'plain' } });
+    const fragment = await encodeShare({ v: 1, doc: 'plain and simple', opts: { math: 'plain' } });
     expect(fragment.startsWith(SHARE_PREFIX_PLAIN)).toBe(true);
     expect(await decodeShare(fragment)).toEqual({
       v: 1,
       doc: 'plain and simple',
-      opts: { mathMode: 'plain' },
+      opts: { math: 'plain' },
     });
   });
 
@@ -160,18 +168,18 @@ describe('decodeShare: damage', () => {
     const payload = JSON.stringify({
       v: 1,
       doc: 'still fine',
-      opts: { mathMode: 'interpretive-dance', headingStyle: 'plain', nonsense: 12 },
+      opts: { math: 'interpretive-dance', headingStyle: 'plain', nonsense: 12 },
     });
     const decoded = await decodeShare(SHARE_PREFIX_PLAIN + btoa(payload));
     expect(decoded).toEqual({ v: 1, doc: 'still fine', opts: { headingStyle: 'plain' } });
   });
 
   it('accepts a payload whose document is missing', async () => {
-    const payload = JSON.stringify({ v: 1, opts: { mathMode: 'plain' } });
+    const payload = JSON.stringify({ v: 1, opts: { math: 'plain' } });
     expect(await decodeShare(SHARE_PREFIX_PLAIN + btoa(payload))).toEqual({
       v: 1,
       doc: '',
-      opts: { mathMode: 'plain' },
+      opts: { math: 'plain' },
     });
   });
 });
@@ -221,7 +229,7 @@ describe('loadState with a share target', () => {
   it('takes the shared document ahead of anything stored', async () => {
     const storage = memoryStorage();
     storage.setItem(STORAGE_KEYS.doc, 'the stored document');
-    storage.setItem(STORAGE_KEYS.opts, JSON.stringify({ mathMode: 'plain' }));
+    storage.setItem(STORAGE_KEYS.opts, JSON.stringify({ math: 'plain' }));
 
     const loaded = await loadState({ query: '?text=shared%20markup', storage });
 
@@ -229,7 +237,7 @@ describe('loadState with a share target', () => {
     expect(loaded.state.doc).toBe('shared markup');
     expect(loaded.firstVisit).toBe(false);
     // The document is the share's; the settings stay the ones this browser had.
-    expect(loaded.state.opts.mathMode).toBe('plain');
+    expect(loaded.state.opts.math).toBe('plain');
   });
 
   it('lets an ordinary visit through untouched', async () => {

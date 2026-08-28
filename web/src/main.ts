@@ -32,6 +32,7 @@ import {
 import type { Library, LibraryEntry } from './library';
 import { decodeLibrary, describeImport, encodeLibrary, libraryFileName, planImport } from './library-io';
 import { isPersisted, openLibraryBackend, requestPersistence, storageEstimate } from './library-store';
+import { loadMathJax, resetMathJax, typeset } from './mathjax';
 import {
   DEFAULT_OPTIONS,
   SHARE_LENGTH_LIMIT,
@@ -40,6 +41,7 @@ import {
   encodeShare,
   encodeShareSettingsOnly,
   loadState,
+  mathJax,
   readCurrentEntryId,
   readLibraryHints,
   resolveOptions,
@@ -261,6 +263,7 @@ async function start(): Promise<void> {
       lastGoodOutput = result.text;
       panes.setOutput(result.text);
       panes.setStale(false);
+      typesetMath(result);
       // The library is a log of what was converted, so a conversion is exactly when
       // it hears about a document. The write itself is debounced (§6.10).
       library?.record(state.doc, state.opts, makePreview(result.text));
@@ -269,6 +272,99 @@ async function start(): Promise<void> {
       // dimmed, with the diagnostics saying why (§6.3).
       panes.setStale(true);
     }
+  }
+
+  /* -------------------------------------------------------------- typesetting */
+
+  /**
+   * The latest typeset pass. Conversions already carry a monotonic id and a stale
+   * answer is dropped (§6.2); typesetting is the same problem one step later — it is
+   * asynchronous, it can be slow on a large document, and by the time it finishes the
+   * result it was rendering may have been superseded — so it is given the same
+   * discipline rather than a second one of its own.
+   */
+  let typesetPass = 0;
+  /**
+   * The pass in flight. MathJax is one engine with one document's worth of state
+   * (equation numbers, labels), so passes are chained rather than raced, and a pass
+   * that was superseded while waiting for its turn never starts.
+   */
+  let typesetting: Promise<void> = Promise.resolve();
+  /** Whether this session has already admitted that MathJax could not be fetched. */
+  let mathJaxUnavailable = false;
+
+  /**
+   * Wrap this result's formulas in elements and hand them to MathJax (§6.3, §9.1).
+   *
+   * The pane is never blocked for this: `setOutput` has already put the text on the
+   * screen, and each element still reads as its own LaTeX until the moment MathJax
+   * replaces it. Nothing here changes the text, so Copy, Download and the library keep
+   * handing over the library's own bytes.
+   */
+  function typesetMath(result: ConversionResult): void {
+    // Bumped even when there is nothing to typeset: switching to *Fancy* mid-pass is
+    // exactly the case where the pass in flight has to be dropped.
+    const pass = (typesetPass += 1);
+    if (!mathJax(state.opts) || result.regions.length === 0) return;
+    const elements = panes.markMath(result.regions);
+    if (elements.length === 0) return;
+    typesetting = typesetting
+      .then(async () => {
+        // Superseded while an earlier pass was still running: these elements are not
+        // in the pane any more, and the newer pass is right behind this one.
+        if (pass !== typesetPass) return;
+        resetMathJax();
+        await typeset(elements);
+      })
+      .catch(mathJaxFailed);
+  }
+
+  /**
+   * Ask for the typesetter as soon as the mode is chosen, rather than when the first
+   * formula needs it — the fetch is 1.8 MB and the conversion it belongs to is
+   * already on its way. Idempotent, so every path that can select the mode may call
+   * it: a click on the control, a share link, a library entry, a reload (§9.1).
+   */
+  function prepareMathJax(): void {
+    if (!mathJax(state.opts)) return;
+    void loadMathJax().catch(mathJaxFailed);
+  }
+
+  /**
+   * An installed copy fetches it once in the background instead, whether or not the
+   * mode is ever selected: an app that was installed to work offline should not
+   * discover the first time it is opened on a train that the typesetter is a download
+   * away. On the web the same call would be 1.8 MB spent on the great majority of
+   * visitors who never turn the mode on, which is exactly what §9.1's runtime route
+   * exists to avoid — so it is asked for only where "keep it" is the whole point.
+   *
+   * The service worker holds it after the first run, so later runs are a cache read.
+   */
+  function prefetchMathJaxWhenInstalled(): void {
+    if (mathJax(state.opts)) return; // `prepareMathJax` already asked for it
+    if (!window.matchMedia?.('(display-mode: standalone)').matches) return;
+    const fetchIt = (): void => {
+      void loadMathJax().catch(() => {
+        // Silent: nobody asked for this, and a copy that is offline right now will
+        // pick it up on a later run.
+      });
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(() => fetchIt());
+    } else {
+      window.setTimeout(fetchIt, 3000);
+    }
+  }
+
+  /** Once per session: the formulas are still readable, they are just not typeset. */
+  function mathJaxFailed(): void {
+    if (mathJaxUnavailable) return;
+    mathJaxUnavailable = true;
+    toast.show({
+      message: 'MathJax could not be loaded, so the formulas are shown as LaTeX source.',
+      tone: 'alert',
+      timeoutMs: 8000,
+    });
   }
 
   function handleFatal(message: string): void {
@@ -420,8 +516,11 @@ async function start(): Promise<void> {
       state.opts = withDefaults(sanitizeOptions(next));
       persistence.options(state.opts);
       // The display half of `wrap: 'soft'` (§6.3): the library is told nothing about
-      // it — `resolveOptions` drops it — so the pane has to be told directly.
+      // it — `resolveOptions` drops it — so the pane has to be told directly. The same
+      // is true of `math: 'mathjax'`, whose display half is the typesetter, and which
+      // is fetched the moment it is selected rather than when a formula arrives.
       panes.setSoftWrap(softWraps(state.opts));
+      prepareMathJax();
       requestConversion('immediate');
     },
     onFontChange(font, size) {
@@ -435,8 +534,16 @@ async function start(): Promise<void> {
       state.ui.keepFontsOffline = enabled;
       persistence.ui(state.ui);
       if (!enabled) return;
+      // One "keep everything offline" rather than a checkbox per asset (§8.3, §9.1):
+      // the display faces and the typesetter are the two things the app fetches after
+      // the first load, and someone ticking this is answering the same question about
+      // both. MathJax's failure is not worth a toast here — it was not asked for by
+      // name — so the fonts' promise is what the message reports.
+      void loadMathJax().catch(() => {
+        /* the mode itself says so, loudly, if it is ever selected */
+      });
       void preloadAllFonts(state.ui.size).then(() => {
-        toast.show({ message: 'Every display font is cached for offline use.' });
+        toast.show({ message: 'The display fonts and the typesetter are cached for offline use.' });
       });
     },
     onOpenLibrary() {
@@ -719,6 +826,7 @@ async function start(): Promise<void> {
     state.opts = withDefaults(sanitizeOptions(next));
     controls.setOptions(state.opts);
     panes.setSoftWrap(softWraps(state.opts));
+    prepareMathJax();
     persistence.options(state.opts);
   }
 
@@ -968,6 +1076,10 @@ async function start(): Promise<void> {
 
   panes.setDocument(state.doc);
   panes.setSoftWrap(softWraps(state.opts));
+  // The mode may already be in force — a stored setting, a share link — in which case
+  // the typesetter is wanted now rather than when the first result lands.
+  prepareMathJax();
+  prefetchMathJaxWhenInstalled();
   measuredColumns = panes.columns();
   // The font is applied without being awaited: the first conversion should not wait
   // for a face to arrive, and the pane re-measures when it does (§6.5).

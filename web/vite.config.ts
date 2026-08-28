@@ -221,9 +221,19 @@ export default defineConfig({
             // the same reason: once it has been fetched the mode works offline.
             // 48 entries is the bundle plus all 40 ranges, with room to spare; the
             // version-stamped path is what makes a year-long cache safe.
+            //
+            // **This function is serialized into `sw.js` by its source**, so nothing
+            // in this module is in scope where it runs: a `${BASE}` here compiled to a
+            // reference to a variable the service worker does not have, the matcher
+            // threw on every request, and the route silently never matched — which is
+            // to say the mode worked online and not offline, in exactly the way this
+            // route exists to prevent. The base is read from the worker's own
+            // registration scope instead, which is `BASE` by construction and needs
+            // nothing from here.
             urlPattern: ({ url }: { url: URL }) =>
-              url.origin === self.location.origin &&
-              url.pathname.startsWith(`${BASE}mathjax/`),
+              url.href.startsWith(
+                `${(self as unknown as { registration: { scope: string } }).registration.scope}mathjax/`,
+              ),
             handler: 'CacheFirst',
             options: {
               cacheName: 'techxt-mathjax',

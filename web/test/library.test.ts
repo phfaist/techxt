@@ -161,7 +161,7 @@ describe('makePreview', () => {
 
 describe('readEntry', () => {
   it('reads what this build writes, round trip', () => {
-    const original = entry({ starred: true, options: { mathMode: 'plain' } });
+    const original = entry({ starred: true, options: { math: 'plain' } });
     const read = readEntry(JSON.parse(JSON.stringify(original)), 0);
     expect(read.ok && read.entry).toEqual(original);
   });
@@ -177,7 +177,7 @@ describe('readEntry', () => {
 
   it('drops option values it does not know, exactly as a share link does', () => {
     const read = readEntry(
-      { source: 'x', options: { mathMode: 'interpretive-dance', keepComments: true, nope: 1 } },
+      { source: 'x', options: { math: 'interpretive-dance', keepComments: true, nope: 1 } },
       0,
     );
     expect(read.ok && read.entry.options).toEqual({ keepComments: true });
@@ -241,14 +241,14 @@ describe('byRecency and filterEntries', () => {
 
 describe('fingerprint and sameContent', () => {
   it('is the same for the same document under the same options', () => {
-    const options: AppOptions = { mathMode: 'plain' };
-    expect(fingerprint('body', options)).toBe(fingerprint('body', { mathMode: 'plain' }));
+    const options: AppOptions = { math: 'plain' };
+    expect(fingerprint('body', options)).toBe(fingerprint('body', { math: 'plain' }));
     expect(sameContent(entry({ options }), entry({ id: 'other', options }))).toBe(true);
   });
 
   it('separates two documents, and one document under two option sets', () => {
     expect(fingerprint('a', {})).not.toBe(fingerprint('b', {}));
-    expect(fingerprint('a', {})).not.toBe(fingerprint('a', { mathMode: 'source' }));
+    expect(fingerprint('a', {})).not.toBe(fingerprint('a', { math: 'source' }));
     expect(sameContent(entry({ source: 'a' }), entry({ source: 'b' }))).toBe(false);
   });
 
@@ -322,7 +322,7 @@ describe('describeOptions', () => {
   it('names only what differs from the app defaults', () => {
     expect(describeOptions({})).toBe('The default options');
     expect(describeOptions({ wrap: 'soft' })).toBe('The default options');
-    expect(describeOptions({ mathMode: 'source', wrap: 72 })).toBe('Math: source · Wrap: 72 columns');
+    expect(describeOptions({ math: 'source', wrap: 72 })).toBe('Math: source · Wrap: 72 columns');
   });
 });
 
@@ -371,13 +371,13 @@ describe('the current entry', () => {
     clock.advance(2000);
     await log.flush();
 
-    log.record('body', { mathMode: 'source' }, 'body');
+    log.record('body', { math: 'source' }, 'body');
     clock.advance(2000);
     await log.flush();
 
     const entries = await log.list();
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.options).toEqual({ mathMode: 'source' });
+    expect(entries[0]?.options).toEqual({ math: 'source' });
   });
 
   it('starts a new entry when the document is replaced wholesale', async () => {

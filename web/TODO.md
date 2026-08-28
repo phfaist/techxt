@@ -171,6 +171,75 @@ produces one line per paragraph, and the tests say so.
 
 # 2. `Math: MathJax` — optional visual math
 
+> **Done** — 2026-08-28, the app half, on top of `6400254` (L1) and `d237825` (the
+> binding and the asset). `math` is an app-level `AppOptions` key beside `wrap`, with
+> four values; `resolveOptions` turns `'mathjax'` into `mathMode: 'source'` and
+> `mathJax(opts)` reads the display half back out. `src/math-regions.ts` cuts the output
+> at the region boundaries (pure, and tested in `test/math-regions.test.ts`),
+> `Panes.markMath` wraps each run in a `<span>` built with `createElement` /
+> `createTextNode` after `textContent` has been set, and `main.ts` hands those elements
+> to `src/mathjax.ts` under a numbered-pass discipline of the same shape as the worker's
+> request ids. `web/PLAN.md` §1, §2 (D10), §3, §5, §6.3, §6.4, §6.5, §8.3, §9.1, §13 and
+> §16 updated; `index.html`'s install sheet says what an installed copy fetches.
+>
+> **The mode did not typeset at all when it was first driven in a browser, and neither
+> failure said so.** Both were in the half that landed with the asset, both are fixed
+> here, and both are now written into PLAN §9.1 because they are the kind of thing that
+> comes back:
+>
+> 1. **`enableSpeech: false` and its four neighbours are not enough.** MathJax's
+>    contextual menu applies its *own* settings to the document after the configuration
+>    is read, and its defaults turn enrichment, speech and braille back on — `enableMenu:
+>    false` hides the menu without stopping that. The document then reaches its
+>    `attachSpeech` render action, starts a web worker for the speech-rule engine, and
+>    waits forever for an answer: `tex2svgPromise` never settles, nothing is logged, and
+>    not one formula is typeset. `options.menuOptions.settings` turns the menu's answers
+>    off as well. This is the only edit `src/mathjax.ts` needed.
+> 2. **The service worker's MathJax route never matched.** Workbox serializes a route
+>    matcher *by its source* into `sw.js`, so the `` `${BASE}mathjax/` `` in
+>    `vite.config.ts` compiled to a reference to a variable the worker does not have; the
+>    matcher threw on every request and the route quietly did nothing. The mode worked
+>    online and failed offline — precisely what that route exists to prevent. It reads
+>    `self.registration.scope` now, which is `BASE` by construction and closes over
+>    nothing.
+>
+> **The `mathMode` key became `math`, and a read still accepts the old spelling.** All
+> four answers live in one control, so the whole control had to move up to the app level;
+> `sanitizeOptions` maps a stored or shared `mathMode` onto `math` on the way in, so links
+> and profiles written by the previous build keep their setting. Nothing writes the old
+> key. This is a smaller accommodation than item 1's "no backwards compatibility" for
+> `wrap` — that decision was about a *default* changing meaning, and this is a key being
+> renamed under a value the user explicitly chose.
+>
+> **Two decisions taken inside the *Display and behaviour* boxes.** The display formula's
+> box is `display: inline-block` rather than `block`: the newlines around a display
+> formula are in the text, and a block box adds a line of its own to them. And the
+> *keep all fonts offline* checkbox became **Keep everything offline** rather than
+> growing a second one beside it, since the app has exactly two lazily fetched assets and
+> a person ticking this is answering the same question about both; the `UiState` key is
+> unchanged, so a stored answer survives.
+>
+> **What it cost in `dist/`**: **+4 776 B** (15 960 563 → 15 965 339 B, excluding source
+> maps) — the app bundle 92 595 → 96 764 B (32.62 → 34.10 kB gzipped), because
+> `src/mathjax.ts` stops being dead code and `src/math-regions.ts` joins it, plus the
+> stylesheet at 29 865 → 30 193 B. The precache manifest moves by the same amount,
+> 1 614.32 → 1 619.00 KiB over an unchanged 21 entries. MathJax's own 11.8 MB was
+> already in `dist/` and does not move: it is still not imported by the bundle and still
+> not precached.
+>
+> *Observed*, in Chromium 141 against `npm run preview` on 2026-08-28: the sentence from
+> fact 2 renders as one typeset formula with the two literal dollars beside it; a
+> `\newcommand{\ket}` document typesets inline and display formulas with no `ket` in the
+> SVG and no MathJax error node, because Source had already expanded it; **Copy returns
+> the Source-mode text byte for byte**, compared against the same document converted with
+> *Math: Source*; a cold reload with the network off, after the mode had been used once,
+> typesets from the service worker's cache; the *Mathematics* example typesets all six of
+> its formulas and pulls `double-struck` from our own origin, with **no request leaving
+> the origin at any point in any run**; a wide display formula scrolls inside its own box
+> while the pane does not, on a 1200 px window and on a 390 px one; typing through six
+> conversions in a burst leaves every formula typeset and none half-rendered; and
+> switching back to *Fancy* leaves plain text with no wrapper elements behind.
+
 A fourth value of the *Math* control beside Fancy (the default), Plain and Source. The
 formula is emitted as source and MathJax typesets it in the output pane, so a
 document's structure and its light font styling can be previewed without paying for
@@ -327,7 +396,7 @@ section was written against:
       filtered, so the app never meets a provenance it has to reason about.
 - [x] The binding reports regions unconditionally; the app ignores them unless it is
       in MathJax mode. There is no option to turn them on.
-- [ ] Three properties L1 measured that the DOM-wrapping code will meet:
+- [x] Three properties L1 measured that the DOM-wrapping code will meet:
       a block region's range **excludes** the newline that ends its last line; a
       construct that renders to nothing reports nothing; and an inline region can
       contain a newline (a `KeepSource` macro keeps its post-newline), so a region is
@@ -398,7 +467,7 @@ section was written against:
       story. Revisit with a custom `@mathjax/src` build — we know exactly which TeX
       extensions are needed and need neither MathML input nor the a11y tree — if the
       number has to come down.
-- [ ] **Lazy on the web, complete when installed.** Fetch the bundle on first
+- [x] **Lazy on the web, complete when installed.** Fetch the bundle on first
       selection of the MathJax mode, held by a `CacheFirst` runtime route beside the
       existing `techxt-fonts` one. An installed PWA should not have to think about it:
       fetch it once on first run in the background and keep it. Consider extending the
@@ -426,19 +495,19 @@ costs in `dist/` so item 6 has a number to work with.
 
 ## Display and behaviour
 
-- [ ] Inline math: MathJax handles line-breaking within an inline formula; let it.
-- [ ] Display math: give each formula its own horizontally scrolling box, so a wide
+- [x] Inline math: MathJax handles line-breaking within an inline formula; let it.
+- [x] Display math: give each formula its own horizontally scrolling box, so a wide
       formula scrolls by itself instead of forcing the whole pane sideways. This
       matters most under Soft wrap, which is now the default.
-- [ ] Fit-to-pane column measurement is meaningless across a typeset formula. Under
+- [x] Fit-to-pane column measurement is meaningless across a typeset formula. Under
       MathJax mode this is a known and accepted imprecision; do not try to correct it.
-- [ ] `mathExpressionIn`, `matrixDelimiters` and `mathFont` do nothing in this mode
+- [x] `mathExpressionIn`, `matrixDelimiters` and `mathFont` do nothing in this mode
       (they are rendering options that Source mode bypasses). Disable them in the
       *More options* → *Math* fieldset while MathJax is selected, with a one-line
       explanation, rather than leaving inert controls.
-- [ ] Copy and Download hand over the source-mode text, `$…$` included. Say so in the
+- [x] Copy and Download hand over the source-mode text, `$…$` included. Say so in the
       control's hint: this is the one mode where what you see and what you copy differ.
-- [ ] Typesetting is async and can be slow on a large document. Do not block the pane:
+- [x] Typesetting is async and can be slow on a large document. Do not block the pane:
       set the text first (it is readable immediately), then typeset, and drop a
       typeset pass whose conversion has already been superseded.
 

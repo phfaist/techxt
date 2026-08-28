@@ -1,16 +1,17 @@
 /**
  * The app-level types shared by the state codec, the wiring and the UI modules.
  *
- * Two settings live here rather than in {@link OptionsPayload} because they are the
+ * Three settings live here rather than in {@link OptionsPayload} because they are the
  * *app* being helpful rather than the library offering a choice (web/PLAN.md §5):
- * `wrap: 'fit'` measures the output pane and sends the resulting column count, and
- * `todayMode: 'browser'` sends the date the browser knows where the `no_std` library
- * can only render `<today>`. Both are resolved into real library options by
- * `resolveOptions` in `state.ts`, so the worker never sees an app-level value.
+ * `wrap: 'fit'` measures the output pane and sends the resulting column count,
+ * `math: 'mathjax'` asks the library for the formulas' source and typesets it in the
+ * pane, and `todayMode: 'browser'` sends the date the browser knows where the `no_std`
+ * library can only render `<today>`. All three are resolved into real library options
+ * by `resolveOptions` in `state.ts`, so the worker never sees an app-level value.
  */
 
 import type { FontId } from './fonts';
-import type { OptionsPayload } from './worker/protocol';
+import type { MathMode, OptionsPayload } from './worker/protocol';
 
 /**
  * `'fit'` measures the pane (§6.5), `'off'` and `'soft'` are both the library's own
@@ -27,26 +28,40 @@ export type WrapMode = 'fit' | 'off' | 'soft' | number;
 /** The column presets the primary bar offers besides *Fit* and *Off*. */
 export const WRAP_PRESETS: readonly number[] = [40, 60, 72, 80, 100, 120];
 
+/**
+ * The four answers to *how should a formula be shown?* — the library's own three
+ * (`MathMode`) plus the app's one.
+ *
+ * `'mathjax'` is to `math` what `'fit'` is to `wrap`: a value of the same control that
+ * the library has never heard of. It resolves to `mathMode: 'source'`, so the library
+ * re-emits each formula's own post-expansion LaTeX, and the app typesets those runs in
+ * the output pane from the region table the binding reports beside the text (§4.3,
+ * §6.3). The *text* is the source either way, which is why Copy and Download hand over
+ * `$…$` in this mode and the control's hint says so.
+ */
+export type MathSetting = MathMode | 'mathjax';
+
 /** Where `\today` comes from: the browser's clock, the library's `<today>`, or a literal. */
 export type TodayMode = 'browser' | 'library' | 'custom';
 
 /**
  * Everything that changes the converted text: the library options the user changed,
- * plus the two app-level settings above. Absent means "the library's default" for
+ * plus the three app-level settings above. Absent means "the library's default" for
  * every {@link OptionsPayload} key, which is what keeps a share link short and lets a
  * future change of a library default be picked up rather than frozen (§6.4).
  *
- * `wrapWidth` and `today` are deliberately **not** set here — they are computed from
- * `wrap`, `todayMode` and `todayCustom` at conversion time.
+ * `wrapWidth`, `mathMode` and `today` are deliberately **not** set here — they are
+ * computed from `wrap`, `math`, `todayMode` and `todayCustom` at conversion time.
  */
-export interface AppOptions extends Omit<OptionsPayload, 'wrapWidth' | 'today'> {
+export interface AppOptions extends Omit<OptionsPayload, 'wrapWidth' | 'mathMode' | 'today'> {
   wrap?: WrapMode;
+  math?: MathSetting;
   todayMode?: TodayMode;
   todayCustom?: string;
 }
 
 /** The keys of {@link AppOptions} that are app-level rather than library options. */
-export const APP_ONLY_KEYS = ['wrap', 'todayMode', 'todayCustom'] as const;
+export const APP_ONLY_KEYS = ['wrap', 'math', 'todayMode', 'todayCustom'] as const;
 
 /** Presentation preferences. None of these changes a single character of the output. */
 export interface UiState {

@@ -33,6 +33,11 @@ import type { OptionsPayload } from './worker/protocol';
  * Download still hand over exactly what the library produced. A browser has a clock
  * where the `no_std` library has only `<today>`. Every other key is absent, which *is*
  * the library's default.
+ *
+ * `math` is app-level too (its fourth value, `'mathjax'`, is not a library one) but it
+ * is *not* here: three of its four answers are the library's, and the one it starts on
+ * — *Fancy* — is the library's own default. So absent means the same thing for it as
+ * for any library key, and writing it down here would freeze that default.
  */
 export const DEFAULT_OPTIONS: AppOptions = { wrap: 'soft', todayMode: 'browser' };
 
@@ -149,7 +154,7 @@ const FONT_STYLE_VALUES = [
  * silently fails to survive a reload.
  */
 const OPTION_VALIDATORS: Record<keyof AppOptions, Validator> = {
-  mathMode: oneOf(['fancy', 'plain', 'source']),
+  math: oneOf(['fancy', 'plain', 'source', 'mathjax']),
   mathExpressionIn: oneOf(['parens', 'braces', 'none']),
   matrixDelimiters: oneOf(['unicode', 'ascii']),
   keepComments: bool,
@@ -169,6 +174,18 @@ const OPTION_VALIDATORS: Record<keyof AppOptions, Validator> = {
 
 const OPTION_KEYS = Object.keys(OPTION_VALIDATORS) as (keyof AppOptions)[];
 
+/**
+ * The spelling `math` had before the MathJax mode existed, read once on the way in.
+ *
+ * The *Math* control used to write the library's own key, `mathMode`, because all three
+ * of its answers were library values; `mathjax` is a fourth answer that is not, so the
+ * whole control moved up to the app level and became `math` (§5). A link somebody sent
+ * last week and a `localStorage` entry written by the previous build both still say
+ * `mathMode`, and honouring that costs one line here and nothing anywhere else —
+ * nothing writes the old key any more.
+ */
+const legacyMathMode: Validator = oneOf(['fancy', 'plain', 'source']);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -184,6 +201,10 @@ export function sanitizeOptions(raw: unknown): AppOptions {
     for (const key of OPTION_KEYS) {
       const value = OPTION_VALIDATORS[key](raw[key]);
       if (value !== undefined) out[key] = value;
+    }
+    if (out['math'] === undefined) {
+      const legacy = legacyMathMode(raw['mathMode']);
+      if (legacy !== undefined) out['math'] = legacy;
     }
   }
   return out as AppOptions;
@@ -238,7 +259,7 @@ export function sanitizeUi(raw: unknown): UiState {
 
 /**
  * Turn the app's settings into the options the worker understands — the one place
- * `wrap` and `todayMode` stop existing (§5).
+ * `wrap`, `math` and `todayMode` stop existing (§5).
  *
  * `columns` is the fit-to-pane measurement of §6.5; it is ignored unless the user is
  * actually on *Fit*. `now` is a parameter so the date is testable.
@@ -267,6 +288,16 @@ export function resolveOptions(
   // which is not something the library can be told about. `softWraps` below is where
   // that half of the setting is read back out.
 
+  // MathJax is the same shape of answer: the library is asked for `Source`, which is
+  // the formula's own LaTeX, and the typesetting happens in the pane afterwards. The
+  // binding must never be handed the word `mathjax` — it is not a `MathMode`, and the
+  // whole point of resolving here is that it cannot be. `mathJax` below reads the
+  // display half back out. An absent `math` is the library's own default, not the
+  // app's, so it is omitted rather than spelled out (§6.4).
+  const math = opts.math;
+  if (math === 'mathjax') payload['mathMode'] = 'source';
+  else if (math !== undefined) payload['mathMode'] = math;
+
   const todayMode = opts.todayMode ?? DEFAULT_OPTIONS.todayMode ?? 'browser';
   if (todayMode === 'browser') payload['today'] = formatToday(now);
   else if (todayMode === 'custom' && typeof opts.todayCustom === 'string') {
@@ -286,6 +317,17 @@ export function resolveOptions(
  */
 export function softWraps(opts: AppOptions): boolean {
   return (opts.wrap ?? DEFAULT_OPTIONS.wrap) === 'soft';
+}
+
+/**
+ * Whether the output pane should typeset the formulas the binding pointed at — the
+ * display half of `math: 'mathjax'`, and the only part of a math setting
+ * `resolveOptions` deliberately drops (§5, §6.3).
+ *
+ * Absent is the library's default, *Fancy*, which typesets nothing.
+ */
+export function mathJax(opts: AppOptions): boolean {
+  return opts.math === 'mathjax';
 }
 
 /* --------------------------------------------------------------------- the clock */

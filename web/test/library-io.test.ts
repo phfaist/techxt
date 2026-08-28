@@ -97,7 +97,7 @@ describe('a round trip', () => {
   it('brings every entry back unchanged, previews included', () => {
     const entries = [
       entry(),
-      entry({ id: 'e2', starred: true, title: 'Starred one', options: { mathMode: 'source' } }),
+      entry({ id: 'e2', starred: true, title: 'Starred one', options: { math: 'source' } }),
       entry({ id: 'e3', source: 'Grüße 𝕏 🎉\nמה קורה?', preview: 'Grüße 𝕏 🎉' }),
     ];
     const decoded = decodeLibrary(encodeLibrary(entries, META), NOW);
@@ -199,7 +199,7 @@ describe('decodeLibrary keeps what it can', () => {
       JSON.stringify({
         format: LIBRARY_FORMAT,
         v: 1,
-        items: [{ source: 'body', options: { mathMode: 'interpretive-dance', keepComments: true } }],
+        items: [{ source: 'body', options: { math: 'interpretive-dance', keepComments: true } }],
       }),
       NOW,
     );
@@ -343,7 +343,7 @@ describe('planImport: skipping what I already have', () => {
 
   it('does not match a document converted under different options', () => {
     const mine = entry({ id: 'mine', options: {} });
-    const theirs = entry({ id: 'theirs', options: { mathMode: 'source' } });
+    const theirs = entry({ id: 'theirs', options: { math: 'source' } });
     const plan = planImport([mine], [theirs], { mode: 'add', skipExisting: true });
     expect(plan.added).toBe(1);
     expect(plan.skipped).toBe(0);
