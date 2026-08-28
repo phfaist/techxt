@@ -94,9 +94,28 @@ Measured, not assumed. Re-measure rather than trust these if the pins move.
 
    | component | raw | gzipped | runtime font fetches |
    |---|---|---|---|
-   | `tex-svg.js` | 1 849 625 B | 615 224 B | none |
+   | `tex-svg.js` | 1 849 625 B | 615 224 B | ~~none~~ **wrong — see below** |
    | `tex-chtml.js` | 997 445 B | 280 899 B | some of 105 woff2 files, 1.8 MB total |
    | `tex-svg-nofont.js` | 873 900 B | 254 793 B | font package separately |
+
+   **The "none" was wrong, and it was the reason SVG was chosen over CHTML.** MathJax 4
+   splits the `mathjax-newcm` SVG font into **40 character-range modules**: the bundle
+   carries the common glyphs and the rest load on demand from `loader.paths.fonts`,
+   which defaults to jsdelivr. `\mathbb{R}` pulls `double-struck` and `\mathcal{H}`
+   pulls `calligraphic`, both of which the app's own examples reach — so this is the
+   ordinary case, not a corner. Implementing item 2 therefore meant serving all 40
+   ranges from our own origin: **9 968 318 B in `dist/`**, of which the seven
+   mathematical alphabets are 331 112 B and the rest are the scripts `\text{…}` needs.
+   On the wire a reader fetches only the ranges their document reaches — 81 703 B for
+   all six shipped examples together.
+
+   So the standing comparison is **SVG at 616 KB gzipped of JS plus ~10 MB of
+   on-demand ranges on disk**, against **CHTML at 281 KB gzipped plus 1.8 MB of woff2**.
+   CHTML is now smaller on both axes, and the "one self-contained file" argument that
+   decided this no longer exists. It was not revisited during item 2 because the work
+   was already done and green, and because `src/mathjax.ts`'s four-function API is
+   output-agnostic — switching is contained to that file and `vite.config.ts`, and
+   nothing that consumes it would change. **Item 6 should weigh it with real numbers.**
 
    For comparison the wasm module today is 1 199 689 B raw / 421 748 B gzipped as
    built on the 2026-08-28 container, and `web/PLAN.md` §14 records 1 120 513 B /
@@ -931,6 +950,12 @@ with room left over. The gzip figure matches §4.7's earlier 344 828 B closely e
 trust. **The speed half is what is still missing, and it is the whole reason the last
 budget raise was recorded as a deferral rather than a decision.**
 
+- [ ] **Re-weigh SVG against CHTML for MathJax**, on the corrected numbers in
+      verified fact 4 above. The choice was made on a premise that turned out to be
+      false (that SVG fetches no fonts at runtime), and on the true numbers CHTML is
+      smaller both in JS and on disk. `src/mathjax.ts`'s API is output-agnostic, so a
+      switch touches that file and `vite.config.ts` and nothing else. Measure what a
+      reader actually fetches under each, not just what sits in `dist/`, and decide.
 - [ ] Re-measure both builds, since by then the module carries L1 and L2.
 - [ ] Measure conversion time **in a real browser**, before and after, on the §14
       documents. This is the measurement §14's profile table has wanted since W1. If
