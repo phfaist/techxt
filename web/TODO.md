@@ -1251,6 +1251,45 @@ and the release checklist's item 5 can say so with a number.
 
 # 8. The library, after using it: sealing an entry, and reading one
 
+> **Done** — 2026-08-28. Sealing is one primitive in `src/library.ts`
+> (`seal`, and `noteEdit` for the per-event rule and the lazy unseal); `src/main.ts`
+> puts the three verbs over it, `src/ui/panes.ts` grows **New** beside `Load ▾`, a
+> plain **Save** and an icon-only **★** in the output header, and the entry chip that
+> names what is being written to; `src/ui/library-pane.ts` reads an entry, source and
+> rendered preview each in its own scrolling region. `web/PLAN.md` §6.10 and §13 say
+> so. 24 vitest cases were added over the fork rule, the sealing state machine and the
+> merge-back, and one was rewritten where ★ changed meaning — 270 in all.
+>
+> **Six things this item did not say, and now does:**
+>
+> 1. **The output header's order is the table's**, not the prose's: Copy, Download,
+>    **Save**, **★**. The paragraph above says "nothing that already shipped moves",
+>    and Save did move — one place right, from before Copy to after Download — because
+>    the table is the more specific instruction and ★ has to sit next to the button it
+>    is the sealed-and-starred version of.
+> 2. **The 30 % rule has an absolute floor**, `FORK_MIN_REMOVED = 24` characters.
+>    Without it a two-character buffer forks on a backspace, which is a new entry per
+>    keystroke and a toast with it. Any real document loses hundreds of characters to a
+>    select-all, so the floor never decides a case the ratio was right about.
+> 3. **A seal has to survive a reload**, which this item does not mention and which
+>    would otherwise have re-broken item 3's "one entry per reload, not two": a sealed
+>    session writes no id to `localStorage`, so on load a document that is in the log
+>    *verbatim* is adopted **sealed** rather than logged again. Storing a seal flag
+>    would have meant editing `src/state.ts`, which this item did not own.
+> 4. **The seal ends at the input event, not at the conversion.** Both the fork and the
+>    unseal are facts about an *edit*, and a document that fails to convert is being
+>    replaced just as surely as one that does — so `noteEdit(before, after)` is called
+>    from the pane's `onInput`, and `record` keeps only the guard that a conversion of
+>    the *same* text writes nothing at all.
+> 5. **Save dims itself once the entry is sealed**, rather than answering a second
+>    click with nothing visible. It is the sealed state's second home on screen, beside
+>    the chip's ✓.
+> 6. **The chip costs the source pane's header its slack**, so `.pane-tools` there is
+>    pinned against shrinking and the chip truncates instead — otherwise the buttons
+>    wrapped onto a second row on a phone. The output header now carries five controls
+>    and fits one row at 390 px; at 320 px it wraps, which is the safety valve it always
+>    had.
+
 Feedback from the owner running the branch. Two problems, both about the library
 being *silent*: the current entry is overwritten without the user seeing it happen,
 and an entry cannot be read once it is saved.
@@ -1287,10 +1326,10 @@ Star on an already-sealed entry just toggles the flag — no second seal.
 
 ## Five things to get right
 
-- [ ] **Save must not create a phantom empty entry.** Seal the current entry, then
+- [x] **Save must not create a phantom empty entry.** Seal the current entry, then
       create the next one **lazily, on the first edit** — never eagerly. Otherwise
       pressing Save and walking away leaves an empty entry in the log.
-- [ ] **The per-event fork rule, as the safety net underneath.** While a draft is
+- [x] **The per-event fork rule, as the safety net underneath.** While a draft is
       unsealed, **a single input event that removes more than ~30 % of the document
       starts a new entry.** Measure the change *in that one event*, never cumulatively
       against the stored source: ordinary typing changes one character and can never
@@ -1301,25 +1340,48 @@ Star on an already-sealed entry just toggles the flag — no second seal.
       **Bias toward forking.** A wrong fork costs one extra entry in a log that is
       filterable and only ever pruned deliberately; a wrong non-fork loses work. That
       asymmetry is the whole argument for a low threshold and against cleverness.
-- [ ] **Make the current entry visible.** The real complaint is silence, and no
+- [x] **Make the current entry visible.** The real complaint is silence, and no
       heuristic fixes that. Show which entry is being written to, and say so when one
       is sealed or forked — a toast on an automatic fork, with an undo that merges the
       new draft back into the previous entry. Then a wrong guess costs a click instead
       of the user's work, and the behaviour is legible whether or not it guessed right.
-- [ ] **New needs an Undo**, in the toast, restoring the document and unsealing. The
+- [x] **New needs an Undo**, in the toast, restoring the document and unsealing. The
       app's existing single-level-undo idiom — Load ▾ already does exactly this.
-- [ ] **"Save" is now slightly a lie**, since everything is already saved
+- [x] **"Save" is now slightly a lie**, since everything is already saved
       continuously and the button really means *stop changing this one*. Carry the
       truth in the tooltip: "Keep this version — further edits start a new entry."
 
 ## Reading an entry
 
-- [ ] **The detail pane shows the entry's full source, in its own scrolling region.**
+- [x] **The detail pane shows the entry's full source, in its own scrolling region.**
       Nothing new to store: an entry already keeps the whole `source`. The small
       stored `preview` is the *rendered* output and stays what it is — a card
       preview, not the document.
-- [ ] Keep the source and the rendered preview both reachable in the detail view, per
+- [x] Keep the source and the rendered preview both reachable in the detail view, per
       item 3's split; on a phone the list → detail shape already there still applies.
+
+## Left open
+
+- [ ] **Opening a sealed entry from the pane comes back *unsealed*.** Sealing is a
+      fact about the editing session and is not stored on the entry, so a version the
+      user kept a week ago starts absorbing edits again the moment it is opened — item
+      3's rule for Open, unchanged. It may well be the wrong one now that Save exists:
+      the argument for making it come back sealed is that "keep this version" ought to
+      outlive the session, and the argument against is a `sealed` field in the entry,
+      in the export format, and in every import that has to sanitise it. Left as a
+      question rather than a silent decision.
+
+*Observed*, in Chromium on 2026-08-28: typing a document and then pasting a different
+one over it with everything selected leaves **both** in the library, with a toast that
+names the one that was kept and an Undo that folds the draft back into it; Save seals,
+says so, and adds nothing to the log however long the app is then left alone, while the
+next keystroke starts a new entry; ★ seals and stars, and a second ★ only removes the
+star; New clears the input with an Undo that brings back the document *and* the entry
+it was being written to; the chip reads ● *title* while writing, ✓ *title* once sealed,
+and opens that entry in the library when clicked; a reload of a kept document finds one
+entry rather than two and comes back sealed; the detail scrolls the whole source in its
+own region at 390 px with the actions still at the top; and a profile with `indexedDB`
+throwing converts normally with Save, ★ and the chip hidden and the pane honest.
 
 ---
 

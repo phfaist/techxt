@@ -193,12 +193,42 @@ export function initPanes(init: PanesInit): Panes {
   const menuWrap = el('div', 'menu');
   menuWrap.append(loadButton, menu);
 
+  /**
+   * **New** (§6.10): seal the entry the document is being logged into and clear the
+   * input. It sits beside `Load ▾` because that is the moment it is reached for — the
+   * user is about to type something new and is looking at the source pane — not
+   * because of what it acts on.
+   */
+  const newButton = el('button', 'btn btn-labelled');
+  newButton.type = 'button';
+  newButton.append(label('New'));
+  newButton.title = 'Keep this document as it is and start an empty one';
+  newButton.addEventListener('click', () => init.onNew());
+
+  /**
+   * Which library entry the keystrokes are going into, in the header where they are
+   * going in (§6.10).
+   *
+   * The complaint item 8 answers is that the app was silent about this, so the chip is
+   * a button rather than a label: it opens the library at that entry, which makes the
+   * current entry not only visible but reachable. It is hidden where there is no
+   * library at all.
+   */
+  const entryChip = el('button', 'btn pane-entry');
+  entryChip.type = 'button';
+  entryChip.hidden = true;
+  const entryGlyph = el('span', 'pane-entry-glyph', '●');
+  entryGlyph.setAttribute('aria-hidden', 'true');
+  const entryLabel = el('span', 'pane-entry-label');
+  entryChip.append(entryGlyph, entryLabel);
+  entryChip.addEventListener('click', () => init.onShowEntry());
+
   const inFocus = focusButton('input');
   const inTools = el('div', 'pane-tools');
-  inTools.append(menuWrap, inFocus);
+  inTools.append(newButton, menuWrap, inFocus);
 
   const inHead = el('header', 'pane-head');
-  inHead.append(inTitle, inTools);
+  inHead.append(inTitle, entryChip, inTools);
 
   const inputLabel = el('label', 'sr-only', 'LaTeX source');
   inputLabel.htmlFor = 'techxt-input';
@@ -287,26 +317,6 @@ export function initPanes(init: PanesInit): Panes {
   copyButton.title = 'Copy the converted text';
   copyButton.addEventListener('click', () => init.onCopy());
 
-  /**
-   * ⭐ Save (§6.10): the log is automatic, so this button does not save — it stars,
-   * marking the entry worth keeping. It is hidden where there is no library to star
-   * into, which `setStarred(null)` is for.
-   *
-   * It carries a mark of its own, so it follows Download's rule below 620 px and
-   * keeps its word only as accessible text — four labelled buttons and a title do not
-   * fit a phone's pane header (§6.6).
-   */
-  const starButton = el('button', 'btn pane-star');
-  starButton.type = 'button';
-  starButton.hidden = true;
-  starButton.setAttribute('aria-pressed', 'false');
-  const starGlyph = el('span', 'pane-star-glyph', '☆');
-  starGlyph.setAttribute('aria-hidden', 'true');
-  const starLabel = label('Save');
-  starButton.append(starGlyph, starLabel);
-  starButton.title = 'Keep this document in your library';
-  starButton.addEventListener('click', () => init.onStar());
-
   const downloadButton = el('button', 'btn');
   downloadButton.type = 'button';
   downloadButton.append(
@@ -319,9 +329,42 @@ export function initPanes(init: PanesInit): Panes {
   downloadButton.title = 'Save the converted text as a file';
   downloadButton.addEventListener('click', () => init.onDownload());
 
+  /**
+   * **Save** (§6.10). Everything is already saved — the log is automatic — so what
+   * this really does is stop *this* version being edited: it seals the entry and the
+   * next edit starts a new one. The tooltip carries that truth, because the word on
+   * the button cannot.
+   *
+   * It is here rather than beside New because of the moment it is reached for: the
+   * user is happy with a result and is looking at the output.
+   */
+  const saveButton = el('button', 'btn btn-labelled');
+  saveButton.type = 'button';
+  saveButton.hidden = true;
+  saveButton.append(label('Save'));
+  saveButton.title = 'Keep this version — further edits start a new entry';
+  saveButton.addEventListener('click', () => init.onSave());
+
+  /**
+   * **★**: seal the entry *and* star it, so it can be filtered to and is never
+   * removed by anything automatic (§6.10).
+   *
+   * Icon-only, and deliberately: this header already carries four controls plus the ⇅
+   * Focus button on a phone, and a fifth word would not fit. The glyph is the whole
+   * control, so its name lives in `aria-label` and its meaning in the tooltip.
+   */
+  const starButton = el('button', 'btn pane-star');
+  starButton.type = 'button';
+  starButton.hidden = true;
+  starButton.setAttribute('aria-pressed', 'false');
+  const starGlyph = el('span', 'pane-star-glyph', '☆');
+  starGlyph.setAttribute('aria-hidden', 'true');
+  starButton.append(starGlyph);
+  starButton.addEventListener('click', () => init.onStar());
+
   const outFocus = focusButton('output');
   const outTools = el('div', 'pane-tools');
-  outTools.append(starButton, copyButton, downloadButton, outFocus);
+  outTools.append(copyButton, downloadButton, saveButton, starButton, outFocus);
 
   const outHead = el('header', 'pane-head');
   outHead.append(outTitle, fontNote, staleNote, outTools);
@@ -1350,18 +1393,37 @@ export function initPanes(init: PanesInit): Panes {
       fontNote.hidden = !loading;
     },
 
-    setStarred(starred: boolean | null) {
-      // `null` is a browser with nowhere to keep a library: a button that cannot do
-      // anything is worse than no button (§6.10).
-      starButton.hidden = starred === null;
-      const on = starred === true;
-      starGlyph.textContent = on ? '★' : '☆';
-      starLabel.textContent = on ? 'Saved' : 'Save';
-      starButton.classList.toggle('is-starred', on);
-      starButton.setAttribute('aria-pressed', String(on));
-      starButton.title = on
-        ? 'This document is starred in your library'
-        : 'Keep this document in your library';
+    setEntryState(state) {
+      // `null` is a browser with nowhere to keep a library: a control that cannot do
+      // anything is worse than no control (§6.10).
+      saveButton.hidden = state === null;
+      starButton.hidden = state === null;
+      entryChip.hidden = state === null;
+      if (!state) return;
+
+      entryLabel.textContent = state.label;
+      entryChip.title = state.hint;
+      entryChip.setAttribute('aria-label', state.hint);
+      entryChip.dataset.state = state.id === null ? 'new' : state.sealed ? 'sealed' : 'open';
+      // ● while the entry is taking the edits, ✓ once it has been sealed and is being
+      // kept as it is — the two states the header exists to tell apart.
+      entryGlyph.textContent = state.id === null ? '+' : state.sealed ? '✓' : '●';
+      // Nothing to show yet, and nothing to open: an empty document has no entry.
+      entryChip.disabled = state.id === null;
+
+      starGlyph.textContent = state.starred ? '★' : '☆';
+      starButton.classList.toggle('is-starred', state.starred);
+      starButton.setAttribute('aria-pressed', String(state.starred));
+      starButton.setAttribute('aria-label', state.starred ? 'Starred' : 'Star this version');
+      starButton.title = state.starred
+        ? 'Starred — remove the star'
+        : 'Keep this version and star it — starred entries are never removed automatically';
+      // Sealed already: Save has nothing left to do to this one, and saying so is
+      // better than a button that answers a click with nothing visible.
+      saveButton.disabled = state.sealed;
+      saveButton.title = state.sealed
+        ? 'This version is kept — further edits start a new entry'
+        : 'Keep this version — further edits start a new entry';
     },
 
     setStale(stale: boolean) {

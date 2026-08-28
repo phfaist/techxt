@@ -10,6 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  FORK_MIN_REMOVED,
   IDLE_GAP_MS,
   MAX_ENTRY_SOURCE,
   PREVIEW_MAX_CHARS,
@@ -18,7 +19,9 @@ import {
   byRecency,
   createLibrary,
   describeOptions,
+  describeSession,
   entryTitle,
+  forksEntry,
   estimateBytes,
   filterEntries,
   fingerprint,
@@ -28,6 +31,7 @@ import {
   prunableEntries,
   quotaPressure,
   readEntry,
+  removedByEdit,
   sameContent,
   statsOf,
   titleIsAutomatic,
@@ -501,9 +505,305 @@ describe('the current entry', () => {
   });
 });
 
+/* ------------------------------------------------------- the per-event fork rule */
+
+describe('removedByEdit', () => {
+  it('is zero for an insertion, wherever it lands', () => {
+    expect(removedByEdit('hello world', 'hello world')).toBe(0);
+    expect(removedByEdit('hello world', 'hello world, and more')).toBe(0);
+    expect(removedByEdit('hello world', 'well, hello world')).toBe(0);
+    expect(removedByEdit('hello world', 'hello brave world')).toBe(0);
+  });
+
+  it('counts what one edit took out, not what the two texts differ by', () => {
+    expect(removedByEdit('abcdef', 'abdef')).toBe(1);
+    expect(removedByEdit('abcdef', '')).toBe(6);
+    // Select all, then type one character over it.
+    expect(removedByEdit('a long document indeed', 'x')).toBe(22);
+  });
+});
+
+describe('forksEntry', () => {
+  const document = '\\section{Notes}\n'.repeat(40);
+
+  it('never trips on ordinary typing', () => {
+    expect(forksEntry(document, `${document}x`)).toBe(false);
+    expect(forksEntry(document, document.slice(0, -1))).toBe(false);
+    // A paragraph deleted from a long document is still that document.
+    expect(forksEntry(document, document.slice(0, document.length - 40))).toBe(false);
+  });
+
+  it('never trips on appending or pasting at the end', () => {
+    expect(forksEntry(document, document + document)).toBe(false);
+  });
+
+  it('trips on select-all-and-paste and on select-all-and-delete', () => {
+    expect(forksEntry(document, 'a completely different document, pasted over it')).toBe(true);
+    expect(forksEntry(document, '')).toBe(true);
+  });
+
+  it('does not fork a buffer too small to be worth an entry', () => {
+    const scratch = 'x'.repeat(FORK_MIN_REMOVED - 1);
+    expect(forksEntry(scratch, '')).toBe(false);
+    expect(forksEntry('ab', 'a')).toBe(false);
+  });
+
+  it('measures the event, not the distance from where the document started', () => {
+    // A session that rewrites a section at a time crosses any cumulative threshold
+    // while genuinely being one document; each of these events is small.
+    let text = document;
+    for (let round = 0; round < 20; round += 1) {
+      const next = text.replace('\\section{Notes}', '\\section{Rewritten}');
+      expect(forksEntry(text, next)).toBe(false);
+      text = next;
+    }
+    expect(text).not.toBe(document);
+  });
+});
+
+/* ------------------------------------------------------------ sealing an entry */
+
+describe('sealing', () => {
+  it('stops the entry absorbing edits, and the next edit starts a new one', async () => {
+    const log = library();
+    log.record('the first document', {}, '');
+    clock.advance(2000);
+    await log.flush();
+
+    const kept = await log.seal('the first document', {}, '');
+    expect(kept?.source).toBe('the first document');
+    expect(log.session).toEqual({ entryId: kept?.id, sealed: true });
+
+    stamp = 20_000;
+    log.noteEdit('the first document', 'a second document');
+    log.record('a second document', {}, '');
+    clock.advance(2000);
+    await log.flush();
+
+    const entries = await log.list();
+    expect(entries.map((item) => item.source)).toEqual(['a second document', 'the first document']);
+  });
+
+  it('creates no entry for what comes next until something is typed', async () => {
+    const log = library();
+    log.record('a document', {}, '');
+    clock.advance(2000);
+    await log.flush();
+
+    await log.seal('a document', {}, '');
+    // Pressing Save and walking away: conversions keep arriving — an option changed,
+    // the pane was re-measured — and none of them may leave an empty entry behind.
+    log.record('a document', {}, '');
+    log.record('a document', { math: 'source' }, '');
+    clock.advance(5000);
+    await log.flush();
+
+    const entries = await log.list();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.source).toBe('a document');
+  });
+
+  it('writes what is on screen before it seals, not what the last conversion caught', async () => {
+    const log = library();
+    log.record('half a document', {}, '');
+    clock.advance(2000);
+    await log.flush();
+
+    // Typed on, and Save pressed before the debounce was up.
+    const kept = await log.seal('half a document, finished', {}, '');
+    expect(kept?.source).toBe('half a document, finished');
+    expect(await log.list()).toHaveLength(1);
+  });
+
+  it('seals a document that has not been logged yet, so the button always shows', async () => {
+    const log = library();
+    const kept = await log.seal('\\section{Never converted twice}', {}, '');
+    expect(kept).not.toBeNull();
+    expect((await log.list())[0]?.source).toBe('\\section{Never converted twice}');
+    expect(log.session.sealed).toBe(true);
+  });
+
+  it('is a no-op on an entry that is already sealed', async () => {
+    const log = library();
+    log.record('a document', {}, '');
+    clock.advance(2000);
+    await log.flush();
+    const first = await log.seal('a document', {}, '');
+    const again = await log.seal('a document', {}, '');
+    expect(again?.id).toBe(first?.id);
+    expect(await log.list()).toHaveLength(1);
+  });
+
+  it('says where the document stands, every time it moves', async () => {
+    const onSession = vi.fn();
+    const log = library({ onSession });
+    log.record('a document', {}, '');
+    clock.advance(2000);
+    await log.flush();
+    expect(onSession).toHaveBeenLastCalledWith({ entryId: 'id1', sealed: false });
+
+    await log.seal('a document', {}, '');
+    expect(onSession).toHaveBeenLastCalledWith({ entryId: 'id1', sealed: true });
+
+    log.noteEdit('a document', 'a different one');
+    expect(onSession).toHaveBeenLastCalledWith({ entryId: null, sealed: false });
+  });
+
+  it('keeps the seal when an edit is undone back to the text that was kept', async () => {
+    const log = library();
+    log.record('kept', {}, '');
+    clock.advance(2000);
+    await log.flush();
+    await log.seal('kept', {}, '');
+
+    expect(log.noteEdit('kept', 'kept?')).toEqual({ kind: 'unsealed', from: 'id1' });
+    expect(log.noteEdit('kept?', 'kept')).toEqual({ kind: 'none' });
+  });
+
+  it('leaves the sealed entry alone even when a conversion arrives for it', async () => {
+    const log = library();
+    log.record('kept', {}, '');
+    clock.advance(2000);
+    await log.flush();
+    await log.seal('kept', {}, '');
+    log.record('kept', {}, 'a newer rendering');
+    clock.advance(2000);
+    await log.flush();
+    expect((await log.list())[0]?.preview).toBe('');
+  });
+
+  it('comes back to a sealed entry after a reload without logging a second copy', async () => {
+    const log = library();
+    log.record('a kept document', {}, '');
+    clock.advance(2000);
+    await log.flush();
+    const kept = (await log.list())[0]!;
+
+    // What `main.ts` does when the page comes back holding a document that is already
+    // in the log verbatim: continue it, sealed, rather than copy it.
+    let made = 0;
+    const next = library({ newId: () => `later${(made += 1)}` });
+    next.adoptSealed(kept);
+    next.record('a kept document', {}, '');
+    clock.advance(2000);
+    await next.flush();
+    expect(await next.list()).toHaveLength(1);
+
+    next.noteEdit('a kept document', 'a kept document, edited');
+    next.record('a kept document, edited', {}, '');
+    clock.advance(2000);
+    await next.flush();
+    const entries = await next.list();
+    expect(entries).toHaveLength(2);
+    expect(entries.find((item) => item.id === kept.id)?.source).toBe('a kept document');
+  });
+});
+
+/* --------------------------------------------------------- the automatic fork */
+
+describe('the automatic fork', () => {
+  const first = '\\section{The first document}\nwith a body of its own.\n';
+  const second = '\\section{Something else entirely}\npasted over the top.\n';
+
+  it('keeps the document that was pasted over — the whole point of item 8', async () => {
+    const log = library();
+    log.record(first, {}, '');
+    clock.advance(2000);
+    await log.flush();
+
+    expect(log.noteEdit(first, second)).toEqual({ kind: 'forked', from: 'id1' });
+    stamp = 20_000;
+    log.record(second, {}, '');
+    clock.advance(2000);
+    await log.flush();
+
+    const entries = await log.list();
+    expect(entries.map((item) => item.source)).toEqual([second, first]);
+  });
+
+  it('files the keystrokes that were still pending in the document they belong to', async () => {
+    const log = library();
+    log.record(first, {}, '');
+    clock.advance(2000);
+    await log.flush();
+    // Typed on, and then pasted over before the two seconds were up.
+    log.record(`${first}one more line\n`, {}, '');
+    log.noteEdit(`${first}one more line\n`, second);
+    log.record(second, {}, '');
+    clock.advance(2000);
+    await log.flush();
+
+    const entries = await log.list();
+    expect(entries).toHaveLength(2);
+    expect(entries.find((item) => item.id === 'id1')?.source).toBe(`${first}one more line\n`);
+  });
+
+  it('does nothing at all when there is no entry to fork away from', () => {
+    const log = library();
+    expect(log.noteEdit(first, second)).toEqual({ kind: 'none' });
+  });
+
+  it('merges back into the previous entry when the fork was wrong', async () => {
+    const log = library();
+    log.record(first, {}, '');
+    clock.advance(2000);
+    await log.flush();
+
+    log.noteEdit(first, second);
+    log.record(second, {}, '');
+    clock.advance(2000);
+    await log.flush();
+    expect(await log.list()).toHaveLength(2);
+
+    expect(await log.mergeBack('id1')).toBe(true);
+    const entries = await log.list();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.id).toBe('id1');
+    expect(entries[0]?.source).toBe(second);
+    expect(log.session).toEqual({ entryId: 'id1', sealed: false });
+  });
+
+  it('merges back before the new draft has been written at all', async () => {
+    const log = library();
+    log.record(first, {}, '');
+    clock.advance(2000);
+    await log.flush();
+
+    log.noteEdit(first, second);
+    log.record(second, {}, '');
+    // The undo comes before the debounce is up: nothing new exists to remove.
+    expect(await log.mergeBack('id1')).toBe(true);
+    clock.advance(2000);
+    await log.flush();
+
+    const entries = await log.list();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.source).toBe(second);
+  });
+
+  it('will not remove a starred entry to merge, whatever else it does', async () => {
+    const log = library();
+    log.record(first, {}, '');
+    clock.advance(2000);
+    await log.flush();
+
+    log.noteEdit(first, second);
+    log.record(second, {}, '');
+    clock.advance(2000);
+    await log.flush();
+    const forked = (await log.list()).find((item) => item.source === second)!;
+    await log.star(forked.id, true);
+
+    await log.mergeBack('id1');
+    const entries = await log.list();
+    expect(entries).toHaveLength(2);
+    expect(entries.find((item) => item.id === forked.id)?.starred).toBe(true);
+  });
+});
+
 /* ------------------------------------------------------------ the star button */
 
-describe('⭐ Save', () => {
+describe('★', () => {
   it('creates the entry if there is not one yet, so pressing it always shows', async () => {
     const log = library();
     const result = await log.starCurrent('\\section{Unlogged}', {}, 'Unlogged');
@@ -513,24 +813,49 @@ describe('⭐ Save', () => {
     expect(entries[0]?.starred).toBe(true);
   });
 
-  it('is the same button both ways', async () => {
+  it('is the same button both ways, and seals only once', async () => {
     const log = library();
     await log.starCurrent('body', {}, '');
+    expect(log.session.sealed).toBe(true);
     const off = await log.starCurrent('body', {}, '');
     expect(off?.starred).toBe(false);
-    expect((await log.list())[0]?.starred).toBe(false);
+    const entries = await log.list();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.starred).toBe(false);
   });
 
-  it('leaves the star alone when the document keeps changing', async () => {
+  it('keeps the version it starred: what comes after is a new entry', async () => {
     const log = library();
     await log.starCurrent('body', {}, '');
+    log.noteEdit('body', 'body, edited');
     log.record('body, edited', {}, '');
     clock.advance(2000);
     await log.flush();
+
     const entries = await log.list();
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.starred).toBe(true);
-    expect(entries[0]?.source).toBe('body, edited');
+    expect(entries).toHaveLength(2);
+    expect(entries.find((item) => item.starred)?.source).toBe('body');
+    expect(entries.find((item) => !item.starred)?.source).toBe('body, edited');
+  });
+});
+
+/* ------------------------------------------------------ the header's own words */
+
+describe('describeSession', () => {
+  it('names the entry being written to, and says what that means', () => {
+    const open = describeSession({ entryId: 'e1', sealed: false }, 'Lecture notes');
+    expect(open.label).toBe('Lecture notes');
+    expect(open.hint).toContain('updates it');
+
+    const sealed = describeSession({ entryId: 'e1', sealed: true }, 'Lecture notes');
+    expect(sealed.label).toBe('Lecture notes');
+    expect(sealed.hint).toContain('starts a new entry');
+  });
+
+  it('says so when there is no entry yet', () => {
+    expect(describeSession({ entryId: null, sealed: false }, null).label).toBe('New entry');
+    // An entry whose title has not been read back yet is not a wrong name.
+    expect(describeSession({ entryId: 'e1', sealed: false }, null).label).toBe('New entry');
   });
 });
 
