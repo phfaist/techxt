@@ -13,7 +13,7 @@ answered; the root [`PLAN.md`](../PLAN.md) is normative for the library.
 
 ```
 web/
-  index.html      the shell: header, the mount points, and the two sheets' prose
+  index.html      the shell: header, the mount points, and the sheets' prose
   src/            the app (TypeScript, no framework)
   crate/          the wasm binding — a standalone cargo package, not a rust/ member
   fonts/          six unsubsetted woff2 faces and their licences, committed

@@ -2,8 +2,8 @@
  * techxt web — one stylesheet (web/PLAN.md §6.1, §6.9, §8.2, §8.3).
  *
  * Order: the six @font-face declarations, the design tokens (light, then the dark
- * overrides), the base, then one section per UI module, then the two prose sheets,
- * then the responsive and motion rules.
+ * overrides), the base, then one section per UI module, then the sheets — the two
+ * prose ones and the library — then the responsive and motion rules.
  *
  * Three conventions worth knowing before editing:
  *
@@ -1501,7 +1501,8 @@ select.control {
 /* ------------------------------------------------------- the sheets (§6.8) */
 
 /*
- * About and Install are `<dialog showModal()>`s over the tool, not a page under it.
+ * About, Install and the library are `<dialog showModal()>`s over the tool, rather
+ * than a page under it.
  * `display` may only be set on the open state: an author rule beats the UA's
  * `dialog:not([open]) { display: none }` whatever its specificity, and a closed
  * dialog told to be a grid is a closed dialog you can see.
@@ -1753,6 +1754,409 @@ select.control {
   font-size: 0.88rem;
 }
 
+/* -------------------------------------------------------- the library (§6.10) */
+
+/*
+ * The library sheet is the one whose body does not scroll as prose: the list scrolls
+ * on one side and the detail on the other, so the sheet is a grid with its own
+ * overflow held at `hidden` and two scroll containers inside it.
+ */
+.sheet-library {
+  width: min(74rem, 100% - 2rem);
+  height: min(86dvh, 52rem);
+}
+
+.sheet-library > .sheet-body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.9rem;
+  overflow: hidden;
+  padding-bottom: 1.1rem;
+}
+
+.library {
+  display: contents;
+}
+
+/* --- the header: where the user stands, and what can be done to all of it */
+
+.library-head {
+  display: grid;
+  grid-template-areas:
+    "stats actions"
+    "notice notice"
+    "filters filters";
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem 1rem;
+}
+
+.library-stats {
+  grid-area: stats;
+  margin: 0 !important;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The one line the app ever says about storage unprompted (§6.10): near the quota, or
+ * a session that will not keep anything. It is a note on a quieter background, not a
+ * modal and not a colour-only signal — the words carry it.
+ */
+.library-notice {
+  grid-area: notice;
+  margin: 0 !important;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--r-sm);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  background: var(--bg-inset);
+  color: var(--fg-muted) !important;
+}
+
+.library-notice[data-tone="warn"] {
+  background: var(--sev-warn-bg);
+  color: var(--sev-warn) !important;
+}
+
+.library-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.library-clear {
+  color: var(--fg-faint);
+}
+
+.library-filters {
+  grid-area: filters;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.library-search {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.library-filter-group {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.15rem;
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+}
+
+.library-filter.is-on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* --- the two columns */
+
+.library-body {
+  display: grid;
+  grid-template-columns: minmax(15rem, 22rem) minmax(0, 1fr);
+  gap: 1rem;
+  min-height: 0;
+}
+
+.library-pane {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.library-pane-detail {
+  padding: 0.2rem 0.2rem 0.2rem 1.1rem;
+}
+
+.library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.library-empty {
+  margin: 1.2rem 0 !important;
+  font-size: 0.88rem;
+  color: var(--fg-faint) !important;
+}
+
+/* --- one entry, as a card */
+
+.library-card-button {
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 130ms ease;
+}
+
+.library-card-button:hover {
+  background: var(--hover);
+}
+
+.library-card.is-selected .library-card-button {
+  background: var(--accent-soft);
+}
+
+.library-card-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.library-card-star {
+  color: var(--accent);
+  font-size: 0.8rem;
+}
+
+.library-card-title {
+  font-size: 0.9rem;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-card-meta {
+  font-size: 0.76rem;
+  color: var(--fg-faint);
+}
+
+.library-card-preview {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- the detail */
+
+.library-detail-title {
+  margin: 0 0 0.35rem !important;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.library-rename {
+  width: min(100%, 28rem);
+  margin-bottom: 0.35rem;
+}
+
+.library-detail-dates,
+.library-detail-options {
+  margin: 0 0 0.25rem !important;
+  font-size: 0.82rem;
+  color: var(--fg-faint) !important;
+}
+
+/*
+ * The stored preview, in the pane's own face. It is a few lines of an old rendering
+ * and may be out of date, which is why it is never the thing the user acts on: Open
+ * re-converts from the source.
+ */
+.library-preview {
+  margin: 0.7rem 0 1rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+  font-family: var(--pane-font, var(--mono));
+  font-size: 0.84rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.library-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.library-delete {
+  margin-left: auto;
+  color: var(--sev-error);
+}
+
+.library-delete:hover {
+  background: var(--sev-error-bg);
+  color: var(--sev-error);
+}
+
+/* The back control belongs to the phone layout; a wide screen shows both columns. */
+.library-back {
+  display: none;
+  margin-bottom: 0.4rem;
+}
+
+/* --- the button in the primary bar, and its one-time pulse */
+
+.library-button .glyph {
+  color: var(--fg-faint);
+}
+
+/*
+ * The library only helps if people know it is there, so the button says so for the
+ * first three sessions and then never again (§6.10). It is a slow tint, not a bounce:
+ * the app is a reading tool, and it stops for good the moment the pane is opened.
+ */
+.library-button.is-new {
+  animation: library-pulse 2.6s ease-in-out 3;
+}
+
+@keyframes library-pulse {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: var(--accent-soft);
+  }
+}
+
+/* --- ⭐ Save, in the output pane */
+
+.pane-star.is-starred {
+  color: var(--accent);
+}
+
+.pane-star-glyph {
+  font-size: 0.95em;
+  line-height: 1;
+}
+
+/* ------------------------------------------- the library's question dialogs */
+
+/*
+ * Import, Clear and the full-disk proposal. They are `<dialog>`s over the library
+ * sheet — the top layer stacks, so the list the question is about stays where it is —
+ * and they are narrow, because each one asks exactly one thing.
+ */
+.sheet-ask {
+  width: min(38rem, 100% - 2rem);
+}
+
+.ask-body {
+  padding-bottom: 1.4rem;
+}
+
+.ask-lede {
+  color: var(--fg) !important;
+}
+
+.ask-note {
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--fg-faint) !important;
+}
+
+.ask-warn {
+  color: var(--sev-warn) !important;
+}
+
+.ask-choices {
+  display: grid;
+  gap: 0.2rem;
+  margin: 1rem 0;
+}
+
+.ask-radio,
+.ask-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  cursor: pointer;
+}
+
+/* The same tint the option checkboxes wear, rather than the browser's blue. */
+.ask-radio input,
+.ask-check input {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.ask-radio + .ask-note,
+.ask-check + .ask-note {
+  margin: 0 0 0.7rem 1.6rem !important;
+}
+
+.ask-check.is-disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ask-typed {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1.1rem;
+}
+
+.ask-typed-label {
+  font-size: 0.84rem;
+  color: var(--fg-muted);
+}
+
+.ask-typed .control {
+  width: min(100%, 16rem);
+}
+
+.ask-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.2rem;
+}
+
+/* Cancel and the destructive answer sit to the right; Export leads. */
+.ask-escape + .btn {
+  margin-left: auto;
+}
+
+/*
+ * The one button in the app that destroys something. It is not red until the pointer
+ * is on it: a dialog full of alarm is a dialog people click through.
+ */
+.btn-danger {
+  color: var(--sev-error);
+}
+
+.btn-danger:hover {
+  background: var(--sev-error-bg);
+  color: var(--sev-error);
+}
+
+.btn-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* ------------------------------------------------------------- responsive */
 
 @media (max-width: 560px) {
@@ -1763,6 +2167,41 @@ select.control {
   /* The range still moves the size; the readout is what the row cannot afford. */
   .size-out {
     display: none;
+  }
+}
+
+/*
+ * The library on one column (§6.10): the list, and a tap pushes to the entry's detail
+ * with a back control. Same data, same markup — `data-view` on the root is the whole
+ * mechanism, so nothing is rebuilt when the screen changes size.
+ */
+@media (max-width: 860px) {
+  .library-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .library[data-view="list"] .library-pane-detail,
+  .library[data-view="detail"] .library-pane-list,
+  /* The search and the filter belong to the list; on the entry they are clutter. */
+  .library[data-view="detail"] .library-filters {
+    display: none;
+  }
+
+  .library-back {
+    display: inline-flex;
+  }
+
+  .library-pane-detail {
+    padding-left: 0;
+  }
+
+  .library-head {
+    grid-template-areas:
+      "stats"
+      "notice"
+      "actions"
+      "filters";
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1903,8 +2342,8 @@ select.control {
  * Below 700 px the bar's labels go visually hidden: a phone has room for the controls
  * or for their names, not both, and `<label for>` still names them for a screen
  * reader. Each control carries the same words as a `title` (see ui/controls.ts), and
- * the option text of the three primary controls is §5's own vocabulary — Fit / Off /
- * Off, soft-wrapped, Fancy / Plain / Source — which reads on its own.
+ * the option text of the three primary controls is §5's own vocabulary — Fit the pane
+ * / Off / Soft, Fancy / Plain / Source — which reads on its own.
  */
 @media (max-width: 700px) {
   .bar > .field > .field-label {
@@ -1989,7 +2428,7 @@ select.control {
   }
 }
 
-/* Every transition in the file, and its two animations (§6.9). */
+/* Every transition in the file, and its three animations (§6.9). */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2004,5 +2443,11 @@ select.control {
   .busy-dot {
     animation: none;
     opacity: 0.7;
+  }
+
+  /* The library button still says it is new; it says it by sitting still. */
+  .library-button.is-new {
+    animation: none;
+    background-color: var(--accent-soft);
   }
 }

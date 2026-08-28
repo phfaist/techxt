@@ -1,5 +1,5 @@
 /**
- * The two prose panels — About and Install (web/PLAN.md §6.8).
+ * The sheets over the tool — About, Install and the library (web/PLAN.md §6.8, §6.10).
  *
  * The page does not scroll: the tool is exactly one viewport tall, and everything
  * that is not the tool is a `<dialog>` over it. `showModal()` is doing real work
@@ -9,11 +9,14 @@
  *
  * The prose itself lives in `index.html`, as all the app's prose does. This module
  * owns only what prose cannot know: which sheet is open, and which set of install
- * steps is the one for the device reading them.
+ * steps is the one for the device reading them. The library sheet is the one whose
+ * body is not prose at all — `ui/library-pane.ts` builds it into the mount the page
+ * provides — but its shell, its title and its close button are the other two's, and
+ * so is everything this module does with it.
  */
 
 /** The sheets, by the `data-sheet` value that opens them and their element id. */
-export type SheetId = 'about' | 'install';
+export type SheetId = 'about' | 'install' | 'library';
 
 export interface SheetsInit {
   /** A sheet is opening: the caller's own popups should get out of the way. */
@@ -94,7 +97,7 @@ function isInstalled(): boolean {
 
 export function initSheets(init: SheetsInit = {}): Sheets {
   const dialogs = new Map<SheetId, HTMLDialogElement>();
-  for (const id of ['about', 'install'] as const) {
+  for (const id of ['about', 'install', 'library'] as const) {
     const dialog = document.getElementById(`sheet-${id}`);
     if (dialog instanceof HTMLDialogElement) dialogs.set(id, dialog);
   }

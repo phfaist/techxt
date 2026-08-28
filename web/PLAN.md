@@ -13,8 +13,8 @@ the app and defers to it on everything about conversion behaviour.
 document already in it and an output pane beside it; conversion happens as they type.
 The project framing — name, one sentence, GitHub link — is a header strip, and the
 prose lives in sheets over the tool where it cannot cost it a screenful. The page
-itself never scrolls: the tool is exactly one viewport, and About and Install are
-dialogs (§6.8).
+itself never scrolls: the tool is exactly one viewport, and About, Install and the
+library are dialogs (§6.8, §6.10).
 
 Goals, in priority order:
 
@@ -26,7 +26,8 @@ Goals, in priority order:
    undersells the library.
 4. Work offline, installable, no server, no telemetry, no document ever leaving the
    device. A converter people paste unpublished papers into must be able to say this
-   plainly.
+   plainly — which is also why the library of §6.10 is on the device, is never
+   uploaded, and is never trimmed behind the user's back.
 5. Be a credible landing page: what techxt is, how to get the crate and the CLI.
 
 Non-goals: rendering LaTeX visually; a file tree or multi-file projects; `\input`
@@ -45,7 +46,8 @@ anything.
 | D5 | Three primary controls, the rest behind "More options" | Two-tier options model (§5) |
 | D6 | `localStorage` for session state, URL fragment for sharing | A versioned state codec (§6.4) |
 | D7 | Diagnostics in a collapsible panel, click to select the span in the input | The binding must return UTF-16 offsets, not byte offsets (§4.4) |
-| D8 | App fills the viewport; header is one line; About/Install are modal sheets and the page never scrolls | Mobile layout has to work with the on-screen keyboard up (§6.6) |
+| D8 | App fills the viewport; header is one line; About/Install/Library are modal sheets and the page never scrolls | Mobile layout has to work with the on-screen keyboard up (§6.6); a toast raised from inside a sheet has to move into it, since a modal makes everything else inert (§6.10) |
+| D9 | Every converted document is logged automatically to an IndexedDB library, and nothing in it is ever removed without the user saying so | A second store to keep honest: a quota story that proposes rather than prunes, and an export format that is the answer to a full disk (§6.10, §6.11) |
 
 ## 3. Folder layout
 
@@ -63,14 +65,19 @@ web/
     state.ts              option model, defaults, localStorage, URL codec
     convert-client.ts     worker lifecycle, debounce, request sequencing
     types.ts              app-level types shared by the codec and the UI
+    title.ts              what a document calls itself: file names and entry titles
+    library.ts            the library's entry model, session and retention policy
+    library-store.ts      the IndexedDB backend, and the quota facts around it
+    library-io.ts         the export format, and what an import is allowed to do
     worker/
       convert.worker.ts   loads wasm, answers convert requests
       protocol.ts         message types shared by both sides
     ui/
-      api.ts              what main.ts may assume about the four modules below
+      api.ts              what main.ts may assume about the five modules below
       panes.ts            input/output panes, resize, autofit measurement
       controls.ts         primary bar + "More options" disclosure
       diagnostics.ts      the diagnostics panel and jump-to-source
+      library-pane.ts     the library sheet, and its import/confirm dialogs
       toast.ts            copy confirmation, update-available notice
     fonts.ts              font registry (family, metrics class, warnings)
     examples.ts           the sample documents, inlined
@@ -100,9 +107,14 @@ web/
 Two files are contracts rather than implementation, and exist because the app is
 written by more than one pair of hands at a time. `src/types.ts` holds the app-level
 types the state codec and the UI both need — including the two settings of §5 that
-are the *app* being helpful rather than the library offering a choice. `src/ui/api.ts`
-holds the interfaces the four UI modules satisfy and `main.ts` programs against, so
-neither side can drift without `tsc` saying so.
+are the *app* answering a question the library leaves open. `src/ui/api.ts` holds the
+interfaces the five UI modules satisfy and `main.ts` programs against, so neither side
+can drift without `tsc` saying so.
+
+The three `library*.ts` files are split along the same line: `library.ts` and
+`library-io.ts` are pure and know nothing about a browser — the backend and the clock
+arrive as parameters — so the retention policy and the import rules are reachable from
+vitest, while `library-store.ts` is the only file in the app that opens a database.
 
 `web/crate/` is deliberately *not* a member of the `rust/` workspace and is not
 reachable from it: the repository root has no `Cargo.toml`, so a package under `web/`
@@ -519,16 +531,16 @@ no use for the CLI's UTC caution.
 ┌──────────────────────────────────────────────────────────┐
 │ techxt   LaTeX-like markup → plain text        [GitHub]  │  header, one line
 ├──────────────────────────────────────────────────────────┤
-│ Wrap [Fit ▾] Math [Fancy ▾] Display font [JuliaMono ▾] ▸ More│  primary bar (sticky)
+│ Wrap [Soft ▾] Math [Fancy ▾] Font [JuliaMono ▾] Library ▸More│  primary bar (sticky)
 ├───────────────────────────┬──────────────────────────────┤
-│ LaTeX             [Load ▾]│ Text        [Copy] [Download]│  pane headers
+│ LaTeX             [Load ▾]│ Text  [☆][Copy] [Download]   │  pane headers
 │                           │                              │
 │ <textarea>                │ <pre>                        │
 │                           │                              │
 ├───────────────────────────┴──────────────────────────────┤
 │ ▸ 3 warnings · 128 ms · 1 240 chars                      │  status + diagnostics
 └──────────────────────────────────────────────────────────┘
-            (About and Install are sheets over this, not a page under it)
+      (About, Install and the library are sheets over this, not a page under it)
 ```
 
 Panes are a CSS grid, `1fr 1fr` on desktop with a draggable divider (the ratio is
@@ -603,7 +615,11 @@ interface AppState { v: 1; doc: string; opts: AppOptions; ui: UiState }
 - **localStorage**, debounced 500 ms, three keys (`techxt.doc.v1`, `techxt.opts.v1`,
   `techxt.ui.v1`); the document is capped at 512 KB with the excess simply not stored
   (and a note in the status line), so a huge paste cannot break the quota and lose the
-  settings too.
+  settings too. Two further keys belong to the library and carry no document:
+  `techxt.library.hints.v1` (whether it has been introduced yet) and
+  `techxt.library.current.v1` (which entry this session is writing into, so a reload
+  continues it — §6.10). The library itself is in IndexedDB, so it can never cost the
+  user their settings.
 - **Share link**: `#d=` + base64url(`deflate-raw`(JSON of `{v, doc, opts}`)) via
   `CompressionStream`, with an uncompressed base64url fallback where it is missing.
   Read on load, and written only into a crash report (§6.2), which is the one place
@@ -678,7 +694,7 @@ with no diagnostics at all, the new one included, under a parse that now expands
 A **Load ▾** menu in the input pane header offers them; choosing one replaces the
 document (with a single-level undo via the toast, since it discards work).
 
-### 6.8 The two sheets
+### 6.8 The sheets
 
 The page does not scroll. The tool is one viewport tall and everything else is a
 `<dialog>` opened with `showModal()` over it — the top layer, the backdrop, Escape,
@@ -687,6 +703,11 @@ them is reimplemented (`src/ui/sheets.ts`). A sheet is a card on the desktop and
 whole screen on a phone. The header's **About** and **Install** are buttons, not
 anchors: the fragment belongs to the share codec (§6.4), and a nav link that
 overwrites it would cost a reader their document on reload.
+
+There are three: **About** and **Install**, whose bodies are the prose in
+`index.html`, and the **library** (§6.10), whose body is built in TypeScript because
+it is a list of the user's own documents rather than anything that could be written
+ahead of time.
 
 **About**, short and written once: what techxt is (two sentences, adapted from the
 repository README); the crate and CLI snippets from the README, verbatim so they
@@ -716,6 +737,177 @@ rings; light/dark via `prefers-color-scheme` with CSS custom properties and AA
 contrast in both; `prefers-reduced-motion` respected by every transition and the one animation.
 Keyboard: Ctrl/Cmd+Enter converts, Ctrl/Cmd+Shift+C copies output, Escape closes the
 options disclosure.
+
+### 6.10 The library
+
+Every document that goes through the app is kept, on the device, in a library the user
+can search, star, rename, delete, export and re-import. **Saving is automatic**: this
+is a log of what was converted, the way a browser keeps history, not a folder the user
+files things into. The button beside Copy and Download is therefore not *Save* but
+**⭐ Save**, meaning *star this* — starring marks an entry worth keeping and the pane
+can filter to starred entries. Nothing is lost because somebody forgot to press a
+button, and there is one less concept to explain.
+
+**An entry** holds `id`, `createdAt`, `updatedAt`, `title`, `source`, `options` (the
+full `AppOptions` in force, pruned as everywhere else), `starred`, and a small
+`preview` of the rendered output — the first six lines or 400 characters, whichever is
+shorter. The preview exists so a card is legible and an export is worth reading; the
+real rendering is always regenerable from `source` and `options`, so it is allowed to
+be stale and is never what the user acts on.
+
+**One current entry per editing session**, created on the first conversion of a
+non-empty document and updated in place from then on, debounced 2 s and on `pagehide`.
+Changing only the options updates it too. A new entry begins where the app already
+knows the user has moved on: Load ▾, the `.tex` file handler, opening an entry from the
+library, an import that replaced everything — and after a 30-minute idle gap. A
+*reload* is none of those: the id of the current entry is kept in `localStorage`
+(`techxt.library.current.v1`) and adopted on load when the document came from storage,
+so coming back to a tab continues the entry instead of logging a second copy of it.
+
+**The title** is the document's own: the first `\title` or `\section`, else the first
+non-empty line, else the date (`src/title.ts`, shared with Download's file name). It
+follows the document until the user renames the entry, and then stops — `library.ts`
+tells the two apart by asking whether the stored title is still the one the stored
+source would have produced, which costs no extra field. There is no prompt on save: the
+save is automatic, and asking someone to name something they did not ask to save would
+be absurd.
+
+**Storage is IndexedDB** (`src/library-store.ts`): one database, one object store keyed
+by `id`, with indices on `updatedAt` and on a derived `star` of 0/1 — IndexedDB cannot
+key on a boolean, so the flag is stored twice and the derived half never leaves that
+file. `localStorage` keeps the session state as it does today; the two are separate
+stores and neither can exhaust the other. `navigator.storage.persist()` is asked once,
+before the first write, so the browser stops treating the library as evictable.
+
+A browser that will not give us a database — a locked-down profile, some private
+windows — gets the same treatment `browserStorage()` gives a refused `localStorage`: an
+honest inert pane that says so, the ⭐ button hidden rather than dead, and everything
+else working exactly as usual.
+
+#### Retention: the app never quietly drops the user's data
+
+This is the rule the rest of the storage design serves, and it is not negotiable.
+
+- **Nothing is ever deleted for tidiness.** Not because an entry is old, not because it
+  is "expired", not because there are a lot of them. There is no scheduled prune, no
+  age cutoff and no cap on the number of entries anywhere in the app. The user deletes
+  what they want gone, and only the user.
+- **Starred entries are never removed by any automatic mechanism, under any
+  circumstance.** `prunableEntries()` is the only function that ever proposes a
+  removal and it cannot see a starred entry; a library in which everything is starred
+  proposes nothing at all.
+- **If storage genuinely runs out** — a write actually failed, not a number that looked
+  close — the app *proposes*, once per session: it says plainly that storage for this
+  site is full, offers **Export library** first and prominently, and only then offers
+  to remove the oldest unstarred entries, naming how many, which dates they span, and
+  how many entries (and starred ones) would remain. Nothing is removed without an
+  explicit answer to that dialog.
+- **A refusal is a complete answer.** If the user declines, the app stops logging new
+  documents for the rest of the session and says so in the status line; everything
+  already in the library is untouched. A library that has stopped growing is a
+  nuisance; a library that ate the user's work is a betrayal. Take the nuisance.
+- **Warn early enough that the dialog is rare**: past 80 % of
+  `navigator.storage.estimate()`, one unobtrusive line in the library header naming
+  Export as the remedy. Not a modal, not every session.
+- **A failed write is loud**: a toast with an **Export library** action, never a
+  dropped entry and a shrug.
+- **Say where the user stands without being asked**: the header carries
+  `142 entries · 8 starred · 3.1 MB`, and a session whose data the browser will
+  probably not keep says so with a ⚠️ line pointing at Export.
+
+A single entry's `source` is capped at the same 512 KB as `MAX_STORED_DOC`. Over it the
+document is not logged at all — never logged truncated — and the status line says so;
+one huge paste must not be the reason something else is lost.
+
+#### The pane
+
+A `<dialog>` sheet like About and Install (§6.8), because a scrolling list of entries
+belongs inside a dialog in an app whose page never scrolls, and because the sheet
+machinery already gives Escape, the backdrop, focus handling and inertness for free.
+It opens from the header, beside About and Install, and from the primary options row
+next to *More options* — one action, two doors, and no third row on a phone.
+
+Desktop shows the list on the left and the selected entry on the right; below 860 px it
+is one column and a tap pushes to the entry's detail with a back control, which is a
+`data-view` attribute and a media query rather than a second rendering path. Per entry:
+open, star, rename, delete, copy and download its source. Filters are all/starred plus
+a text search over title and source, sorted by most recently updated. Delete offers an
+Undo in the toast; **Clear library** demands a typed confirmation and names the count
+and the starred count in it.
+
+Opening an entry restores its document *and* its options. That is not destructive — the
+settings being replaced belong to the current entry, which is itself in the log and one
+click away — and it still offers the usual single-level undo in the toast.
+
+Every node in the pane is built with `createElement` and `textContent`: entry titles,
+previews and imported text are all somebody's own text, and §6.3's rule about
+`innerHTML` is not relaxed for a card.
+
+**Toasts follow the modal.** A `showModal()` dialog makes the rest of the document
+inert, so a toast raised from inside the library sheet would be drawn under it and its
+Undo would not answer a click — and the top layer is no escape, since a popover shown
+over a modal is painted above it and is still inert. `ui/toast.ts` therefore moves the
+toast mount into the open dialog for as long as one is open and moves it home when the
+dialog closes. It is `position: fixed`, so it lands in the same place either way.
+
+**Discoverability**, since the library only helps if people know it is there: the first
+time an entry is logged, one toast — *"Saved to your library"* with an **Open library**
+action — shown once, ever; and the library button in the primary bar tints itself for
+the first three sessions, driven by a counter in `localStorage`
+(`techxt.library.hints.v1`), stopping for good the first time the pane is opened. About
+gains a sentence saying the library is stored on this device only, is never uploaded,
+and is never trimmed to save space.
+
+### 6.11 Library export and import
+
+**Export** writes the whole library as one JSON file through the same `Blob` path the
+output's Download button uses, named `techxt-library-YYYY-MM-DD.json`. The format is
+versioned and boring on purpose, and carries each entry's preview so an imported
+library is legible before anything has been re-converted:
+
+```json
+{
+  "format": "techxt.library",
+  "v": 1,
+  "exportedAt": "2026-08-28T12:00:00.000Z",
+  "app": "techxt-web",
+  "techxt": "0.1.0",
+  "items": [ { "id": …, "createdAt": …, "updatedAt": …, "title": …,
+               "source": …, "options": { … }, "starred": …, "preview": … } ]
+}
+```
+
+Timestamps are ISO 8601 strings rather than epoch numbers: the file is meant to be
+readable by a person who opens it in an editor a year from now.
+
+**Import asks first**, in a dialog, so nothing about the result is a surprise:
+
+- **Add to my library** (the default) — everything already there is kept; an incoming
+  id that collides with one of the user's gets a fresh id rather than overwriting an
+  entry. Importing a library into itself therefore produces a second copy, which is
+  what "add" means.
+- **Skip items I already have** (a checkbox on the above) — matched on a hash of
+  `source` + `options` and confirmed by comparison, never on the id, because two
+  libraries grown from one export share ids by accident and two copies of a document
+  generally do not. It skips the *incoming* entry; it never touches the one already
+  there.
+- **Replace my library** — behind its own typed confirmation, which names how many
+  entries will be removed and how many of those are starred, and offers Export first.
+
+**An import never removes an existing entry unless the user chose Replace on that
+particular import.** No heuristic, no "clean up duplicates", no exception. This is a
+property of `planImport()` in `src/library-io.ts` — outside `mode: 'replace'` its
+`remove` list is empty by construction — and it has its own tests saying so.
+
+The outcome is reported plainly: *"12 added, 3 skipped, 0 replaced."*
+
+**A file is hostile input**, and is read with the discipline `decodeShare()` already
+uses: every field through a validator, unknown fields dropped, unknown option values
+dropped (`sanitizeOptions` is exactly that function), an oversize `source` skipped
+rather than truncated, a size cap ahead of `JSON.parse`, and a read that never throws.
+A refusal names what was wrong with the file — a foreign file, a truncated one and one
+from a future format version send a person to three different places, and a single
+"could not read that" would send them nowhere.
 
 ## 7. The diagnostics panel
 
@@ -1045,7 +1237,9 @@ noting in `web/README.md`, since the first deploy silently does nothing otherwis
 
 **Automated**: `cargo test` in `web/crate` (§4.8); vitest over the pure logic — state
 codec, options diffing, fit-to-pane arithmetic, worker-protocol sequencing with a
-mocked worker; `tsc --noEmit`; the glyph coverage check.
+mocked worker, the document-title rules, and the library's model, retention policy and
+import/export codec against an in-memory backend; `tsc --noEmit`; the glyph coverage
+check.
 
 **Manual checklist**, run before each release and recorded in `web/README.md`:
 
@@ -1058,7 +1252,12 @@ mocked worker; `tsc --noEmit`; the glyph coverage check.
    not a dead tab — the descent-guard calibration of §4.6.
 7. A document mixing `\emph{…}`, CJK, Hebrew and emoji: no tofu in any of the six
    display-font settings (the fallback chains of §8.2).
-8. Lighthouse: PWA installable, performance ≥ 95, accessibility 100.
+8. The library (§6.10): convert, reload, and find one entry rather than two; star it
+   and delete another, with the Undo in the toast reachable from inside the sheet;
+   export, then import the file back under each of the three answers; open an entry
+   and see its options come back with it; the pane one-handed on a 390 px screen; and
+   a profile with IndexedDB blocked, where the app must be whole and the pane honest.
+9. Lighthouse: PWA installable, performance ≥ 95, accessibility 100.
 
 ## 14. Measured baselines
 
@@ -1251,6 +1450,14 @@ CodeMirror would outweigh the engine); rendering LaTeX visually for comparison;
 multi-file/`\input`; a definitions playground (the extension API is a crate-docs
 subject, not a UI); server-side conversion for very large documents; i18n of the UI;
 any analytics.
+
+The library of §6.10 is a log on the device, and stays one: no accounts, no sync
+between devices, and no server to sync with. **Export is the answer** to "I want this
+somewhere else", which is why it is also the answer offered first when the disk fills
+up. A File System Access backend (`showSaveFilePicker` and a persisted handle) would
+buy more room, but only on Chromium and never on iOS, so it is not the base feature;
+it is worth revisiting as a desktop convenience if the quota warning turns out to fire
+in practice.
 
 ---
 

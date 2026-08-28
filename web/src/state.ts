@@ -311,6 +311,8 @@ export const STORAGE_KEYS = {
   doc: 'techxt.doc.v1',
   opts: 'techxt.opts.v1',
   ui: 'techxt.ui.v1',
+  libraryHints: 'techxt.library.hints.v1',
+  libraryCurrent: 'techxt.library.current.v1',
 } as const;
 
 /**
@@ -461,6 +463,88 @@ export function createPersistence(init: PersistenceInit): Persistence {
       pendingDoc = pendingOpts = pendingUi = null;
     },
   };
+}
+
+/* ---------------------------------------------------------------- library hints */
+
+/**
+ * What the app remembers about *introducing* the library (§6.10) — not about the
+ * library itself, which lives in IndexedDB and is none of this file's business.
+ *
+ * These two counters are the whole of the discoverability machinery: the library only
+ * helps if people know it is there, and an app that keeps saying so is an app people
+ * learn to ignore.
+ */
+export interface LibraryHints {
+  /** How many sessions have started. The library button pulses for the first few. */
+  sessions: number;
+  /** Whether the "Saved to your library" toast has been shown. It is shown once. */
+  toldAboutFirstSave: boolean;
+  /** Whether the pane has ever been opened. Once it has, nothing pulses again. */
+  opened: boolean;
+}
+
+/** How many sessions the library button draws attention to itself for. */
+export const LIBRARY_PULSE_SESSIONS = 3;
+
+export const DEFAULT_LIBRARY_HINTS: LibraryHints = {
+  sessions: 0,
+  toldAboutFirstSave: false,
+  opened: false,
+};
+
+/** A read never throws here either: a corrupt hint is a hint that was never given. */
+export function readLibraryHints(storage: StorageLike | null): LibraryHints {
+  const raw = readJson(storage, STORAGE_KEYS.libraryHints);
+  if (!isRecord(raw)) return { ...DEFAULT_LIBRARY_HINTS };
+  const sessions = raw['sessions'];
+  return {
+    sessions:
+      typeof sessions === 'number' && Number.isFinite(sessions) && sessions >= 0
+        ? Math.min(1000, Math.floor(sessions))
+        : 0,
+    toldAboutFirstSave: raw['toldAboutFirstSave'] === true,
+    opened: raw['opened'] === true,
+  };
+}
+
+export function writeLibraryHints(storage: StorageLike | null, hints: LibraryHints): void {
+  write(storage, STORAGE_KEYS.libraryHints, JSON.stringify(hints));
+}
+
+/** Whether the library button should still catch the eye this session. */
+export function shouldPulseLibrary(hints: LibraryHints): boolean {
+  return !hints.opened && hints.sessions <= LIBRARY_PULSE_SESSIONS;
+}
+
+/**
+ * Which library entry the editing session was writing into, so that a reload
+ * continues it rather than logging the same document twice (§6.10).
+ *
+ * A reload is not "a new document": the pane comes back with the same text in it, and
+ * an entry per reload would turn the log into a pile of copies. This is the one fact
+ * that has to outlive the page for the session to survive it, and it is a bare id —
+ * the entry itself lives in IndexedDB, and a stale id simply finds nothing.
+ */
+export function readCurrentEntryId(storage: StorageLike | null): string | null {
+  try {
+    const raw = storage?.getItem(STORAGE_KEYS.libraryCurrent) ?? null;
+    return raw !== null && raw !== '' && raw.length < 200 ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCurrentEntryId(storage: StorageLike | null, id: string | null): void {
+  if (id === null) {
+    try {
+      storage?.removeItem(STORAGE_KEYS.libraryCurrent);
+    } catch {
+      /* nothing to do about it */
+    }
+    return;
+  }
+  write(storage, STORAGE_KEYS.libraryCurrent, id);
 }
 
 /* -------------------------------------------------------------------- share link */

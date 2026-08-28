@@ -190,6 +190,26 @@ export function initPanes(init: PanesInit): Panes {
   copyButton.title = 'Copy the converted text';
   copyButton.addEventListener('click', () => init.onCopy());
 
+  /**
+   * ⭐ Save (§6.10): the log is automatic, so this button does not save — it stars,
+   * marking the entry worth keeping. It is hidden where there is no library to star
+   * into, which `setStarred(null)` is for.
+   *
+   * It carries a mark of its own, so it follows Download's rule below 620 px and
+   * keeps its word only as accessible text — four labelled buttons and a title do not
+   * fit a phone's pane header (§6.6).
+   */
+  const starButton = el('button', 'btn pane-star');
+  starButton.type = 'button';
+  starButton.hidden = true;
+  starButton.setAttribute('aria-pressed', 'false');
+  const starGlyph = el('span', 'pane-star-glyph', '☆');
+  starGlyph.setAttribute('aria-hidden', 'true');
+  const starLabel = label('Save');
+  starButton.append(starGlyph, starLabel);
+  starButton.title = 'Keep this document in your library';
+  starButton.addEventListener('click', () => init.onStar());
+
   const downloadButton = el('button', 'btn');
   downloadButton.type = 'button';
   downloadButton.append(
@@ -204,7 +224,7 @@ export function initPanes(init: PanesInit): Panes {
 
   const outFocus = focusButton('output');
   const outTools = el('div', 'pane-tools');
-  outTools.append(copyButton, downloadButton, outFocus);
+  outTools.append(starButton, copyButton, downloadButton, outFocus);
 
   const outHead = el('header', 'pane-head');
   outHead.append(outTitle, fontNote, staleNote, outTools);
@@ -769,6 +789,20 @@ export function initPanes(init: PanesInit): Panes {
       fontNote.hidden = !loading;
     },
 
+    setStarred(starred: boolean | null) {
+      // `null` is a browser with nowhere to keep a library: a button that cannot do
+      // anything is worse than no button (§6.10).
+      starButton.hidden = starred === null;
+      const on = starred === true;
+      starGlyph.textContent = on ? '★' : '☆';
+      starLabel.textContent = on ? 'Saved' : 'Save';
+      starButton.classList.toggle('is-starred', on);
+      starButton.setAttribute('aria-pressed', String(on));
+      starButton.title = on
+        ? 'This document is starred in your library'
+        : 'Keep this document in your library';
+    },
+
     setStale(stale: boolean) {
       output.classList.toggle('is-stale', stale);
       staleNote.hidden = !stale;
@@ -797,7 +831,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
 /**
  * A button's word, in a span of its own.
  *
- * Below 620 px the pane headers hide these (§6.6): three labelled buttons and a title
+ * Below 620 px the pane headers hide these (§6.6): four labelled buttons and a title
  * do not fit a phone, and the hiding is the `.sr-only` treatment rather than
  * `display: none`, so the button keeps its accessible name and its 44 px target.
  */

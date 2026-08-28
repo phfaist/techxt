@@ -1,7 +1,7 @@
 /**
  * The contract between `main.ts` and the UI modules.
  *
- * Four of the five are here. The fifth, `ui/sheets.ts`, keeps its own: it talks to
+ * Five of the six are here. The sixth, `ui/sheets.ts`, keeps its own: it talks to
  * the app through one optional callback and answers no question about a conversion,
  * so an entry in this file would be a table of contents and nothing more.
  *
@@ -16,6 +16,8 @@
  */
 
 import type { FontId } from '../fonts';
+import type { LibraryEntry, LibraryStats, PruneProposal } from '../library';
+import type { ImportChoice } from '../library-io';
 import type { AppOptions, ExampleDoc, UiState } from '../types';
 import type { ConversionResult, Diagnostic } from '../worker/protocol';
 
@@ -58,6 +60,8 @@ export interface PanesInit {
   onCopy(): void;
   onDownload(): void;
   onLoadExample(example: ExampleDoc): void;
+  /** ⭐ Save, beside Copy and Download: star this document's library entry (§6.10). */
+  onStar(): void;
   /** Ctrl/Cmd+Enter — convert now, skipping the debounce. */
   onConvertNow(): void;
   /** A gutter marker was clicked: reveal that diagnostic in the panel. */
@@ -93,6 +97,11 @@ export interface Panes {
   setFocus(focus: 'input' | 'output' | null): void;
   /** Show or clear the "loading font…" state in the output pane header. */
   setFontLoading(loading: boolean): void;
+  /**
+   * Whether this document's library entry is starred, for the ⭐ Save button. `null`
+   * where there is no library to star into at all, which hides the button.
+   */
+  setStarred(starred: boolean | null): void;
   /** A hard parse failure dims the (stale) output rather than blanking it. */
   setStale(stale: boolean): void;
 }
@@ -101,6 +110,8 @@ export interface Panes {
 
 export interface ControlsInit {
   mount: HTMLElement;
+  /** Whether the library button should catch the eye this session (§6.10). */
+  libraryNew?: boolean;
   ui: UiState;
   /** The options the user has changed; everything else is a library default. */
   options: AppOptions;
@@ -116,6 +127,8 @@ export interface ControlsInit {
   onMoreToggle(open: boolean): void;
   /** "Keep all fonts offline" was ticked or unticked (§8.3). */
   onKeepFontsOffline(enabled: boolean): void;
+  /** The Library button beside *More options* — the second door of §6.10. */
+  onOpenLibrary(): void;
 }
 
 export interface Controls {
@@ -126,6 +139,8 @@ export interface Controls {
   setKeepFontsOffline(enabled: boolean): void;
   /** Fill in the embedded techxt version once the worker has reported it. */
   setVersion(version: string): void;
+  /** Stop drawing attention to the library button; it has been noticed (§6.10). */
+  setLibraryNew(pulse: boolean): void;
   /** Close the disclosure — what Escape does (§6.9). */
   close(): void;
 }
@@ -154,4 +169,63 @@ export interface DiagnosticsPanel {
   setOpen(open: boolean): void;
   /** A gutter marker was clicked: open the panel and scroll that row into view. */
   reveal(diagnostic: Diagnostic): void;
+}
+
+/* ----------------------------------------------------------- ui/library-pane.ts */
+
+/** A line in the library header about the storage itself, not about an entry. */
+export interface LibraryNotice {
+  tone: 'info' | 'warn';
+  message: string;
+}
+
+/** What an import dialog has to be able to say before the user answers it. */
+export interface ImportRequest {
+  /** How many entries the file holds, after every one has been validated. */
+  incoming: number;
+  /** What the file says about when it was written, or `null`. */
+  exportedAt: string | null;
+  /** What the file lost on the way in, so the dialog can admit it. */
+  dropped: { malformed: number; oversize: number };
+  /** What is here already — Replace has to name what it would cost. */
+  existing: { count: number; starred: number };
+}
+
+/** The two answers to a full disk. There is no third: nothing is removed silently. */
+export type PruneAnswer = 'remove' | 'decline';
+
+export interface LibraryPaneInit {
+  mount: HTMLElement;
+  /** Load this entry's document *and* its options into the editor (§6.10). */
+  onOpenEntry(entry: LibraryEntry): void;
+  onStar(entry: LibraryEntry, starred: boolean): void;
+  onRename(entry: LibraryEntry, title: string): void;
+  onDelete(entry: LibraryEntry): void;
+  onCopySource(entry: LibraryEntry): void;
+  onDownloadSource(entry: LibraryEntry): void;
+  /** Save the whole library as one file (§6.11). */
+  onExport(): void;
+  /** A file the user chose; the app decodes it and asks the pane what to do with it. */
+  onImportFile(file: File): void;
+  /** Remove everything — only ever called after the pane's own typed confirmation. */
+  onClear(): void;
+}
+
+export interface LibraryPane {
+  /** The entries to show and the header line above them. */
+  setEntries(entries: readonly LibraryEntry[], stats: LibraryStats): void;
+  /** One unobtrusive line about the storage: near the quota, or a private window. */
+  setNotice(notice: LibraryNotice | null): void;
+  /** Turn the pane into an honest inert state: no IndexedDB here (§6.10). */
+  setUnavailable(reason: string): void;
+  /** Select an entry, or `null` for the list. */
+  select(id: string | null): void;
+  focusSearch(): void;
+  /** Ask what an import should do. Resolves to `null` if the user backed out. */
+  askImport(request: ImportRequest): Promise<ImportChoice | null>;
+  /**
+   * The full-disk proposal: what the app *offers* to remove, with Export first. It
+   * removes nothing itself, and a `'decline'` is a complete answer (§6.10).
+   */
+  askPrune(proposal: PruneProposal): Promise<PruneAnswer>;
 }

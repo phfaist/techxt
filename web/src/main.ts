@@ -22,6 +22,17 @@ import { DEFAULT_EXAMPLE, EXAMPLES } from './examples';
 import { applyFont, preloadAllFonts } from './fonts';
 import type { FontId } from './fonts';
 import {
+  PRUNE_PROPOSAL_SIZE,
+  createLibrary,
+  makePreview,
+  pruneProposal,
+  quotaPressure,
+  statsOf,
+} from './library';
+import type { Library, LibraryEntry } from './library';
+import { decodeLibrary, describeImport, encodeLibrary, libraryFileName, planImport } from './library-io';
+import { isPersisted, openLibraryBackend, requestPersistence, storageEstimate } from './library-store';
+import {
   DEFAULT_OPTIONS,
   SHARE_LENGTH_LIMIT,
   browserStorage,
@@ -29,22 +40,40 @@ import {
   encodeShare,
   encodeShareSettingsOnly,
   loadState,
+  readCurrentEntryId,
+  readLibraryHints,
   resolveOptions,
   sanitizeOptions,
+  shouldPulseLibrary,
   softWraps,
   withDefaults,
+  writeCurrentEntryId,
+  writeLibraryHints,
 } from './state';
+import { downloadName, sourceFileName } from './title';
 import type { AppOptions, ExampleDoc } from './types';
-import type { BusyState, Controls, DiagnosticsPanel, Panes, Toaster } from './ui/api';
+import type {
+  BusyState,
+  Controls,
+  DiagnosticsPanel,
+  LibraryPane,
+  Panes,
+  Toaster,
+} from './ui/api';
 import { initControls } from './ui/controls';
 import { initDiagnostics } from './ui/diagnostics';
+import { initLibraryPane } from './ui/library-pane';
 import { initPanes } from './ui/panes';
 import { initSheets } from './ui/sheets';
 import { initToast } from './ui/toast';
 import type { ConversionResult, Diagnostic } from './worker/protocol';
 
 /** The status-line aside for a document the browser will not keep for us (§6.4). */
-const DOC_TOO_LARGE = 'too large to save locally — this document will not survive a reload';
+const DOC_TOO_LARGE =
+  'too large to save locally — this document will not survive a reload, and is not logged in your library';
+
+/** The aside for a library the user asked to stop growing (§6.10). */
+const LIBRARY_PAUSED = 'the library has stopped logging new documents — nothing in it was removed';
 
 const ISSUE_URL = 'https://github.com/phfaist/techxt/issues/new';
 
@@ -91,28 +120,8 @@ async function copyText(text: string): Promise<boolean> {
 
 /* -------------------------------------------------------------------- download */
 
-/** The first `\title` or `\section` of the document, if it has one (§6.3). */
-const TITLE_PATTERN = /\\(?:title|section)\*?\s*(?:\[[^\]]*\])?\{([^{}]{1,120})\}/;
-
-function slugify(raw: string): string {
-  return raw
-    .replace(/\\[a-zA-Z]+\s*/g, ' ')
-    .replace(/[{}$\\]/g, ' ')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-+/, '')
-    .slice(0, 48)
-    .replace(/-+$/, '');
-}
-
-function downloadName(document_: string): string {
-  const match = TITLE_PATTERN.exec(document_);
-  const slug = match?.[1] ? slugify(match[1]) : '';
-  return slug ? `${slug}.txt` : 'converted.txt';
-}
-
-function downloadText(text: string, name: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+function downloadText(text: string, name: string, type = 'text/plain;charset=utf-8'): void {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   const link = document.createElement('a');
   link.href = url;
   link.download = name;
@@ -170,14 +179,15 @@ function registerServiceWorker(toast: Toaster): void {
 async function start(): Promise<void> {
   const toast = initToast(mountPoint('toast-mount'));
   const about = initAbout();
-  // About and Install are dialogs over the tool (§6.8). A modal makes everything
-  // behind it inert, so the disclosure has to be told to put itself away first —
-  // otherwise it is still open, and still open when the sheet closes.
-  initSheets({
-    onOpen() {
+  // Every sheet is a dialog over the tool (§6.8). A modal makes everything behind it
+  // inert, so the disclosure has to be told to put itself away first — otherwise it
+  // is still open, and still open when the sheet closes.
+  const sheets = initSheets({
+    onOpen(id) {
       controls.close();
       state.ui.moreOpen = false;
       persistence.ui(state.ui);
+      if (id === 'library') openedLibrary();
     },
   });
   registerServiceWorker(toast);
@@ -197,6 +207,13 @@ async function start(): Promise<void> {
   let panes: Panes;
   let controls: Controls;
   let diagnostics: DiagnosticsPanel;
+  let libraryPane: LibraryPane;
+  /**
+   * The library (§6.10). It is `null` until IndexedDB has answered, which is a task
+   * or two after the page is usable and deliberately not something the first
+   * conversion waits for; {@link openLibrary} below is what fills it in.
+   */
+  let library: Library | null = null;
 
   /** The last output we are willing to show: what a cancel or a crash falls back to. */
   let lastGoodOutput = '';
@@ -205,10 +222,28 @@ async function start(): Promise<void> {
   /** The column count the last request was issued with; negative before the first. */
   let lastColumns = -1;
 
+  /** What the app remembers about introducing the library, and one more session. */
+  const hints = readLibraryHints(storage);
+  hints.sessions += 1;
+  writeLibraryHints(storage, hints);
+
+  /**
+   * The two asides the status line can carry at once — a document too large to keep,
+   * and a library that has stopped logging. Both are facts about *this* session that
+   * the user can act on, and neither may hide the other.
+   */
+  const notes: { doc: string | null; library: string | null } = { doc: null, library: null };
+
+  function updateNote(): void {
+    const shown = [notes.doc, notes.library].filter((note) => note !== null);
+    diagnostics.setNote(shown.length === 0 ? null : shown.join(' · '));
+  }
+
   const persistence = createPersistence({
     storage,
     onDocumentOversize(oversize) {
-      diagnostics.setNote(oversize ? DOC_TOO_LARGE : null);
+      notes.doc = oversize ? DOC_TOO_LARGE : null;
+      updateNote();
     },
   });
 
@@ -226,6 +261,9 @@ async function start(): Promise<void> {
       lastGoodOutput = result.text;
       panes.setOutput(result.text);
       panes.setStale(false);
+      // The library is a log of what was converted, so a conversion is exactly when
+      // it hears about a document. The write itself is debounced (§6.10).
+      library?.record(state.doc, state.opts, makePreview(result.text));
     } else {
       // A hard parse failure has no text of its own; the previous output stays,
       // dimmed, with the diagnostics saying why (§6.3).
@@ -354,6 +392,9 @@ async function start(): Promise<void> {
     onLoadExample(example) {
       loadExample(example);
     },
+    onStar() {
+      void toggleStar();
+    },
     onConvertNow() {
       requestConversion('immediate');
     },
@@ -370,6 +411,7 @@ async function start(): Promise<void> {
     mount: mountPoint('controls-mount'),
     ui: state.ui,
     options: state.opts,
+    libraryNew: shouldPulseLibrary(hints),
     // The version only exists once the worker has answered `ready`, and the controls
     // are built before that so the page is usable while wasm loads. `about.setVersion`
     // fills the About section in when it arrives.
@@ -397,6 +439,9 @@ async function start(): Promise<void> {
         toast.show({ message: 'Every display font is cached for offline use.' });
       });
     },
+    onOpenLibrary() {
+      sheets.open('library');
+    },
   });
 
   /* --------------------------------------------------------- the status strip */
@@ -419,6 +464,385 @@ async function start(): Promise<void> {
       toast.show({ message: 'Conversion cancelled; the last result is still shown.' });
     },
   });
+
+  /* ----------------------------------------------------------------- the library */
+
+  libraryPane = initLibraryPane({
+    mount: mountPoint('library-mount'),
+    onOpenEntry(entry) {
+      openEntry(entry);
+    },
+    onStar(entry, starred) {
+      void (async () => {
+        await library?.star(entry.id, starred);
+        await refreshLibrary();
+      })();
+    },
+    onRename(entry, title) {
+      void (async () => {
+        await library?.rename(entry.id, title);
+        await refreshLibrary();
+      })();
+    },
+    onDelete(entry) {
+      void deleteEntry(entry);
+    },
+    onCopySource(entry) {
+      void (async () => {
+        const copied = await copyText(entry.source);
+        toast.show(
+          copied
+            ? { message: `Copied the LaTeX of “${entry.title}”.` }
+            : { message: 'Could not reach the clipboard.', tone: 'alert' },
+        );
+      })();
+    },
+    onDownloadSource(entry) {
+      const name = sourceFileName(entry.title);
+      downloadText(entry.source, name);
+      toast.show({ message: `Saved ${name}` });
+    },
+    onExport() {
+      void exportLibrary();
+    },
+    onImportFile(file) {
+      void importLibraryFile(file);
+    },
+    onClear() {
+      void (async () => {
+        const emptied = (await library?.clear()) ?? false;
+        await refreshLibrary();
+        if (emptied) toast.show({ message: 'The library is empty.' });
+      })();
+    },
+  });
+
+  /**
+   * Open the database and start logging.
+   *
+   * Deliberately not awaited by anything the first paint depends on: a browser that
+   * takes a moment over IndexedDB — or one that never answers at all — must not be a
+   * browser where the converter is slow to appear. Whatever has already been
+   * converted by the time this resolves is logged then.
+   */
+  async function openLibrary(): Promise<void> {
+    const backend = await openLibraryBackend();
+    if (!backend) {
+      // Honest and inert, the way `browserStorage()` is for localStorage (§6.10).
+      panes.setStarred(null);
+      libraryPane.setUnavailable(
+        'This browser will not let the page keep a library here. Everything else works as usual.',
+      );
+      return;
+    }
+
+    library = createLibrary({
+      backend,
+      persist: requestPersistence,
+      onWrite(entry, created) {
+        if (entry.id === library?.currentId) panes.setStarred(entry.starred);
+        if (!created) return;
+        void refreshLibrary();
+        // Once, ever: the library only helps if people know it is there (§6.10).
+        if (hints.toldAboutFirstSave) return;
+        hints.toldAboutFirstSave = true;
+        writeLibraryHints(storage, hints);
+        toast.show({
+          message: 'Saved to your library — every document you convert is kept here.',
+          timeoutMs: 8000,
+          action: { label: 'Open library', onSelect: () => sheets.open('library') },
+        });
+      },
+      onWriteFailure(failure) {
+        if (failure.kind === 'quota') {
+          void proposePrune();
+          return;
+        }
+        toast.show({
+          message: 'That document could not be added to your library.',
+          tone: 'alert',
+          timeoutMs: 0,
+          action: { label: 'Export library', onSelect: () => void exportLibrary() },
+        });
+      },
+      onSession(currentId) {
+        writeCurrentEntryId(storage, currentId);
+      },
+      onChange() {
+        void refreshLibrary();
+      },
+    });
+
+    panes.setStarred(false);
+    // A reload is not a new document: if the editing session was writing into an
+    // entry and the pane came back with that same session's text in it, the log
+    // continues there rather than growing a second copy (§6.10).
+    const previous = readCurrentEntryId(storage);
+    if (loaded.source === 'storage' && previous !== null && (await library.get(previous))) {
+      library.adopt(previous);
+    } else {
+      writeCurrentEntryId(storage, null);
+    }
+    // Anything converted while the database was opening still belongs in the log.
+    recordCurrent();
+    await refreshLibrary();
+  }
+
+  /** Note the document as it stands, if there is a library and an answer to note. */
+  function recordCurrent(): void {
+    if (!library || state.doc.trim() === '') return;
+    library.record(state.doc, state.opts, makePreview(panes.getOutput() || lastGoodOutput));
+  }
+
+  /**
+   * Re-read the library and tell the pane where the user stands — the count, the
+   * size, and the one line of warning that is ever shown about storage (§6.10).
+   */
+  async function refreshLibrary(): Promise<void> {
+    if (!library) return;
+    const entries = await library.list();
+    libraryPane.setEntries(entries, statsOf(entries));
+    const current = library.currentId;
+    panes.setStarred(entries.some((entry) => entry.id === current && entry.starred));
+    libraryPane.setNotice(await storageNotice());
+  }
+
+  /**
+   * A browser quota that small, with no promise to keep the data, is a private window
+   * or something very like one. It is a guess, so it is worded as one.
+   */
+  const EPHEMERAL_QUOTA = 120 * 1024 * 1024;
+
+  async function storageNotice(): Promise<{ tone: 'info' | 'warn'; message: string } | null> {
+    if (library?.paused === true) {
+      return {
+        tone: 'warn',
+        message:
+          'New documents are no longer being logged, at your request. Everything already here is untouched — delete what you no longer need, and the log resumes next time you open the app.',
+      };
+    }
+    const estimate = await storageEstimate();
+    if (quotaPressure(estimate) === 'tight') {
+      return {
+        tone: 'warn',
+        message:
+          'Storage for this site is nearly full. Export your library now and nothing has to be lost later.',
+      };
+    }
+    if (!(await isPersisted()) && estimate !== null && estimate.quota < EPHEMERAL_QUOTA) {
+      return {
+        tone: 'info',
+        message:
+          '⚠️ This browsing session will probably not keep these — a private window usually forgets them. Export the library if you want any of it to last.',
+      };
+    }
+    return null;
+  }
+
+  /* --------------------------------------------------- what a full disk may do */
+
+  /** One proposal per session: a dialog per failed write would be a tantrum. */
+  let pruneProposed = false;
+
+  /**
+   * Storage ran out. The app *proposes*; it does not act (§6.10).
+   *
+   * Export comes first and prominently, so nothing has to be lost at all. Only the
+   * oldest unstarred entries are ever offered, only with the user's explicit
+   * agreement in the dialog that named them, and a refusal is a complete answer —
+   * the library stops growing and says so. A library that has stopped growing is a
+   * nuisance; a library that ate the user's work is a betrayal.
+   */
+  async function proposePrune(): Promise<void> {
+    if (!library || pruneProposed) return;
+    pruneProposed = true;
+    const entries = await library.list();
+    const proposal = pruneProposal(entries, PRUNE_PROPOSAL_SIZE);
+    const answer = await libraryPane.askPrune(proposal);
+
+    if (answer === 'remove' && proposal.entries.length > 0) {
+      const ids = proposal.entries.map((entry) => entry.id);
+      if (await library.removeMany(ids)) {
+        toast.show({ message: `Removed ${ids.length} old entries. The library is logging again.` });
+        // The disk has room again, so a later squeeze deserves a fresh proposal.
+        pruneProposed = false;
+      }
+      await refreshLibrary();
+      return;
+    }
+
+    library.pause();
+    notes.library = LIBRARY_PAUSED;
+    updateNote();
+    toast.show({
+      message: 'Nothing was removed. New documents will not be logged for the rest of this session.',
+      timeoutMs: 8000,
+      action: { label: 'Export library', onSelect: () => void exportLibrary() },
+    });
+    await refreshLibrary();
+  }
+
+  /* ------------------------------------------------------- the library's actions */
+
+  /** Opening an entry restores its document *and* the options it was converted under. */
+  function openEntry(entry: LibraryEntry): void {
+    const previousDoc = state.doc;
+    const previousOpts = { ...state.opts };
+    const previousId = library?.currentId ?? null;
+
+    library?.adopt(entry.id);
+    applyOptions(withDefaults(entry.options));
+    setDocument(entry.source, false);
+    sheets.close();
+    void refreshLibrary();
+
+    toast.show({
+      message: `Opened “${entry.title}”.`,
+      action: {
+        label: 'Undo',
+        onSelect: () => {
+          // The settings that were replaced belong to an entry that is itself in the
+          // log, so this is a convenience rather than a rescue — but it is the app's
+          // idiom, and a replaced document deserves one level of undo (§6.7).
+          if (previousId !== null) library?.adopt(previousId);
+          else library?.beginNewEntry();
+          applyOptions(previousOpts);
+          setDocument(previousDoc, previousId === null);
+          void refreshLibrary();
+        },
+      },
+    });
+  }
+
+  /** Put a whole option set in force — the controls, the pane and the worker. */
+  function applyOptions(next: AppOptions): void {
+    state.opts = withDefaults(sanitizeOptions(next));
+    controls.setOptions(state.opts);
+    panes.setSoftWrap(softWraps(state.opts));
+    persistence.options(state.opts);
+  }
+
+  async function deleteEntry(entry: LibraryEntry): Promise<void> {
+    const removed = await library?.remove(entry.id);
+    await refreshLibrary();
+    if (!removed) {
+      toast.show({ message: 'That entry could not be removed.', tone: 'alert' });
+      return;
+    }
+    toast.show({
+      message: `Deleted “${removed.title}”.`,
+      action: {
+        label: 'Undo',
+        onSelect: () => {
+          void (async () => {
+            await library?.restore(removed);
+            await refreshLibrary();
+          })();
+        },
+      },
+    });
+  }
+
+  /* ------------------------------------------------------- export and import */
+
+  async function exportLibrary(): Promise<void> {
+    const entries = (await library?.list()) ?? [];
+    const now = new Date();
+    const text = encodeLibrary(entries, { exportedAt: now, techxt: client.version ?? '' });
+    const name = libraryFileName(now);
+    downloadText(text, name, 'application/json');
+    toast.show({
+      message: `Saved ${name} — ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}.`,
+    });
+  }
+
+  /**
+   * A file the user chose, treated as what it is: something that arrived from
+   * elsewhere. It is decoded before anything is asked, so the question the dialog
+   * puts is about a file that has already been shown to be readable.
+   */
+  async function importLibraryFile(file: File): Promise<void> {
+    if (!library) return;
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      toast.show({ message: 'That file could not be read.', tone: 'alert' });
+      return;
+    }
+
+    const decoded = decodeLibrary(text, Date.now());
+    if (!decoded.ok) {
+      toast.show({ message: decoded.reason, tone: 'alert', timeoutMs: 8000 });
+      return;
+    }
+
+    const existing = await library.list();
+    const stats = statsOf(existing);
+    const choice = await libraryPane.askImport({
+      incoming: decoded.library.entries.length,
+      exportedAt: decoded.library.exportedAt,
+      dropped: decoded.library.dropped,
+      existing: { count: stats.count, starred: stats.starred },
+    });
+    if (!choice) return;
+
+    const plan = planImport(existing, decoded.library.entries, choice);
+    if (!(await library.apply(plan.put, plan.remove))) {
+      toast.show({
+        message: 'That import could not be written — nothing in your library was changed.',
+        tone: 'alert',
+        timeoutMs: 0,
+        action: { label: 'Export library', onSelect: () => void exportLibrary() },
+      });
+      await refreshLibrary();
+      return;
+    }
+
+    // Replace took the current entry with everything else; what is being typed now
+    // deserves an entry of its own rather than a stale id.
+    if (plan.mode === 'replace') library.beginNewEntry();
+    await refreshLibrary();
+    toast.show({ message: describeImport(plan, decoded.library.dropped), timeoutMs: 6000 });
+  }
+
+  /** The first time the pane is opened it is no longer news (§6.10). */
+  function openedLibrary(): void {
+    controls.setLibraryNew(false);
+    if (!hints.opened) {
+      hints.opened = true;
+      writeLibraryHints(storage, hints);
+    }
+    void refreshLibrary();
+  }
+
+  /** ⭐ Save, from the output pane: star this session's entry, creating one if needed. */
+  async function toggleStar(): Promise<void> {
+    if (!library) return;
+    const result = await library.starCurrent(
+      state.doc,
+      state.opts,
+      makePreview(panes.getOutput() || lastGoodOutput),
+    );
+    if (!result) {
+      toast.show({
+        message:
+          state.doc.trim() === ''
+            ? 'There is nothing to keep yet.'
+            : 'That document could not be added to your library.',
+        tone: state.doc.trim() === '' ? 'status' : 'alert',
+      });
+      return;
+    }
+    panes.setStarred(result.starred);
+    await refreshLibrary();
+    toast.show({
+      message: result.starred
+        ? `Starred “${result.entry.title}” — it stays in your library.`
+        : `Removed the star from “${result.entry.title}”.`,
+      action: { label: 'Open library', onSelect: () => sheets.open('library') },
+    });
+  }
 
   /* ------------------------------------------------------------------ actions */
 
@@ -452,8 +876,16 @@ async function start(): Promise<void> {
     });
   }
 
-  function setDocument(text: string): void {
+  /**
+   * Replace the document. Every caller of this is a point where the app already knows
+   * the user has moved on to something else — Load ▾, the file handler, opening a
+   * library entry, an Undo — which is exactly where a new library entry begins
+   * (§6.10). Opening an entry from the library is the one exception, and passes
+   * `false`: the entry it just adopted *is* where those keystrokes belong.
+   */
+  function setDocument(text: string, startNewEntry = true): void {
     state.doc = text;
+    if (startNewEntry) library?.beginNewEntry();
     panes.setDocument(text);
     persistence.document(text);
     requestConversion('immediate');
@@ -520,6 +952,10 @@ async function start(): Promise<void> {
 
   const flush = (): void => {
     persistence.flush();
+    // Best effort, and honest about it: a page being torn down may not get its
+    // IndexedDB transaction finished. The 2 s debounce is what makes that a rare
+    // couple of seconds' typing rather than a session (§6.10).
+    void library?.flush();
   };
   window.addEventListener('pagehide', flush);
   document.addEventListener('visibilitychange', () => {
@@ -538,6 +974,9 @@ async function start(): Promise<void> {
   void useFont(state.ui.font, state.ui.size, false);
   if (state.ui.keepFontsOffline) void preloadAllFonts(state.ui.size);
   requestConversion('immediate');
+  // Last, and unawaited: the library is the one part of the app that may take a
+  // moment to become available, and nothing above it waits for that (§6.10).
+  void openLibrary();
 }
 
 void start();

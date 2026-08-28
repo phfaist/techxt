@@ -119,7 +119,7 @@ tests in `rust/techxt/tests/`.
 
 # 1. Wrap defaults to soft-wrap
 
-> **Done** — 2026-08-28. Soft is the default; the select reads Fit the pane / Off /
+> **Done** — 2026-08-28, `4256ace`. Soft is the default; the select reads Fit the pane / Off /
 > Soft (default); PLAN §5 and §6.3 updated. The hint sentence was reworded rather than
 > kept verbatim: it named "both Off settings", which stopped being what the list says
 > once the third entry became **Soft**. It still explains all three answers.
@@ -296,6 +296,42 @@ the network off, after MathJax has been used once, still typesets.
 
 # 3. The library — an automatic log of what you converted
 
+> **Done** — 2026-08-28, with item 4, in one commit. `src/library.ts` (the entry
+> model, the session and the retention policy), `src/library-store.ts` (IndexedDB and
+> the quota facts), `src/ui/library-pane.ts` (the sheet and its dialogs);
+> `web/PLAN.md` §6.10 and §6.11 are new, and §1, §2 (D8, D9), §3, §6.1, §6.4, §6.8,
+> §13 and §16 were edited to match. 92 vitest cases were added over the pure halves.
+>
+> **Four things diverged from what is written below, and the text above them now says
+> so:**
+>
+> 1. **A reload had to be added to the list of things that do *not* start a new
+>    entry.** It was not on either list here, and the first browser run logged a
+>    second copy of the document on every reload — which is exactly the pile of copies
+>    this item exists to avoid. The id of the current entry is now kept in
+>    `localStorage` under `techxt.library.current.v1` and adopted on load when the
+>    document came from storage.
+> 2. **The `starred` index is a derived `star` of 0/1.** IndexedDB cannot key on a
+>    boolean — a record whose indexed value is one is simply left out of the index —
+>    so `library-store.ts` writes the flag twice and strips the derived half on the
+>    way out. Nothing above that file ever sees it, and an export never carries it.
+> 3. **Toasts had to learn to follow a modal.** Delete's Undo lives in a toast and
+>    Delete happens inside the sheet; `showModal()` makes everything outside the
+>    dialog inert, so the Undo was drawn under the sheet and would not answer a click.
+>    The top layer is no escape — a popover over a modal is painted above it and is
+>    still inert, which was measured — so `ui/toast.ts` now moves the toast mount into
+>    the open dialog and brings it home when the dialog closes.
+> 4. **`downloadName`'s regex became `src/title.ts`**, shared with the entry title
+>    rather than copied. A derived title also follows the document until the user
+>    renames the entry and then stops; `titleIsAutomatic()` tells the two apart by
+>    asking whether the stored title is still the one the stored source would produce,
+>    which costs no extra field and nothing in the export format.
+>
+> One thing was left for later, deliberately: the pane loads every entry in full to
+> render the list, because the text search reads the source. That is fine for the
+> libraries a person accumulates and would not be for tens of thousands of entries —
+> see the new checkbox at the foot of this item.
+
 **The design changed in discussion: saving is automatic.** The library is a historical
 log of the documents the user has run through the app, like a browser's history. The
 button beside Copy and Download is not *Save* but **⭐ Save** meaning *star this* —
@@ -334,10 +370,10 @@ button) and simpler to explain.
 
 ## Storage
 
-- [ ] **IndexedDB**, one database, one object store keyed by `id`, with indices on
+- [x] **IndexedDB**, one database, one object store keyed by `id`, with indices on
       `updatedAt` and `starred`. `localStorage` keeps the session state as it does
       today; the two are separate and neither can exhaust the other.
-- [ ] Call `navigator.storage.persist()` the first time an entry is written, so the
+- [x] Call `navigator.storage.persist()` the first time an entry is written, so the
       browser stops treating the library as evictable. An installed PWA usually gets
       this for free; asking costs nothing.
 
@@ -372,17 +408,17 @@ button) and simpler to explain.
 
 ### The rest of the storage story
 
-- [ ] Cap a single entry's `source` at the same 512 KB `MAX_STORED_DOC` uses, and tell
+- [x] Cap a single entry's `source` at the same 512 KB `MAX_STORED_DOC` uses, and tell
       the user an entry was too large to log — never log it truncated, and never let
       one huge paste be the reason something else gets dropped.
-- [ ] **Private browsing.** IndexedDB may be absent, or present and ephemeral. Do not
+- [x] **Private browsing.** IndexedDB may be absent, or present and ephemeral. Do not
       change the app's behaviour: offer the library as usual, and if it is easy to
       detect (`navigator.storage.estimate()`, a failed `persist()`), show a small
       ⚠️ note in the library header saying this browsing session will probably not keep
       these and pointing at Export. If IndexedDB throws outright, degrade the way
       `browserStorage()` already does for `localStorage`: an inert, honest "not
       available here" state, never a broken button.
-- [ ] **A local file for more space** is Chromium-only (`showSaveFilePicker` and a
+- [x] **A local file for more space** is Chromium-only (`showSaveFilePicker` and a
       persisted handle) and unavailable on iOS, so it is *not* the answer for the base
       feature. Export (item 4) is. Revisit a File System Access backend as a
       desktop-only convenience once the rest works, if the quota warning turns out to
@@ -390,45 +426,69 @@ button) and simpler to explain.
 
 ## The pane
 
-- [ ] **A `<dialog>` sheet**, like About and Install, using `src/ui/sheets.ts`. A
+- [x] **A `<dialog>` sheet**, like About and Install, using `src/ui/sheets.ts`. A
       scrolling list of entries belongs inside a dialog in an app whose page never
       scrolls (§6.8, D8), and the sheet machinery already gives Escape, the backdrop,
       focus handling and inertness for free.
-- [ ] **Open it from the header**, beside About and Install, where the app's other
+- [x] **Open it from the header**, beside About and Install, where the app's other
       sheets live. Also offer it from the primary options row next to *More options*,
       since that is where it was originally asked for — one action, two doors, and no
       third row on a phone.
-- [ ] **Desktop**: list on the left, selected entry on the right — title, date,
+- [x] **Desktop**: list on the left, selected entry on the right — title, date,
       options summary, the preview, and the actions. **Phone**: list, tapping an entry
       pushes to its detail with a back control. Same data, one column.
-- [ ] Per entry: open, star/unstar, rename, delete, and copy/download its source.
-- [ ] Filters: **all / starred**, and a text search over title and source. Sort by most
+- [x] Per entry: open, star/unstar, rename, delete, and copy/download its source.
+- [x] Filters: **all / starred**, and a text search over title and source. Sort by most
       recently updated.
-- [ ] **Delete** removes one entry, with an Undo in the toast (the app's existing
+- [x] **Delete** removes one entry, with an Undo in the toast (the app's existing
       single-level-undo idiom).
-- [ ] **Clear library** with a real confirmation — a typed confirmation or a two-step
+- [x] **Clear library** with a real confirmation — a typed confirmation or a two-step
       dialog naming the count, not a bare "are you sure". Make it hard to lose data
       by accident. Starred entries are counted separately in the confirmation.
-- [ ] **Discoverability.** The library only helps if people know it is there:
+- [x] **Discoverability.** The library only helps if people know it is there:
       - The first time an entry is auto-logged, a one-time toast: *"Saved to your
         library"* with an **Open library** action.
       - A subtle pulse on the library button for the first ~3 sessions, driven by a
         counter in `localStorage`, then never again.
-- [ ] **About** gains a sentence: the library is stored on this device only and is
+- [x] **About** gains a sentence: the library is stored on this device only and is
       never uploaded, alongside the existing privacy line.
+
+- [ ] **If a library ever gets slow to open**, stop loading every entry in full to
+      render the list: list from the `updatedAt` index without `source`, and fetch the
+      source when an entry is selected or when a search actually needs it. Deliberately
+      not done — the text search reads the source, so this is a real trade rather than
+      a free win, and nothing a person plausibly accumulates is slow today. Left here
+      as a box rather than in someone's head, per the rules at the foot of this file.
 
 *Done when*: converting a document and reloading finds it in the library; starring
 survives a prune; deleting one entry is undoable; the pane is usable one-handed on a
 390 px screen; and a browser with IndexedDB blocked still shows a working app.
 
+*Observed*, in Chromium on 2026-08-28: converting and reloading finds **one** entry,
+not two; a full disk (every write failing with `QuotaExceededError`) proposes the 3
+oldest unstarred of 4, offers Export first, and leaves the starred one alone whichever
+way the dialog is answered; declining stops the log and says so in the status line;
+Delete's Undo works from inside the sheet; the pane pushes to a detail at 390 px with
+44 px targets and no sideways scroll; and a profile with `indexedDB` throwing on
+access converts normally with the ⭐ button hidden and an honest pane.
+
 ---
 
 # 4. Library import and export
 
-- [ ] **Export**: the whole library as one JSON file, downloaded through the same
+> **Done** — 2026-08-28, with item 3, in one commit. `src/library-io.ts` is the whole
+> codec: the format, `decodeLibrary()` and `planImport()`. The rule that an import
+> never removes an existing entry unless the user chose Replace is a property of
+> `planImport` — outside `mode: 'replace'` its `remove` list is empty by construction
+> — and `test/library-io.test.ts` holds it to that from five directions, including the
+> cases where every incoming id collides and where the file is the library itself.
+> Timestamps are written as ISO 8601 strings rather than epoch numbers, so the file is
+> readable by a person who opens it in an editor; the reader accepts both.
+
+- [x] **Export**: the whole library as one JSON file, downloaded through the same
       `Blob` path the output's Download button uses. Named
       `techxt-library-YYYY-MM-DD.json`.
-- [ ] **Format**, versioned, and boring on purpose:
+- [x] **Format**, versioned, and boring on purpose:
       ```json
       {
         "format": "techxt.library",
@@ -440,10 +500,10 @@ survives a prune; deleting one entry is undoable; the pane is usable one-handed 
                      "source": …, "options": { … }, "starred": …, "preview": … } ]
       }
       ```
-- [ ] **Include the preview** so an imported library is legible before anything is
+- [x] **Include the preview** so an imported library is legible before anything is
       re-converted. This is the strongest argument for keeping the preview genuinely
       small — a few lines, not the whole rendering.
-- [ ] **Import offers explicit options** in a dialog, so nothing about the result is a
+- [x] **Import offers explicit options** in a dialog, so nothing about the result is a
       surprise:
       - **Add to my library** (the default) — everything already there is kept; an
         id collision gets a fresh id rather than overwriting.
@@ -451,18 +511,25 @@ survives a prune; deleting one entry is undoable; the pane is usable one-handed 
         `source` + `options`, not by id.
       - **Replace my library** — behind its own confirmation naming what will be lost,
         including the starred count.
-- [ ] **Existing entries are never removed unless the user explicitly chose Replace on
+- [x] **Existing entries are never removed unless the user explicitly chose Replace on
       that particular import.** No heuristic, no "clean up duplicates", no exception.
-- [ ] Report the outcome: *"12 added, 3 skipped, 0 replaced."*
-- [ ] **Treat an import as hostile input**, with the discipline `decodeShare()` already
+- [x] Report the outcome: *"12 added, 3 skipped, 0 replaced."*
+- [x] **Treat an import as hostile input**, with the discipline `decodeShare()` already
       uses: every field through a validator, unknown fields dropped, unknown option
       values dropped (`sanitizeOptions` is already exactly this function), size caps,
       and a read that never throws. A refusal names what was wrong with the file.
-- [ ] Unit-test the codec the way the share codec is tested: round-trip, truncation, a
+- [x] Unit-test the codec the way the share codec is tested: round-trip, truncation, a
       foreign file, a future `v`, an item with a bad option value.
 
 *Done when*: a library exported from one profile imports into another with previews
 intact, and every import path has been shown not to remove an existing entry.
+
+*Observed*, in Chromium on 2026-08-28: an export of a starred entry re-imported under
+Add landed a second copy with its preview and star intact and the original untouched;
+the same file under Add + *skip what I have* landed nothing and removed nothing;
+Replace named "2 entries, 2 of them starred", demanded the word typed, and only then
+removed them; and a foreign JSON file was refused with *"That file is not a techxt
+library export."* while the library stayed exactly as it was.
 
 ---
 

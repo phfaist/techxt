@@ -150,6 +150,21 @@ export function initControls(init: ControlsInit): Controls {
     bar: true,
   });
 
+  /* --- Library */
+
+  /*
+   * The second door to the library (§6.10). The first is in the site header beside
+   * About and Install; this one is here because that is where it was asked for — the
+   * row the user is already looking at — and two doors cost less than a third row on
+   * a phone.
+   */
+  const libraryButton = el('button', 'btn btn-labelled library-button');
+  libraryButton.type = 'button';
+  libraryButton.title = 'Every document you convert is kept here, on this device';
+  libraryButton.append(glyph('◪'), document.createTextNode('Library'));
+  libraryButton.addEventListener('click', () => init.onOpenLibrary());
+  libraryButton.classList.toggle('is-new', init.libraryNew === true);
+
   /* --- More options */
 
   const more = el('details', 'more');
@@ -289,7 +304,7 @@ export function initControls(init: ControlsInit): Controls {
   moreBody.append(moreGrid, moreFoot);
   more.append(summary, moreBody);
 
-  bar.append(wrapField, mathField, fontField, more);
+  bar.append(wrapField, mathField, fontField, libraryButton, more);
   root.append(bar);
   mount.append(root);
 
@@ -498,6 +513,7 @@ export function initControls(init: ControlsInit): Controls {
     setVersion(version: string) {
       versionCode.textContent = version || '—';
     },
+    setLibraryNew,
     close() {
       lastOpen = false;
       more.open = false;
@@ -610,6 +626,15 @@ export function initControls(init: ControlsInit): Controls {
     const key = keyOf(id);
     if (key) track(wrap, () => selects.get(key)!.value !== DEFAULTS[key]);
     return wrap;
+  }
+
+  /**
+   * The pulse that says the library exists (§6.10). It is a class and one keyframe,
+   * it runs for the first three sessions, and it stops for good the first time the
+   * pane is opened: an animation that never gives up is one people learn to ignore.
+   */
+  function setLibraryNew(pulse: boolean): void {
+    libraryButton.classList.toggle('is-new', pulse);
   }
 
   function keyOf(id: string): LibKey | null {

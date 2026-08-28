@@ -29,12 +29,14 @@
       mounts below; this file holds only the frame and the prose (web/PLAN.md §6.1).
 
       The page itself never scrolls: the tool is exactly one viewport tall, and the
-      two prose panels are dialogs over it rather than a page below it (§6.8).
+      three sheets — the library and the two prose panels — are dialogs over it rather
+      than a page below it (§6.8, §6.10).
     -->
     <header class="site-header">
       <h1 class="site-name">techxt</h1>
       <p class="site-tagline">LaTeX → plain text</p>
       <nav class="site-links" aria-label="About this app">
+        <button class="site-link" type="button" data-sheet="library">Library</button>
         <button class="site-link" type="button" data-sheet="about">About</button>
         <button class="site-link" type="button" data-sheet="install">Install</button>
         <a class="site-link" href="https://github.com/phfaist/techxt" target="_blank" rel="noopener"
@@ -48,6 +50,23 @@
       <div id="panes-mount"></div>
       <div id="status-mount"></div>
     </main>
+
+    <!-- ----------------------------------------------------------- Library -->
+
+    <!--
+      The one sheet whose body is not prose: `src/ui/library-pane.ts` builds the list,
+      the detail and the dialogs into #library-mount. The shell is here because it is
+      a sheet like the other two, and `src/ui/sheets.ts` finds all three by id.
+    -->
+    <dialog class="sheet sheet-library" id="sheet-library" aria-labelledby="sheet-library-title">
+      <div class="sheet-head">
+        <h2 class="sheet-title" id="sheet-library-title">Your library</h2>
+        <button class="btn sheet-close" type="button" data-close-sheet aria-label="Close">
+          <span aria-hidden="true">✕</span>
+        </button>
+      </div>
+      <div class="sheet-body" id="library-mount"></div>
+    </dialog>
 
     <!-- ------------------------------------------------------------- About -->
 
@@ -76,6 +95,12 @@
           You can <a href="#" data-sheet="install">install this app</a> as a Progressive Web App
           on your phone and on your desktop 
           (<a href="https://en.wikipedia.org/wiki/Progressive_web_app" target="_blank">read more</a>).
+        </p>
+        <p>
+          Every document you convert is kept in
+          <a href="#" data-sheet="library">your library</a>, which is stored on this device only
+          and is never uploaded. Nothing in it is ever removed to save space: you delete what you
+          want gone, and <strong>Export</strong> writes the whole library to a file you keep.
         </p>
 
         <h3>Rust libraries <i>techy</i> and <i>techxt</i>, successors to python's <i>pylatexenc</i></h3>
