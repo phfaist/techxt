@@ -137,11 +137,12 @@ binding surface small.
 
 ### 4.1 Surface
 
-Three exports, no more:
+Four exports, no more:
 
 ```rust
 #[wasm_bindgen]
-pub struct Session { /* cached Converter + the options it was built from */ }
+pub struct Session { /* cached Converter + the options it was built from,
+                       plus the completion table once it is asked for */ }
 
 #[wasm_bindgen]
 impl Session {
@@ -153,6 +154,12 @@ impl Session {
     /// a strict-mode parse error comes back as a result with `ok: false` and one
     /// diagnostic.
     pub fn convert(&mut self, latex: &str, options: JsValue) -> Result<JsValue, JsValue>;
+
+    /// The completions for `prefix`, merged from techxt's own table and from what
+    /// `latex` defines for itself, ranked, and capped at `limit`. Returns an array
+    /// of `Completion` objects; see §4.9.
+    pub fn complete(&mut self, latex: &str, prefix: &str, limit: usize)
+        -> Result<JsValue, JsValue>;
 }
 
 /// Version string of the embedded techxt, for the About section and bug reports.
@@ -164,6 +171,11 @@ pub fn techxt_version() -> String;
 rebuilds only when they change. Measured cost of a rebuild is ~1.2–1.9 ms natively
 (§14), so this is a small optimisation, not a necessary one — but it makes typing
 under fixed options cost exactly one `latex_to_text` call.
+
+**`complete` was added with the lighter editor** and is the reason this section says
+four and not three. It is a second question asked of the same instance rather than a
+second module: the answer is a handful of entries, the work behind it is a binary
+search, and putting it here is what lets the app keep one worker and one wasm heap.
 
 ### 4.2 Options in
 
@@ -433,6 +445,98 @@ Native `cargo test` in `web/crate` (the mapping and offset code is ordinary Rust
 Plus one `wasm-bindgen-test` smoke test that `Session::convert` round-trips through
 `JsValue` under `wasm-pack test --headless --firefox`, run locally rather than in CI
 unless it proves cheap.
+
+### 4.9 Completion
+
+The editor's chip row asks one question — *what could this be?* — and the binding
+answers it whole:
+
+```ts
+interface Completion {
+  name: string;                                  // without the escape character
+  kind: 'macro' | 'environment' | 'specials';
+  replacement: string | null;                    // the literal it renders as, if any
+  arity: number;
+  fromDocument: boolean;                         // scanned out of the user's document
+}
+```
+
+**The app does no matching, no merging and no ranking.** It sends a prefix and renders
+what comes back, in the order it comes back in. That is the section's whole design
+decision, and it is worth stating as a rule rather than as an implementation note:
+there are two sources of suggestions, and reconciling them in TypeScript would mean a
+second matcher to keep in step with the first, a second copy of a fourteen-hundred-entry
+table in the bundle, and two places to change when the order is wrong. `complete.rs`
+holds all of it, next to the table it is drawn from.
+
+**The two sources.** The first is techxt's own declared symbols, read through
+`DefinitionSet::symbols()` (root PLAN §10.7) — 1 406 names, with the literal each one
+renders to where it has one, which is what makes a row worth reading rather than a list
+of words. The second is what the document defines for itself: `\newcommand`,
+`\renewcommand`, `\providecommand`, `\def`, `\DeclareMathOperator` and
+`\newenvironment`, with their starred forms and both the braced and the bare spelling of
+the name. Those are flagged `fromDocument` and rank first, because a name the author
+wrote is the one they meant — and, since a `\renewcommand` in the document is also the
+definition that will actually fire, the document's entry *replaces* the library's rather
+than sitting above a duplicate of it.
+
+**The order, in full**, which is to say the answer to "what does Tab take?": what the
+document defines, then an exact match, then macros before environments before specials,
+then the shortest name — the one closest to what has been typed — then alphabetically so
+that the same prefix always gives the same answer. The last two rules together mean the
+famous name does not always lead: `\alp` offers `\alph` before `\alpha`, because `\alph`
+is a real macro and a shorter completion, and ranking `\alpha` first would mean nobody
+can ever Tab-complete `\alph`. Nothing available here measures which is *wanted* more
+often, so the rule that can be stated is the one that is applied.
+
+**The table is built once and kept.** `Session` builds it lazily on the first completion
+request, so a session whose user never types a `\` never pays for it, and then holds it:
+the alternative is resolving fourteen hundred definitions to answer three letters. It is
+held as an owned copy of the resolved entries rather than as a `SymbolIndex`, which
+borrows the `DefinitionSet` it was read from and so cannot be stored beside it without a
+self-referencing struct. The copy is a few tens of kilobytes and keeps the property the
+index exists for: sorted by kind and then name, so a prefix query is two binary searches
+and a subslice.
+
+**The document is passed in, not remembered.** `complete(latex, prefix, limit)` is
+stateless with respect to the text, so the session can never answer from a stale copy of
+something the user has since edited. The scan is linear and the search is a binary one;
+if the scan ever shows up in a profile, the place to cache it is inside `Session`,
+against the text's length and hash, without moving it out of this signature.
+
+**Measured**, on the release module built by `npm run wasm`, driven from Node rather
+than a browser (2026-08-28 container): the first call costs **7.4 ms**, which is the
+table being built and is why it is built lazily; after that a call is **0.03 ms** on an
+empty or an ordinary 2 KB document and **1.1 ms** on a 197 KB one, where the linear scan
+is the whole of the difference. So the cost is the document's length and not the table's
+size, and even the large case is well inside a keystroke.
+
+**What the scan cannot see, and why that is the right line.** It is a scan and not a
+parse: `Conversion` exposes the converted text and its diagnostics and no parsing state,
+and running the parser a second time to read one out is far out of proportion to the
+difference it makes to a chip row. So the scan reads what a definer *looks* like.
+Comments are filtered, because `%` is one unambiguous character and the scan is walking
+escape sequences anyway — `\%` is a control symbol and does not start one. A `verbatim`
+body is **not** filtered: recognizing one would mean tracking `\begin`/`\end` pairs,
+`\verb` with its arbitrary delimiter and every listing package a document might use,
+which is the parse just declined. The cost is one chip offering a name that will not
+fire, and the tests pin both halves so that neither reads as a bug.
+
+**Not on the wire: the mode restriction.** `SymbolEntry` says whether a definition is
+text-only or math-only, and it is dropped rather than passed on, because the app has no
+idea which mode the cursor is in — deciding that is a parse. Offering `\alpha` in a
+paragraph is the honest failure here; hiding it would be the dishonest one.
+
+Tests, native in `web/crate/tests/completion.rs`: a prefix matching shipped symbols comes
+back with their replacements; a document defining `\ket` has it first, flagged, with the
+arity it declared, and exactly once; every definer is recognized in every spelling; a
+later definition replaces an earlier one; a commented-out definer is not offered and an
+escaped percent does not swallow the line; a definer in a `verbatim` body is offered, on
+purpose; the limit is a cap; an empty prefix and a prefix matching nothing both behave;
+and each ranking rule is asserted on its own. Plus `wasm_completion.rs`, the browser-only
+half, which is about the wire spelling alone — `fromDocument` in camelCase, a kind as a
+lowercase string, `replacement: null` rather than an absent key, and an `arity` that is a
+number and not the `BigInt` a 64-bit integer would have become.
 
 ## 5. The option model
 

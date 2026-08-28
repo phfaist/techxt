@@ -1,9 +1,10 @@
 //! The wasm binding behind the techxt web app (web/PLAN.md §4).
 //!
-//! Three exports and no more: a [`Session`], its [`convert`](Session::convert) method,
-//! and [`techxt_version`]. Everything else this crate contains is in service of the
-//! two data shapes that cross the boundary — [`options::OptionsDto`] coming in and
-//! [`diag::ConversionResultDto`] going out — both of which are declared normatively in
+//! Four exports and no more: a [`Session`], its [`convert`](Session::convert) and
+//! [`complete`](Session::complete) methods, and [`techxt_version`]. Everything else this
+//! crate contains is in service of the three data shapes that cross the boundary —
+//! [`options::OptionsDto`] coming in, [`diag::ConversionResultDto`] and
+//! [`complete::CompletionDto`] going out — all of which are declared normatively in
 //! `web/src/worker/protocol.ts`.
 //!
 //! # It is app-private
@@ -17,10 +18,12 @@
 //!
 //! Almost none of it is here. [`options::build`] maps the DTO onto a
 //! [`ConverterBuilder`](techxt::convert::ConverterBuilder), [`diag::convert_native`]
-//! converts a document and shapes the answer, and both are ordinary Rust that
-//! `cargo test` exercises natively. This module adds the three things that genuinely
-//! need a browser: the `JsValue` boundary, the panic hook, and the clock.
+//! converts a document and shapes the answer, [`complete::complete_native`] merges and
+//! ranks the suggestions for a prefix, and all three are ordinary Rust that `cargo test`
+//! exercises natively. This module adds the three things that genuinely need a browser:
+//! the `JsValue` boundary, the panic hook, and the clock.
 
+pub mod complete;
 pub mod diag;
 pub mod options;
 
@@ -50,6 +53,11 @@ pub struct Session {
     /// `BuildError` is a bug in techxt's own definitions, and the constructor has
     /// nowhere to report one.
     built: Option<(OptionsDto, Converter)>,
+    /// The completion table, or `None` until the first completion request. It is a
+    /// resolved copy of every name techxt ships, so it is built once and kept — and
+    /// built lazily, because a session whose user never types a `\` should not pay for
+    /// it at all.
+    symbols: Option<complete::SymbolTable>,
 }
 
 #[wasm_bindgen]
@@ -62,7 +70,10 @@ impl Session {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Session {
         console_error_panic_hook::set_once();
-        Session { built: None }
+        Session {
+            built: None,
+            symbols: None,
+        }
     }
 
     /// Convert `latex` under `options` (a plain JavaScript object), and answer a
@@ -113,6 +124,44 @@ impl Session {
         let serializer = serde_wasm_bindgen::Serializer::new().serialize_missing_as_null(true);
         result.serialize(&serializer).map_err(|error| {
             JsError::new(&format!("techxt: could not serialize the result: {error}")).into()
+        })
+    }
+
+    /// The completions for `prefix`, drawn from techxt's own table and from what `latex`
+    /// defines for itself, already merged and already ranked (web/PLAN.md §4.9).
+    ///
+    /// The answer is an array of `Completion` objects as `protocol.ts` declares them, at
+    /// most `limit` long. It cannot fail on the document: a prefix nothing matches, an
+    /// empty prefix and a `limit` of zero are all ordinary answers, and the `Err` case is
+    /// reserved for a failure to serialize — the same contract [`convert`](Self::convert)
+    /// keeps.
+    ///
+    /// `latex` is passed in on every call rather than remembered, which keeps the call
+    /// stateless with respect to the document: there is no way for the session to hold a
+    /// stale copy of text the user has since edited. The scan it costs is linear and
+    /// runs in microseconds; if it ever shows up in a profile the place to cache it is
+    /// inside the session, against the text's length and hash, without moving it out of
+    /// this signature.
+    pub fn complete(
+        &mut self,
+        latex: &str,
+        prefix: &str,
+        limit: usize,
+    ) -> Result<JsValue, JsValue> {
+        let symbols = self
+            .symbols
+            .get_or_insert_with(complete::SymbolTable::standard);
+        let items = complete::complete_native(symbols, latex, prefix, limit);
+
+        // `serialize_missing_as_null` for the same reason `convert` uses it: a symbol
+        // with no literal replacement is `replacement: null` on the wire, which is what
+        // `interface Completion` declares, and not an absent key.
+        let serializer = serde_wasm_bindgen::Serializer::new().serialize_missing_as_null(true);
+        items.serialize(&serializer).map_err(|error| {
+            JsError::new(&format!(
+                "techxt: could not serialize the completions: {error}"
+            ))
+            .into()
         })
     }
 }

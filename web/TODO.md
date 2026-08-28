@@ -636,10 +636,61 @@ and the door stays open.
 
 ## Completion
 
+> **The binding half is done** — 2026-08-28. `Session::complete(latex, prefix, limit)`
+> answers with the `Completion` array `protocol.ts` declares, merged from both sources
+> and ranked in Rust. `web/crate/src/complete.rs` is the whole of it, with
+> `tests/completion.rs` natively and `tests/wasm_completion.rs` for the wire spelling;
+> `web/PLAN.md` §4.1 grows a fourth export and a new §4.9 records the design. It cost
+> **33 933 B raw / 15 627 B gzipped** in the module, measured on this container against
+> the same build without it — mostly L2's machinery, which until something called
+> `symbols()` was dropped by the linker. What is left of this item is the app: the
+> protocol messages, the chip row, and the highlighting above.
+>
+> **"Microseconds either way" is right for a document and wrong for the first call.**
+> Driving the release module from Node: the first `complete` costs 7.4 ms, because that
+> is where the table is built, and every call after it costs 0.03 ms on an ordinary
+> document and 1.1 ms on a 197 KB one, the linear scan being the whole of the
+> difference. Nothing here needs the cache the bullet below holds in reserve; what the
+> figures do say is that the head-of-line-blocking measurement still to be done should
+> budget for a first request that is slower than the rest.
+>
+> **Five things reality had to settle**, all of them also written into §4.9:
+>
+> 1. **The index could not be kept as a `SymbolIndex`.** It borrows the `DefinitionSet`
+>    it was read from, so a `Session` holding both is a self-referencing struct, and
+>    there is no honest way to write one. The binding keeps an owned copy of the 1 406
+>    resolved entries instead — a few tens of kilobytes, built once, lazily, and still
+>    sorted by `(kind, name)`, so a prefix query is two binary searches and a subslice
+>    exactly as the bullet below intends. Only the type changed.
+> 2. **A definition the document makes *replaces* the shipped one of the same name**
+>    rather than ranking above it. It is the definition that will actually fire, and two
+>    chips both reading `\ket` would have been a worse answer than one. `\ket` is not a
+>    hypothetical: techxt ships one, so the TODO's own example is a shadowing case.
+> 3. **Comments are filtered out of the scan; a `verbatim` body is not.** `%` is one
+>    unambiguous character and the scan already walks escape sequences, so a
+>    commented-out `\newcommand` costs nothing to ignore — and `\%` is a control symbol,
+>    so a macro body that prints a percent sign is still found. A `verbatim` body would
+>    mean tracking `\begin`/`\end`, `\verb` with its arbitrary delimiter and every
+>    listing package there is, which is the parse this item declined; a definer inside
+>    one is offered, and there is a test that says so on purpose.
+> 4. **`\alp` offers `\alph` before `\alpha`.** The *Done when* line below is worth
+>    reading with this in mind. `\alph` is a real macro and a shorter completion of the
+>    same prefix, so the shortest-first rule puts it first and Tab takes it; `\alpha` is
+>    the second chip. Ranking `\alpha` first would mean nobody can ever complete
+>    `\alph`, and nothing available here measures which of the two is wanted more often.
+>    The line is left standing rather than quietly rewritten, because the example is a
+>    good one and what it runs into is worth knowing.
+> 5. **What the scan does not claim to know.** A document's own definition has
+>    `replacement: null` — the scan recognizes a definition, it does not evaluate one —
+>    and the definer list is exactly the six named below, so `\renewenvironment` and
+>    `\let` are not scanned. `SymbolEntry`'s mode restriction is dropped rather than put
+>    on the wire, because the app cannot know which mode the cursor is in without a
+>    parse.
+
 **Where the suggestions come from.**
 
-- [ ] **techxt's own declared symbols**, through the wasm module (below).
-- [ ] **The user's own definitions, the cheap way — and in Rust, not JS.** Scan the
+- [x] **techxt's own declared symbols**, through the wasm module (below).
+- [x] **The user's own definitions, the cheap way — and in Rust, not JS.** Scan the
       document for `\newcommand`, `\renewcommand`, `\providecommand`, `\def`,
       `\DeclareMathOperator` and `\newenvironment` and take the names. A linear scan,
       ~30 lines, no library change. Doing it **inside the binding** rather than in the
@@ -733,11 +784,11 @@ Root `PLAN.md` entry and tests as usual.
 
 **The app's architecture for completion.**
 
-- [ ] **The index lives in wasm and stays there.** ~1 100 macros with their
+- [x] **The index lives in wasm and stays there.** ~1 100 macros with their
       replacements is a table the JS side has no reason to hold a second copy of.
       `Session` builds a sorted `SymbolIndex` lazily on the first completion request
       and keeps it.
-- [ ] Export `Session.complete(latex, prefix, limit)` returning a small array of
+- [x] Export `Session.complete(latex, prefix, limit)` returning a small array of
       `{ name, kind, replacement, arity, fromDocument }` — a binary search plus a
       prefix scan over the index, plus the definer scan over `latex`, merged and
       ranked. Microseconds either way, and the payload is a handful of entries.
