@@ -1108,6 +1108,33 @@ smallest. `opt-level = 3` takes the speed; the other two rows are here so the tr
 can be reversed on evidence rather than re-measured from scratch (§4.7). The speed
 side of that table is still unmeasured — W7 fills it in from the browser.
 
+### Measured at the techy `736c97c` / techy-xp `58c8aef` rev bump — the tripwire is red
+
+The upstream parse-entry rework (`parse_source` becoming `parse_setup(...).parse()`,
+plus a defaulted `ParseDriver::make_root_parser`) touches nothing this app calls, and it
+is not what moved the needle:
+
+| Quantity | Value |
+|---|---|
+| wasm at M9 (table above) | 1 120 513 B raw · 398 525 B gzip |
+| wasm on `main` at 94c0366, **before** this bump (M10 in, never re-measured) | 1 130 119 B raw · **401 841 B gzip** |
+| wasm at techy `736c97c` + techy-xp `58c8aef` (`opt-level = 3` + LTO + `wasm-opt -O3`) | **1 130 392 B raw · 400 993 B gzip** |
+| CI budget (§11) | 1 150 000 B raw · 400 000 B gzip |
+| headroom | 19 608 B raw (1.7 %) · **−993 B gzip — over** |
+| the same build at `opt-level = "s"` (`wasm-opt -O3` unchanged) | 898 175 B raw · 344 828 B gzip |
+
+The bump itself is size-neutral, marginally favourable: −848 B gzipped, +273 B raw.
+**The gzip budget was already breached on `main` before it.** M10 (the render side made
+generic over `LatexlikeLang`, root PLAN §16) spent the 1 475 B of headroom M9 left and
+was never re-measured, so the size step of `.github/workflows/web.yml` fails on `main`
+today for reasons that have nothing to do with techy's revision.
+
+So §4.7's decision point has been reached exactly as the M9 note above predicted, and
+the answer it names is unchanged: `opt-level = "s"` buys 56.2 KB gzipped back and lands
+at 344 828 B, 14 % under the ceiling — at a speed cost this file has still never
+measured. It is a decision for the owner (Appendix D), not something to slip into a
+rev bump. The budgets stay where they are until it is made.
+
 ## 15. Milestones
 
 Each is a working, deployable state.
@@ -1288,7 +1315,7 @@ Confirmed present on the development machine on 2026-08-20: rustc/cargo **1.97.0
 `pyftsubset`/fonttools. `wasm-bindgen-cli` and a standalone `wasm-opt` are **not**
 installed — wasm-pack supplies both.
 
-- **`techy` is a git dependency** pinned to rev `aa71c83`, so a cold build needs
+- **`techy` is a git dependency** pinned to rev `736c97c`, so a cold build needs
   network. `web/crate/Cargo.lock` is committed to pin it for deploys.
 - **`techy-xp` joins it at M9**, pinned the same way and to a revision that itself pins
   the *same* techy revision — cargo cannot unify two revs of one git dependency, so the

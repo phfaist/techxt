@@ -51,14 +51,14 @@ bare_urls = "warn"
 # exact commit the plan was written against (PLAN.md §3 describes that API). Switch
 # to a version requirement once techy publishes; until then techxt itself cannot be
 # published either (PLAN.md §16 M8).
-techy = { git = "https://github.com/phfaist/techy", rev = "aa71c83" }
+techy = { git = "https://github.com/phfaist/techy", rev = "736c97c" }
 # Macro definition and expansion for techy's latexlike preset (PLAN.md M9): the
 # `LatexlikeXp` language and `XpDriver` the converter parses through, so that
 # `\newcommand`, `\def` and friends are expanded at token-reading time. Pinned to a
 # git revision like techy, and to a revision that itself pins the *same* techy
 # revision as this workspace — cargo cannot unify two revs of one git dependency,
 # so the two pins move in lockstep.
-techy-xp = { git = "https://github.com/phfaist/techy-xp", rev = "9869be0" }
+techy-xp = { git = "https://github.com/phfaist/techy-xp", rev = "58c8aef" }
 # East-Asian-width-aware display width of the rendered text, for the layout engine's
 # column accounting (PLAN.md §7). no_std-capable and dependency-free.
 unicode-width = "0.2"

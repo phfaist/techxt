@@ -337,7 +337,7 @@ dependencies = [
 [[package]]
 name = "techy"
 version = "0.1.0"
-source = "git+https://github.com/phfaist/techy?rev=aa71c83#aa71c834ed75accf26b13be87ad8337858dc9843"
+source = "git+https://github.com/phfaist/techy?rev=736c97c#736c97c2d6db8787353aa092fde83d758f2963ec"
 dependencies = [
  "hashbrown",
  "techy-derive",
@@ -346,7 +346,7 @@ dependencies = [
 [[package]]
 name = "techy-derive"
 version = "0.1.0"
-source = "git+https://github.com/phfaist/techy?rev=aa71c83#aa71c834ed75accf26b13be87ad8337858dc9843"
+source = "git+https://github.com/phfaist/techy?rev=736c97c#736c97c2d6db8787353aa092fde83d758f2963ec"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "techy-xp"
 version = "0.1.0"
-source = "git+https://github.com/phfaist/techy-xp?rev=9869be0#9869be0cf89a951b8d2e6a44e7237c3cbd8b78f7"
+source = "git+https://github.com/phfaist/techy-xp?rev=58c8aef#58c8aef7312d60a2327630b75b0287bd9efb41bf"
 dependencies = [
  "hashbrown",
  "techy",
