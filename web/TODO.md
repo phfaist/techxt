@@ -1023,6 +1023,18 @@ Root `PLAN.md` entry and tests as usual.
       so there is normally a gap. Measure it on a 200 KB document. If it is laggy, add
       a small JS-side prefix→results cache before reaching for a second worker; a
       second wasm instance is a megabyte of memory for a nicety.
+- [ ] **`\begin` and `\end` need app-side help, and so do environment names.**
+      Building the curated list turned up that techxt defines neither `\begin` nor
+      `\end` — they are structure the parser handles itself, not entries in a
+      `DefinitionSet` — so `\begi` completes to nothing at all, which is arguably the
+      most useful completion in LaTeX missing. Two parts, both app-side:
+      offer `\begin` and `\end` as literals the app knows about rather than names it
+      looked up; and once the user is inside `\begin{`, complete **environment
+      names** — `SymbolIndex` carries them, `complete()` already returns
+      `kind: 'environment'`, and nothing but the trigger is missing. That trigger is
+      the reason this was not in the original design: the chip row fires on `\` plus
+      a letter, and this one fires on `\begin{` plus a letter. Treat it as a second
+      trigger feeding the same row, not as a second mechanism.
 - [ ] **The JS side does no matching, no merging and no ranking.** It sends a prefix
       and renders what comes back. Every rule about what is offered and in what order
       lives in one place, in Rust, next to the table it is drawn from.
