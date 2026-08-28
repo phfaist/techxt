@@ -296,7 +296,7 @@ the network off, after MathJax has been used once, still typesets.
 
 # 3. The library — an automatic log of what you converted
 
-> **Done** — 2026-08-28, with item 4, in one commit. `src/library.ts` (the entry
+> **Done** — 2026-08-28, `29a65dd`, with item 4. `src/library.ts` (the entry
 > model, the session and the retention policy), `src/library-store.ts` (IndexedDB and
 > the quota facts), `src/ui/library-pane.ts` (the sheet and its dialogs);
 > `web/PLAN.md` §6.10 and §6.11 are new, and §1, §2 (D8, D9), §3, §6.1, §6.4, §6.8,
@@ -476,7 +476,7 @@ access converts normally with the ⭐ button hidden and an honest pane.
 
 # 4. Library import and export
 
-> **Done** — 2026-08-28, with item 3, in one commit. `src/library-io.ts` is the whole
+> **Done** — 2026-08-28, `29a65dd`, with item 3. `src/library-io.ts` is the whole
 > codec: the format, `decodeLibrary()` and `planImport()`. The rule that an import
 > never removes an existing entry unless the user chose Replace is a property of
 > `planImport` — outside `mode: 'replace'` its `remove` list is empty by construction
