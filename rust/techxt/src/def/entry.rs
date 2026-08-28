@@ -78,6 +78,11 @@ impl Args {
         Ok(specs)
     }
 
+    /// How many arguments the entry declares.
+    fn arity(&self) -> usize {
+        self.0.len()
+    }
+
     /// The argument names, in declaration order, as templates refer to them.
     ///
     /// An argument built from an unnamed [`ArgumentSpec`] contributes an empty name: it
@@ -286,6 +291,11 @@ impl MacroDef {
         self.args.names()
     }
 
+    /// How many arguments this macro declares.
+    pub(crate) fn arity(&self) -> usize {
+        self.args.arity()
+    }
+
     /// The rule this macro renders through, if it has one.
     pub(crate) fn text_rule(&self) -> Option<&TextRule> {
         self.rule.as_ref()
@@ -387,6 +397,11 @@ impl EnvDef {
         self.args.names()
     }
 
+    /// How many arguments this environment declares.
+    pub(crate) fn arity(&self) -> usize {
+        self.args.arity()
+    }
+
     /// What this environment's body is.
     pub(crate) fn body_kind(&self) -> EnvBodyKind {
         self.body
@@ -468,6 +483,11 @@ impl SpecialsDef {
     /// The argument names, in declaration order.
     pub(crate) fn arg_names(&self) -> Vec<Box<str>> {
         self.args.names()
+    }
+
+    /// How many arguments this specials declares.
+    pub(crate) fn arity(&self) -> usize {
+        self.args.arity()
     }
 
     /// The rule this specials renders through, if it has one.

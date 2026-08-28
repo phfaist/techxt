@@ -55,6 +55,17 @@
 //! 6. **No wrapping is the same pass** with the width comparison skipped, so the two
 //!    modes cannot drift apart.
 //!
+//! # Output regions
+//!
+//! The same pass reports where the preformatted content ended up:
+//! [`render_with_regions`] answers with a list of [`OutputRegion`]s beside the text,
+//! naming the byte range of every [`Verbatim`](FlowItem::Verbatim) and
+//! [`InlineVerbatim`](FlowItem::InlineVerbatim) item and what it was
+//! ([`VerbatimProvenance`]). Nothing in the text
+//! changes — there is no marker to strip — and the ranges are recorded as the bytes are
+//! written, by the byte counter every write goes through, so they cannot disagree with
+//! the string they index.
+//!
 //! # Separation levels
 //!
 //! Requests come at two strengths, and merging takes the stronger one:
@@ -77,7 +88,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::Write;
 
-use crate::flow::{display_width, BlockKind, Flow, FlowItem};
+use crate::flow::{display_width, BlockKind, Flow, FlowItem, VerbatimProvenance};
 
 /// How to lay a [`Flow`] out.
 #[non_exhaustive]
@@ -93,6 +104,42 @@ pub struct LayoutOptions {
     pub wrap_width: Option<usize>,
 }
 
+/// A run of the output that is preformatted content rather than converted text.
+///
+/// The byte range `start..end` indexes the rendered string, and `kind` says what the
+/// bytes are (see [`VerbatimProvenance`]). Regions never overlap and come in output
+/// order, so a consumer can walk them and the text between them in one pass.
+///
+/// This is the one fact about a conversion that cannot be recovered from its text
+/// afterwards: `\$` renders to a `$` that is indistinguishable from the `$` of a
+/// source-mode formula, so anything wanting to typeset the formulae — or to style a
+/// verbatim block in monospace, or to emit HTML — has to be told where they are. The
+/// regions cost nothing to ignore.
+///
+/// ```
+/// use techxt::flow::{Flow, FlowItem, VerbatimProvenance};
+/// use techxt::layout::{render_with_regions, LayoutOptions};
+///
+/// let mut flow = Flow::from_plain_text("cost");
+/// flow.extend(Flow::glue());
+/// flow.push(FlowItem::InlineVerbatim {
+///     text: "$3".into(),
+///     provenance: VerbatimProvenance::MathSource { display: false },
+/// });
+/// let (text, regions) = render_with_regions(&flow, &LayoutOptions::default());
+/// assert_eq!(text, "cost $3\n");
+/// assert_eq!(&text[regions[0].start..regions[0].end], "$3");
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct OutputRegion {
+    /// Byte offset of the region's first byte in the rendered text.
+    pub start: usize,
+    /// Byte offset one past the region's last byte.
+    pub end: usize,
+    /// What the bytes are.
+    pub kind: VerbatimProvenance,
+}
+
 /// Render a flow to a [`String`].
 ///
 /// ```
@@ -105,11 +152,35 @@ pub struct LayoutOptions {
 /// assert_eq!(render(&flow, &LayoutOptions::default()), "one\n\ntwo\n");
 /// ```
 pub fn render(flow: &Flow, opts: &LayoutOptions) -> String {
+    render_with_regions(flow, opts).0
+}
+
+/// Render a flow to a [`String`], and report which runs of it are preformatted.
+///
+/// The same single pass as [`render`], which is deliberate: the regions are recorded
+/// as the bytes are written, so there is no second traversal to keep in step and no
+/// way for the two answers to disagree. See [`OutputRegion`].
+///
+/// ```
+/// use techxt::flow::{Flow, FlowItem, VerbatimProvenance};
+/// use techxt::layout::{render_with_regions, LayoutOptions};
+///
+/// let mut flow = Flow::text("before");
+/// flow.push(FlowItem::Verbatim {
+///     text: "  raw\n".into(),
+///     provenance: VerbatimProvenance::Verbatim,
+/// });
+/// let (text, regions) = render_with_regions(&flow, &LayoutOptions::default());
+/// assert_eq!(text, "before\n\n  raw\n");
+/// assert_eq!(&text[regions[0].start..regions[0].end], "  raw");
+/// ```
+pub fn render_with_regions(flow: &Flow, opts: &LayoutOptions) -> (String, Vec<OutputRegion>) {
     let mut out = String::new();
     // `String`'s `fmt::Write` impl is infallible, so this cannot fail and there is
-    // nothing to report; ignoring the result keeps the panic-free promise.
-    let _ = render_to(flow, opts, &mut out);
-    out
+    // nothing to report; the default keeps the panic-free promise without pretending
+    // that an unreachable branch has a meaningful answer.
+    let regions = render_to_with_regions(flow, opts, &mut out).unwrap_or_default();
+    (out, regions)
 }
 
 /// Render a flow into any [`core::fmt::Write`] sink, forwarding its errors.
@@ -126,18 +197,45 @@ pub fn render(flow: &Flow, opts: &LayoutOptions) -> String {
 /// assert_eq!(out, "a b\n");
 /// ```
 pub fn render_to(flow: &Flow, opts: &LayoutOptions, out: &mut dyn Write) -> core::fmt::Result {
+    render_to_with_regions(flow, opts, out).map(|_| ())
+}
+
+/// Render a flow into any [`core::fmt::Write`] sink and report its preformatted runs.
+///
+/// The offsets in the returned regions count bytes written to `out` by this call, so
+/// they index the sink's contents only if the sink was empty to begin with.
+///
+/// ```
+/// use techxt::flow::Flow;
+/// use techxt::layout::{render_to_with_regions, LayoutOptions};
+///
+/// let mut out = String::new();
+/// let regions =
+///     render_to_with_regions(&Flow::from_plain_text("a b"), &LayoutOptions::default(), &mut out)
+///         .unwrap();
+/// assert_eq!(out, "a b\n");
+/// assert!(regions.is_empty());
+/// ```
+pub fn render_to_with_regions(
+    flow: &Flow,
+    opts: &LayoutOptions,
+    out: &mut dyn Write,
+) -> Result<Vec<OutputRegion>, core::fmt::Error> {
     let mut engine = Engine {
-        out,
+        sink: Sink { out, offset: 0 },
         wrap_width: opts.wrap_width,
         frames: Vec::new(),
         word: String::new(),
+        word_regions: Vec::new(),
+        regions: Vec::new(),
         col: 0,
         line_open: false,
         wrote_any: false,
         pending_glue: false,
         pending_sep: Sep::None,
     };
-    engine.run(flow)
+    engine.run(flow)?;
+    Ok(engine.regions)
 }
 
 /// Render a flow onto a single line, for places that must not contain one.
@@ -163,7 +261,7 @@ pub fn render_inline(flow: &Flow) -> String {
     let mut pending_space = false;
     for item in flow.items() {
         match item {
-            FlowItem::Text(text) | FlowItem::InlineVerbatim(text) => {
+            FlowItem::Text(text) | FlowItem::InlineVerbatim { text, .. } => {
                 push_inline_word(&mut out, &mut pending_space, text);
             }
             FlowItem::MathAtom(atom) => {
@@ -174,7 +272,7 @@ pub fn render_inline(flow: &Flow) -> String {
             | FlowItem::ParagraphBreak
             | FlowItem::BlockStart(_)
             | FlowItem::BlockEnd => pending_space = true,
-            FlowItem::Verbatim(payload) => {
+            FlowItem::Verbatim { text: payload, .. } => {
                 // Raw, except that the newlines cannot survive on one line. A block
                 // separates from its surroundings on both sides, so the separation is
                 // requested rather than written: routing the payload through
@@ -258,6 +356,26 @@ enum Sep {
     Blank,
 }
 
+/// The output sink, wrapped in a byte counter.
+///
+/// Every byte of the output goes through [`write`](Sink::write), so `offset` is always
+/// the position the next byte will land at — which is what turns "this item is
+/// preformatted" into an [`OutputRegion`] without a second pass over the text.
+struct Sink<'a> {
+    out: &'a mut dyn Write,
+    /// Bytes written so far.
+    offset: usize,
+}
+
+impl Sink<'_> {
+    /// Write a run of text and account for its bytes.
+    fn write(&mut self, text: &str) -> core::fmt::Result {
+        self.out.write_str(text)?;
+        self.offset += text.len();
+        Ok(())
+    }
+}
+
 /// One open block on the indent stack.
 struct Frame {
     /// Prefix for the block's first line.
@@ -273,11 +391,17 @@ struct Frame {
 
 /// The single-pass renderer. See the [module documentation](self) for the algorithm.
 struct Engine<'a> {
-    out: &'a mut dyn Write,
+    sink: Sink<'a>,
     wrap_width: Option<usize>,
     frames: Vec<Frame>,
     /// The word being accumulated from adjacent `Text`/`InlineVerbatim` items.
     word: String,
+    /// The `InlineVerbatim` runs inside `word`, with offsets relative to `word`'s own
+    /// start. A word is flushed at a position wrapping decides, so where it lands is
+    /// not known until `emit_word` writes it; these are rebased onto the output there.
+    word_regions: Vec<OutputRegion>,
+    /// The finished regions, in output order.
+    regions: Vec<OutputRegion>,
     /// Display width already occupied on the current line, prefix included.
     col: usize,
     /// Whether the current line has been started (its prefix written).
@@ -301,8 +425,24 @@ impl Engine<'_> {
         match item {
             // A word is built up from adjacent items so that the wrap decision sees
             // its true width: `\textbf{bold}text` must be measured as "boldtext".
-            FlowItem::Text(text) | FlowItem::InlineVerbatim(text) => {
+            FlowItem::Text(text) => {
                 self.word.push_str(text);
+                Ok(())
+            }
+            // An inline verbatim is a word too, and is glued to whatever text sits
+            // beside it; what it adds is that its own extent is worth reporting. Where
+            // the word will be written is not known yet, so the range is recorded
+            // against the word and rebased in `emit_word`.
+            FlowItem::InlineVerbatim { text, provenance } => {
+                let start = self.word.len();
+                self.word.push_str(text);
+                if self.word.len() > start {
+                    self.word_regions.push(OutputRegion {
+                        start,
+                        end: self.word.len(),
+                        kind: *provenance,
+                    });
+                }
                 Ok(())
             }
             FlowItem::MathAtom(atom) => {
@@ -356,14 +496,14 @@ impl Engine<'_> {
                 self.request_sep(Sep::Line);
                 Ok(())
             }
-            FlowItem::Verbatim(payload) => {
-                if payload.is_empty() {
+            FlowItem::Verbatim { text, provenance } => {
+                if text.is_empty() {
                     // Nothing to emit, and nothing to separate from: an empty
                     // verbatim block must not even interrupt the word around it.
                     return Ok(());
                 }
                 self.flush_word()?;
-                self.verbatim(payload)
+                self.verbatim(text, *provenance)
             }
             FlowItem::CellSep => {
                 stray_table_marker("CellSep");
@@ -418,42 +558,71 @@ impl Engine<'_> {
             // when writing it plus the word would overrun.
             let wrap = matches!(self.wrap_width, Some(w) if self.col + 1 + width > w);
             if wrap {
-                self.out.write_str("\n")?;
+                self.sink.write("\n")?;
                 self.line_open = false;
                 self.col = 0;
                 self.open_line()?;
             } else {
-                self.out.write_str(" ")?;
+                self.sink.write(" ")?;
                 self.col += 1;
             }
         }
-        self.out.write_str(word)?;
+        // The word's base offset is known only now, so this is where the ranges
+        // recorded against the word become ranges in the output.
+        let base = self.sink.offset;
+        self.sink.write(word)?;
+        for mut region in self.word_regions.drain(..) {
+            region.start += base;
+            region.end += base;
+            self.regions.push(region);
+        }
         self.col += width;
         self.wrote_any = true;
         Ok(())
     }
 
     /// Emit a verbatim block: raw lines under the continuation indent, blank-line
-    /// separated from its surroundings.
-    fn verbatim(&mut self, payload: &str) -> core::fmt::Result {
+    /// separated from its surroundings, and recorded as one [`OutputRegion`].
+    ///
+    /// The region opens before the first line's indent and closes after the last line's
+    /// content, so it **includes** every continuation indent inserted between the
+    /// block's lines. That is the honest range: those bytes are in the output, and a
+    /// consumer that wrapped the payload's own bytes instead would be naming a string
+    /// that is not there. What it excludes is the newline terminating the block's last
+    /// line, which separates the block from what follows rather than belonging to it.
+    fn verbatim(&mut self, payload: &str, provenance: VerbatimProvenance) -> core::fmt::Result {
         debug_assert!(!payload.is_empty());
         self.request_sep(Sep::Blank);
         self.flush_sep()?;
         // A trailing newline terminates the last line rather than starting an empty
         // one; every other newline separates two lines of the payload.
         let body = payload.strip_suffix('\n').unwrap_or(payload);
-        for line in body.split('\n') {
+        let start = self.sink.offset;
+        let mut end = start;
+        for (index, line) in body.split('\n').enumerate() {
+            if index > 0 {
+                // A newline *between* two of the block's lines is inside the block.
+                self.sink.write("\n")?;
+            }
             if !line.is_empty() {
                 // Only the continuation indent: a block's `first` prefix (a list
                 // bullet, say) belongs on a line of text, not in front of preformatted
                 // content, and it stays available for the block's next real line.
-                let Engine { out, frames, .. } = &mut *self;
+                let Engine { sink, frames, .. } = &mut *self;
                 for frame in frames.iter() {
-                    out.write_str(&frame.cont)?;
+                    sink.write(&frame.cont)?;
                 }
-                self.out.write_str(line)?;
+                self.sink.write(line)?;
             }
-            self.out.write_str("\n")?;
+            end = self.sink.offset;
+        }
+        self.sink.write("\n")?;
+        if end > start {
+            self.regions.push(OutputRegion {
+                start,
+                end,
+                kind: provenance,
+            });
         }
         self.line_open = false;
         self.col = 0;
@@ -482,12 +651,12 @@ impl Engine<'_> {
             return Ok(());
         }
         if self.line_open {
-            self.out.write_str("\n")?;
+            self.sink.write("\n")?;
             self.line_open = false;
             self.col = 0;
         }
         if self.pending_sep == Sep::Blank {
-            self.out.write_str("\n")?;
+            self.sink.write("\n")?;
         }
         self.pending_sep = Sep::None;
         self.pending_glue = false;
@@ -499,7 +668,7 @@ impl Engine<'_> {
         debug_assert!(!self.line_open);
         {
             let Engine {
-                out, frames, col, ..
+                sink, frames, col, ..
             } = &mut *self;
             let innermost = frames.len().saturating_sub(1);
             let mut width = 0;
@@ -509,7 +678,7 @@ impl Engine<'_> {
                 } else {
                     &frame.cont
                 };
-                out.write_str(prefix)?;
+                sink.write(prefix)?;
                 width += display_width(prefix);
             }
             *col = width;
@@ -527,7 +696,7 @@ impl Engine<'_> {
     fn finish(&mut self) -> core::fmt::Result {
         self.flush_word()?;
         if self.line_open {
-            self.out.write_str("\n")?;
+            self.sink.write("\n")?;
             self.line_open = false;
         }
         Ok(())
@@ -540,6 +709,24 @@ mod tests {
     use crate::flow::FlowItem::*;
     use crate::mathfmt::{Atom, AtomBody, AtomClass};
     use alloc::vec;
+
+    /// A verbatim block. The provenance is beside the point in a layout test, so every
+    /// one of them uses the same tag; what regions carry is
+    /// `tests/output_regions.rs`'s subject.
+    fn verb(text: &str) -> FlowItem {
+        FlowItem::Verbatim {
+            text: text.into(),
+            provenance: VerbatimProvenance::Verbatim,
+        }
+    }
+
+    /// An inline verbatim fragment; see [`verb`].
+    fn iverb(text: &str) -> FlowItem {
+        FlowItem::InlineVerbatim {
+            text: text.into(),
+            provenance: VerbatimProvenance::Verbatim,
+        }
+    }
 
     fn flow(items: Vec<FlowItem>) -> Flow {
         let mut f = Flow::new();
@@ -624,11 +811,8 @@ mod tests {
 
     #[test]
     fn inline_verbatim_is_an_unbreakable_word() {
-        assert_eq!(plain(vec![t("a"), InlineVerbatim("x_1".into())]), "ax_1\n");
-        assert_eq!(
-            wrapped(6, vec![t("aa"), Glue, InlineVerbatim("b  c".into())]),
-            "aa\nb  c\n"
-        );
+        assert_eq!(plain(vec![t("a"), iverb("x_1")]), "ax_1\n");
+        assert_eq!(wrapped(6, vec![t("aa"), Glue, iverb("b  c")]), "aa\nb  c\n");
     }
 
     #[test]
@@ -775,7 +959,7 @@ mod tests {
     fn output_ends_with_exactly_one_newline() {
         assert_eq!(plain(vec![t("a")]), "a\n");
         assert_eq!(plain(vec![t("a"), HardBreak]), "a\n");
-        assert_eq!(plain(vec![Verbatim("v\n".into())]), "v\n");
+        assert_eq!(plain(vec![verb("v\n")]), "v\n");
     }
 
     // ----- blocks ---------------------------------------------------------
@@ -928,7 +1112,7 @@ mod tests {
         // PLAN.md §15 #24: body byte-identical, blank-line separated, never wrapped.
         let body = "  keep   this\n\n    exactly\n";
         assert_eq!(
-            wrapped(6, vec![t("a"), Verbatim(body.into()), t("b")]),
+            wrapped(6, vec![t("a"), verb(body), t("b")]),
             "a\n\n  keep   this\n\n    exactly\n\nb\n"
         );
     }
@@ -936,7 +1120,7 @@ mod tests {
     #[test]
     fn verbatim_is_never_wrapped() {
         let body = "a very long preformatted line that must not be broken\n";
-        let out = wrapped(10, vec![Verbatim(body.into())]);
+        let out = wrapped(10, vec![verb(body)]);
         assert!(out.contains("a very long preformatted line that must not be broken"));
     }
 
@@ -946,7 +1130,7 @@ mod tests {
             plain(vec![
                 indent("", "  "),
                 t("a"),
-                Verbatim("x\n\ny\n".into()),
+                verb("x\n\ny\n"),
                 t("b"),
                 BlockEnd
             ]),
@@ -956,11 +1140,7 @@ mod tests {
 
     #[test]
     fn empty_verbatim_lines_carry_no_indent() {
-        let out = plain(vec![
-            indent("", "    "),
-            Verbatim("x\n\ny".into()),
-            BlockEnd,
-        ]);
+        let out = plain(vec![indent("", "    "), verb("x\n\ny"), BlockEnd]);
         assert_eq!(out, "    x\n\n    y\n");
         for line in out.lines() {
             assert_eq!(line.trim_end(), line, "trailing whitespace in {line:?}");
@@ -970,21 +1150,15 @@ mod tests {
     #[test]
     fn an_empty_verbatim_is_a_no_op() {
         // not even a word boundary: "a" and "b" stay one unbreakable word
-        assert_eq!(plain(vec![t("a"), Verbatim("".into()), t("b")]), "ab\n");
-        assert_eq!(
-            plain(vec![t("a"), Glue, Verbatim("".into()), t("b")]),
-            "a b\n"
-        );
+        assert_eq!(plain(vec![t("a"), verb(""), t("b")]), "ab\n");
+        assert_eq!(plain(vec![t("a"), Glue, verb(""), t("b")]), "a b\n");
     }
 
     #[test]
     fn verbatim_at_the_document_edges_needs_no_blank_lines() {
-        assert_eq!(plain(vec![Verbatim("x\n".into())]), "x\n");
-        assert_eq!(plain(vec![Verbatim("x".into())]), "x\n");
-        assert_eq!(
-            plain(vec![Verbatim("x".into()), Verbatim("y".into())]),
-            "x\n\ny\n"
-        );
+        assert_eq!(plain(vec![verb("x\n")]), "x\n");
+        assert_eq!(plain(vec![verb("x")]), "x\n");
+        assert_eq!(plain(vec![verb("x"), verb("y")]), "x\n\ny\n");
     }
 
     // ----- render_inline --------------------------------------------------
@@ -1029,23 +1203,17 @@ mod tests {
         // is not, and asks for the same one separator the following word does rather
         // than a second one of its own (DECISIONS.md D13).
         assert_eq!(
-            render_inline(&flow(vec![t("a"), Verbatim("x  y\nz\n".into()), t("b")])),
+            render_inline(&flow(vec![t("a"), verb("x  y\nz\n"), t("b")])),
             "a x  y z b"
         );
         assert_eq!(
-            render_inline(&flow(vec![t("a"), Verbatim("x\n".into()), t("b")])),
+            render_inline(&flow(vec![t("a"), verb("x\n"), t("b")])),
             "a x b"
         );
         // A payload that flattens to nothing is not a word, and contributes nothing at
         // all — the same "not even a word boundary" an empty payload gets.
-        assert_eq!(
-            render_inline(&flow(vec![t("a"), Verbatim("\n".into()), t("b")])),
-            "ab"
-        );
-        assert_eq!(
-            render_inline(&flow(vec![InlineVerbatim(" x ".into())])),
-            "x"
-        );
+        assert_eq!(render_inline(&flow(vec![t("a"), verb("\n"), t("b")])), "ab");
+        assert_eq!(render_inline(&flow(vec![iverb(" x ")])), "x");
     }
 
     #[test]

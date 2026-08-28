@@ -5,7 +5,7 @@ use alloc::string::String;
 use crate::convert::{UnknownEnvPolicy, UnknownMacroPolicy, UnknownSpecialsPolicy};
 use crate::def::{ArgRef, CallableKind, Seg, Template, TextRule};
 use crate::diag::{HandlerFailed, UnknownEnvironment, UnknownMacro, UnknownSpecials};
-use crate::flow::{Flow, FlowItem};
+use crate::flow::{Flow, FlowItem, VerbatimProvenance};
 
 use super::cx::{RenderCx, RenderError};
 use super::math;
@@ -235,9 +235,15 @@ fn keep_source(cx: &mut RenderCx<'_, '_>, block: bool) -> Flow {
         Ok(source) => {
             let mut flow = Flow::new();
             flow.push(if block {
-                FlowItem::Verbatim(source.into())
+                FlowItem::Verbatim {
+                    text: source.into(),
+                    provenance: VerbatimProvenance::KeptSource,
+                }
             } else {
-                FlowItem::InlineVerbatim(source.into())
+                FlowItem::InlineVerbatim {
+                    text: source.into(),
+                    provenance: VerbatimProvenance::KeptSource,
+                }
             });
             flow
         }

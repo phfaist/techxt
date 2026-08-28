@@ -182,6 +182,40 @@ library keep handing over the library's own text.
 
 ## L1 — the library change: output regions
 
+> **Done** — 2026-08-28, `6400254`. `FlowItem::Verbatim`/`InlineVerbatim` carry a
+> `VerbatimProvenance`; `layout::render_with_regions`/`render_to_with_regions` answer
+> with `Vec<OutputRegion>` beside the text (`render`/`render_to` delegate, so it is one
+> pass); `Conversion.regions`, with both types re-exported from `convert`. Fact 3 above
+> is confirmed as written. Root `PLAN.md` gains §7.1; tests in
+> `rust/techxt/tests/output_regions.rs`. Nothing reaches `dist/`: no dependency, a
+> counter increment per write, and a `Vec` that never allocates on a document with no
+> verbatim content.
+>
+> **The tag splits in two, and the binding must respect it.** Not `Math { display }` but
+> `MathSource { display }` *and* `MathRendered { display }`, beside `KeptSource` and
+> `Verbatim`. Only `MathSource` is LaTeX; `MathRendered` is techxt's own aligned output
+> (a Fancy display formula's lines, an inline matrix's padded columns), preformatted
+> because its columns are fragile. So the binding checkbox below must map only
+> `MathSource` into `regions`, or MathJax gets handed rendered Unicode math. Two more
+> decisions the sketch left open: a block's range **excludes** the newline terminating
+> its last line (it separates the block from what follows), and an item that renders to
+> nothing reports nothing.
+>
+> **Three surprises.** (1) `MathMode::Plain` reports no *math* regions at all — it
+> flattens formulas to text, and its display block is an indented text block rather than
+> a `Verbatim` — so "all three math modes" has one mode whose math answer is empty. (A
+> `\verb` inside a Plain-mode formula still reports, as it should.) (2) An
+> `InlineVerbatim` payload can contain a newline — a `KeepSource` macro keeps its
+> post-newline — so a region can span a line break inside what layout treats as one
+> word. The app wraps regions in elements, so it will meet this. (3) Rendered *inline*
+> math contributes regions only where a fragment carries its own spacing, never one over
+> a whole formula — an asymmetry with display math that is inherent, not an oversight.
+>
+> Two files outside L1's stated scope needed mechanical fixes for the breaking enum
+> change: `rust/techxt/tests/layout.rs` and `layout_proptest.rs`, five construction
+> sites. `web/PLAN.md` is untouched — L1 is a library change and §6.3's sentence about
+> wrapping a region in an element belongs to item 2's app half.
+
 **What.** Some runs of techxt's output are not converted text at all: they are source
 copied through — math in `Source` mode, an unknown construct under a `KeepSource`
 policy, a `verbatim` body. The renderer knows which; the information is thrown away at
@@ -596,6 +630,42 @@ and the door stays open.
       difference.
 
 **L2 — the library change: reading a `DefinitionSet` back.**
+
+> **Done** — 2026-08-28, `324b6fd`. `Category::macros/environments/specials` and
+> `DefinitionSet::symbols() -> SymbolIndex<'_>`, with `SymbolEntry` as sketched below.
+> Three things the sketch left open: `modes` is a `ModeVisibility { Anywhere, TextOnly,
+> MathOnly }`, the index carries the borrow it obviously must (`SymbolIndex<'a>`), and it
+> has the query API a completion list needs — `entries`, `len`, `is_empty`, `of_kind`,
+> `get(kind, name)`, `starts_with(kind, prefix)`. The table is sorted by `(kind, name)`,
+> so entries of one kind are contiguous, `of_kind` and `starts_with` are subslices found
+> by binary search rather than filters, and a caller answering a keystroke rebuilds
+> nothing — `defs::standard()` resolves to **1 406** names (1 311 macros, 83
+> environments, 12 specials). Root `PLAN.md` gains §10.7; tests in
+> `rust/techxt/tests/def_symbols.rs`. Nothing here touches `web/`, and nothing reaches
+> `dist/`: the module is reachable only through `symbols()`, so a binding that never
+> calls it drops the whole thing.
+>
+> **Verified fact 6 is now stale, in both halves.** Its second half — that `Category`
+> exposes no way to read the macros back — is what this change removes. Its first half
+> undercounts: the shipped library declares **1 757** macros (991 in `symbols_extra`, 766
+> across the curated categories), resolving after shadowing to **1 311** distinct names,
+> not ~1 100. Corrected here rather than up there, so that this diff stays in one place;
+> fold the real numbers in when this file is folded into the plans.
+>
+> **What the sketch could not have known.** "Later categories win, so the index resolves
+> each name once" is true of the *set*, but techy's resolution is also **mode-aware**: an
+> entry hidden in the current mode is skipped and an outer definition of the same name
+> answers instead. So a name whose innermost definition is mode-restricted over an
+> unrestricted one really does resolve to two different definitions in the two modes, and
+> one index entry cannot say so. The situation is common in shape — **223** shipped macro
+> names are declared in two categories with *different* mode restrictions (`\Delta` is
+> math-only in the generated `symbols_extra`, unrestricted in `mathcore`) — and harmless
+> in direction, because the restricted layer is always the outermost one. That was
+> measured rather than assumed, and it is now pinned by
+> `the_shipped_library_never_shadows_a_name_with_a_narrower_one`, which fails if a future
+> category ever shadows a name with a narrower one. If that day comes the index needs a
+> second answer for such a name, not a vaguer one: whoever offers `\Delta` in a chip row
+> is entitled to know it will fire.
 
 *What.* `Category` can be built but not read: it has `add_macro`/`with_macro` and
 friends, and no accessor at all. Add the reading half, then a shadowing-aware index

@@ -24,6 +24,7 @@ use super::entry::{EnvDef, MacroDef, SpecialsDef};
 use super::spec::{
     EnvBodyKind, SpecBuildCx, TechxtEnvironmentBehavior, TechxtMacroSpec, TechxtSpecialsSpec,
 };
+use super::symbols::SymbolIndex;
 use super::template::TemplateScope;
 use super::{CallableKind, TextRule};
 
@@ -99,6 +100,27 @@ impl Category {
     pub fn name(&self) -> &str {
         &self.name
     }
+
+    /// The macro definitions, in declaration order.
+    ///
+    /// The order is the shadowing order within the category, exactly as
+    /// [`DefinitionSet`] documents it between categories: where two entries share a
+    /// name, the later one is the one that resolves. Reading a whole set back is what
+    /// [`DefinitionSet::symbols`] is for; these three accessors are the raw material it
+    /// is built from, and are what a caller interested in one category reaches for.
+    pub fn macros(&self) -> impl Iterator<Item = &MacroDef> {
+        self.macros.iter()
+    }
+
+    /// The environment definitions, in declaration order.
+    pub fn environments(&self) -> impl Iterator<Item = &EnvDef> {
+        self.environments.iter()
+    }
+
+    /// The specials definitions, in declaration order.
+    pub fn specials(&self) -> impl Iterator<Item = &SpecialsDef> {
+        self.specials.iter()
+    }
 }
 
 /// Every definition a converter knows, in shadowing order (PLAN.md §10.2).
@@ -156,6 +178,32 @@ impl DefinitionSet {
     /// The categories, outermost (first pushed) first.
     pub fn categories(&self) -> impl Iterator<Item = &Category> {
         self.categories.iter()
+    }
+
+    /// Every name this set defines, resolved through the set's own shadowing rule
+    /// (PLAN.md §10.7).
+    ///
+    /// Building the index walks every category once; the [`SymbolIndex`] it answers with
+    /// is a sorted table that answers each subsequent question by binary search. Build
+    /// one and keep it — rebuilding it per query is the whole cost the type exists to
+    /// avoid.
+    ///
+    /// ```
+    /// use techxt::def::{CallableKind, Category, DefinitionSet, MacroDef};
+    ///
+    /// let mut definitions = DefinitionSet::new();
+    /// definitions.push(Category::new("generated").with_macro(MacroDef::symbol("ldots", "...")));
+    /// definitions.push(Category::new("curated").with_macro(MacroDef::symbol("ldots", "…")));
+    ///
+    /// let symbols = definitions.symbols();
+    /// // One entry, from the category that wins.
+    /// assert_eq!(symbols.len(), 1);
+    /// let ldots = symbols.get(CallableKind::Macro, "ldots").expect("defined twice, resolved once");
+    /// assert_eq!(ldots.category, "curated");
+    /// assert_eq!(ldots.replacement, Some("…"));
+    /// ```
+    pub fn symbols(&self) -> SymbolIndex<'_> {
+        SymbolIndex::build(self)
     }
 
     /// Compile the set into what a converter needs (PLAN.md §10.2).

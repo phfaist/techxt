@@ -383,6 +383,87 @@ proptest invariants (§14): no line exceeds `wrap_width` unless it contains one
 oversized word or verbatim; no trailing whitespace on any line; never two consecutive
 blank lines; `Verbatim` payloads appear byte-identical; deterministic output.
 
+### 7.1 Output regions
+
+Some runs of the output are not converted text at all: they are content copied through
+byte for byte — a `verbatim` body, a construct kept as source under a `KeepSource`
+policy, a formula re-emitted as LaTeX in `MathMode::Source`. The renderer knows which;
+the flow carries the fact across the layout boundary rather than dropping it there, and
+layout reports it as a side table beside the text, exactly as diagnostics already are:
+
+```rust
+// techxt::flow — amends §6: the two verbatim items become struct variants that
+// carry the tag. They are already *the* atomic items (layout copies them byte for
+// byte and never re-wraps them), so the tag rides a thing that is already a
+// well-defined region.
+FlowItem::Verbatim { text: Box<str>, provenance: VerbatimProvenance }
+FlowItem::InlineVerbatim { text: Box<str>, provenance: VerbatimProvenance }
+
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum VerbatimProvenance {
+    Verbatim,                              // a verbatim construct's body
+    KeptSource,                            // a construct kept rather than converted
+    MathSource   { display: bool },        // a formula re-emitted as its own LaTeX
+    MathRendered { display: bool },        // techxt's own aligned math output
+}
+
+// techxt::layout — amends §7's API list, which is otherwise unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct OutputRegion { pub start: usize, pub end: usize, pub kind: VerbatimProvenance }
+
+pub fn render_with_regions(flow: &Flow, opts: &LayoutOptions)
+    -> (String, Vec<OutputRegion>);
+pub fn render_to_with_regions(flow: &Flow, opts: &LayoutOptions,
+                              out: &mut dyn core::fmt::Write)
+    -> Result<Vec<OutputRegion>, core::fmt::Error>;
+
+// techxt::convert — amends §11.1's `Conversion`, and re-exports both types.
+pub struct Conversion { pub text: String, pub diagnostics: …, pub regions: Vec<OutputRegion> }
+```
+
+**Why the library wants this.** It is the one fact about the output that cannot be
+recovered from the string afterwards. `\$` converts to a `$` that no amount of scanning
+distinguishes from the `$` of a source-mode formula, so anything rendering into
+something richer than a terminal — a GUI styling verbatim in monospace, an HTML
+backend, a `--json` mode, a math typesetter handed the source-mode formulae — has to be
+told where the copied-through runs are rather than guess. It is a *side table*: the text
+is byte-for-byte what it was, there is no marker character to choose, strip or collide
+with, and a consumer with no use for the regions ignores a field.
+
+**How the offsets are produced.** The sink is wrapped in a byte counter (`Sink`), so
+every write knows the position it lands at, and the regions are recorded by the same
+single pass that writes the text — there is no second traversal that could drift out of
+step. Two cases:
+
+- A `Verbatim` block is written line by line at a known point. The range opens before
+  the first line's prefix and closes after the last line's content, so it **includes**
+  every continuation indent layout inserted inside the block: a display formula in an
+  `itemize` reports `"    \[ E = mc^2 \]"`, indent and all, because those bytes are in
+  the output and a range naming the payload alone would name a string that is not there.
+  It excludes the newline terminating the last line, which separates the block from what
+  follows.
+- An `InlineVerbatim` accumulates into the engine's shared word buffer alongside adjacent
+  `Text` items and is flushed at a position wrapping decides. Its range is recorded
+  *within the word* as it accumulates and rebased onto the output in `emit_word`, once
+  the word's base offset — line prefix included — is known.
+
+An item that renders to nothing contributes no region. Regions come in output order and
+never overlap, and every one of them is non-empty.
+
+**What the tags distinguish** is bytes that are *source* (`MathSource`, `KeptSource`,
+`Verbatim`) from bytes techxt *rendered* and then had to keep preformatted because their
+own alignment is meaningful (`MathRendered`: a display formula's aligned lines, an inline
+matrix's padded columns). Only the first kind can be handed back to a TeX engine, which
+is the distinction a consumer must not have to guess at. Note the asymmetry `MathRendered`
+inherits from §9.5: a *rendered inline* formula is ordinary words and glue that wrapping
+may split, so only the fragments carrying their own spacing appear, and there is no such
+thing as a region over a whole fancy-mode inline formula.
+
+Tests: `techxt/tests/output_regions.rs` — every assertion slices the conversion's own
+text with the region it reported, across a sweep of wrap widths, inside flat and nested
+lists, over all three math modes, and on the `\$` sentence that motivates the feature.
+
 ---
 
 ## 8. Render state
@@ -904,6 +985,74 @@ The same phase removes the double report: a refusal reaching the renderer with n
 is rendered by the unknown-construct policy above but **not** diagnosed a second time
 as `techxt.unknown-macro` (dispatch step 4 recognizes techy-xp's `RefusalSpec`). One
 occurrence, one diagnostic — the one that names the missing feature.
+
+### 10.7 Reading a definition set back
+
+The entry builders of §10.1 are the writing half; this is the reading half. A
+definitions database you can only write to is half a database, and *what does this
+converter know?* is a question any embedder putting a user interface in front of techxt
+has to be able to ask — an editor offering completions as the author types a command
+name, `techxt-cli --list-symbols`, a reference page generated from the table rather than
+maintained beside it.
+
+`Category` hands back the entries it holds, in declaration order:
+
+```rust
+impl Category {
+    pub fn macros(&self) -> impl Iterator<Item = &MacroDef>;
+    pub fn environments(&self) -> impl Iterator<Item = &EnvDef>;
+    pub fn specials(&self) -> impl Iterator<Item = &SpecialsDef>;
+}
+```
+
+and a whole set resolves into a shadowing-aware index over all of them:
+
+```rust
+pub enum ModeVisibility { Anywhere, TextOnly, MathOnly }
+
+#[derive(Clone, Copy)]
+pub struct SymbolEntry<'a> {
+    pub name: &'a str,              // no escape character; a specials' trigger characters
+    pub kind: CallableKind,         // §10.3's Macro | Environment | Specials
+    pub category: &'a str,          // the category the winning definition came from
+    pub replacement: Option<&'a str>,  // Some only for TextRule::Literal (`\alpha` → `α`)
+    pub arity: usize,               // arguments declared
+    pub modes: ModeVisibility,
+}
+
+pub struct SymbolIndex<'a> { /* entries sorted by (kind, name), one per key */ }
+impl<'a> SymbolIndex<'a> {
+    pub fn entries(&self) -> &[SymbolEntry<'a>];
+    pub fn len(&self) -> usize;
+    pub fn is_empty(&self) -> bool;
+    pub fn of_kind(&self, kind: CallableKind) -> &[SymbolEntry<'a>];
+    pub fn get(&self, kind: CallableKind, name: &str) -> Option<&SymbolEntry<'a>>;
+    pub fn starts_with(&self, kind: CallableKind, prefix: &str) -> &[SymbolEntry<'a>];
+}
+
+impl DefinitionSet { pub fn symbols(&self) -> SymbolIndex<'_>; }
+```
+
+**One name, one answer.** The index applies §10.2's shadowing rule as it is built — later
+categories win, and within a category the later entry wins — so it holds one entry per
+`(kind, name)` pair rather than a list of candidates. What a reader wants to know is what
+the converter will *do*, not everything that was written on the way to deciding it. The
+key is the pair because §10.3's keys are: a macro and an environment may share a name.
+
+**Built once, then searched.** `symbols()` walks every category once; the table it
+returns is sorted by kind and then by name, so entries of one kind are contiguous,
+`of_kind` and `starts_with` are subslices found by binary search rather than filters, and
+`get` is a binary search. The shipped library is around 1 400 names, so the split matters:
+a caller answering a keystroke rebuilds nothing. Everything borrows from the set, and
+`SymbolEntry` is `Copy`.
+
+**The one simplification.** techy's resolution is mode-aware — an entry hidden in the
+current mode is skipped and an outer definition of the same name may answer instead — so
+a set whose innermost `\foo` is math-only, stacked over an unrestricted `\foo`, really
+does resolve to two different definitions in the two modes, and the index reports the
+innermost. `techxt::defs` never does this: the generated long tail is where the mode
+restrictions live and every curated category sits above it. `tests/def_symbols.rs` pins
+that as an invariant of the shipped library rather than leaving it to chance.
 
 ---
 

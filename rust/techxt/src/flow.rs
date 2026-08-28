@@ -23,7 +23,9 @@
 //!   separation; so do [`FlowItem::BlockStart`] and [`FlowItem::BlockEnd`]. Layout
 //!   merges consecutive requests instead of summing them.
 //! - [`FlowItem::Verbatim`] and [`FlowItem::InlineVerbatim`] are content that layout
-//!   must not touch.
+//!   must not touch. Each carries a [`VerbatimProvenance`] saying what it is, which is
+//!   what lets layout report the [output regions](crate::layout::OutputRegion) an
+//!   embedder richer than a terminal needs.
 //!
 //! # Composition
 //!
@@ -247,10 +249,22 @@ pub enum FlowItem {
     /// emitted line by line with the current continuation indent, and **never**
     /// wrapped, styled or whitespace-normalized. Blank-line separated from its
     /// surroundings.
-    Verbatim(Box<str>),
+    Verbatim {
+        /// The preformatted text, which reaches the output byte for byte.
+        text: Box<str>,
+        /// Where those bytes came from, for an embedder that wants to know
+        /// ([`VerbatimProvenance`]).
+        provenance: VerbatimProvenance,
+    },
     /// Inline preformatted fragment (`\verb`): an unbreakable word emitted exactly as
     /// given.
-    InlineVerbatim(Box<str>),
+    InlineVerbatim {
+        /// The preformatted text, which reaches the output byte for byte.
+        text: Box<str>,
+        /// Where those bytes came from, for an embedder that wants to know
+        /// ([`VerbatimProvenance`]).
+        provenance: VerbatimProvenance,
+    },
     /// Open a block context, which is separated from its surroundings and gives its
     /// lines a prefix (see [`BlockKind`]).
     BlockStart(BlockKind),
@@ -311,6 +325,56 @@ pub enum BlockKind {
         first: Box<str>,
         /// Prefix for every subsequent line of the item.
         cont: Box<str>,
+    },
+}
+
+/// Where the bytes of a [`Verbatim`](FlowItem::Verbatim) or
+/// [`InlineVerbatim`](FlowItem::InlineVerbatim) item came from.
+///
+/// Preformatted content is the one part of the output that is not converted text: it is
+/// copied through byte for byte, and once it is in the string there is no way to tell it
+/// from text that happens to look the same — `\$` converts to a `$` that a reader cannot
+/// distinguish from the `$` of a source-mode formula. Tagging the item is how that fact
+/// survives the flow, and [layout](crate::layout) turns the tags into the
+/// [`OutputRegion`](crate::layout::OutputRegion)s a [`Conversion`](crate::Conversion)
+/// carries.
+///
+/// The distinction the variants draw is between bytes that are *source* — LaTeX the
+/// document wrote, reproduced — and bytes techxt *rendered* and then had to keep
+/// preformatted because their own alignment is meaningful. Only the first kind can be
+/// handed back to a TeX engine.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum VerbatimProvenance {
+    /// A verbatim construct's body, as written: `verbatim`, `alltt`, `lstlisting`,
+    /// `\verb`.
+    Verbatim,
+    /// A construct's own source, kept because a policy said to keep it rather than
+    /// convert it — [`UnknownMacroPolicy::KeepSource`] and its siblings.
+    ///
+    /// [`UnknownMacroPolicy::KeepSource`]: crate::convert::UnknownMacroPolicy::KeepSource
+    KeptSource,
+    /// A formula re-emitted as its own LaTeX source, under
+    /// [`MathMode::Source`](crate::convert::MathMode::Source).
+    ///
+    /// These bytes are LaTeX, and post-expansion LaTeX at that: a document's own
+    /// `\newcommand` is already gone, so what is reported here uses primitives only.
+    /// This is the one provenance whose text a TeX engine can be handed.
+    MathSource {
+        /// Display math (`\[…\]`, `equation`, `align`) rather than inline (`$…$`).
+        display: bool,
+    },
+    /// Preformatted text techxt laid out itself for a formula: the aligned lines of a
+    /// rendered display equation, the padded columns of an inline matrix.
+    ///
+    /// This is *output*, not source — it is the formula already converted to text, and
+    /// it is reported because its column alignment is as fragile as a verbatim body's.
+    /// Note that a rendered *inline* formula is otherwise ordinary words and glue that
+    /// wrapping may split, so only the fragments that carry their own spacing appear
+    /// here, and never one covering a whole fancy-mode inline formula.
+    MathRendered {
+        /// Display math rather than inline.
+        display: bool,
     },
 }
 
@@ -428,8 +492,14 @@ mod tests {
     fn push_accepts_every_kind_of_item() {
         let mut flow = Flow::new();
         flow.push(FlowItem::HardBreak);
-        flow.push(FlowItem::Verbatim("v".into()));
-        flow.push(FlowItem::InlineVerbatim("i".into()));
+        flow.push(FlowItem::Verbatim {
+            text: "v".into(),
+            provenance: VerbatimProvenance::Verbatim,
+        });
+        flow.push(FlowItem::InlineVerbatim {
+            text: "i".into(),
+            provenance: VerbatimProvenance::KeptSource,
+        });
         flow.push(FlowItem::BlockStart(BlockKind::Indent {
             first: "> ".into(),
             cont: "| ".into(),

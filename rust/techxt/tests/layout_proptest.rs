@@ -18,7 +18,7 @@
 //! that carry no verbatim content, and guarantees 4 and 5 over flows that do.
 
 use proptest::prelude::*;
-use techxt::flow::{BlockKind, Flow, FlowItem};
+use techxt::flow::{BlockKind, Flow, FlowItem, VerbatimProvenance};
 use techxt::layout::{render, render_inline, render_to, LayoutOptions};
 
 /// Characters words are built from: some ASCII, an accented letter, a wide CJK
@@ -83,8 +83,26 @@ fn layout_item() -> impl Strategy<Value = FlowItem> {
 fn layout_item_with_raw_spaces() -> impl Strategy<Value = FlowItem> {
     prop_oneof![
         6 => layout_item(),
-        3 => spaced_verbatim_word().prop_map(FlowItem::InlineVerbatim),
+        3 => spaced_verbatim_word().prop_map(inline_verbatim),
     ]
+}
+
+/// A verbatim block, tagged. Which provenance a verbatim item carries changes nothing
+/// about layout, so these properties use one tag throughout; what the tags mean is
+/// `tests/output_regions.rs`'s subject.
+fn verbatim(text: Box<str>) -> FlowItem {
+    FlowItem::Verbatim {
+        text,
+        provenance: VerbatimProvenance::Verbatim,
+    }
+}
+
+/// An inline verbatim fragment; see [`verbatim`].
+fn inline_verbatim(text: Box<str>) -> FlowItem {
+    FlowItem::InlineVerbatim {
+        text,
+        provenance: VerbatimProvenance::Verbatim,
+    }
 }
 
 /// A verbatim payload: anything at all, including the trailing spaces and runs of blank
@@ -104,8 +122,8 @@ fn any_item() -> impl Strategy<Value = FlowItem> {
         6 => Just(FlowItem::Glue),
         2 => Just(FlowItem::HardBreak),
         2 => Just(FlowItem::ParagraphBreak),
-        2 => word().prop_map(FlowItem::InlineVerbatim),
-        3 => verbatim_payload().prop_map(FlowItem::Verbatim),
+        2 => word().prop_map(inline_verbatim),
+        3 => verbatim_payload().prop_map(verbatim),
     ]
 }
 
@@ -139,7 +157,7 @@ fn a_verbatim_word_keeps_its_trailing_space_at_a_line_end() {
     let mut flow = Flow::new();
     flow.push(FlowItem::Text("a".into()));
     flow.push(FlowItem::Glue);
-    flow.push(FlowItem::InlineVerbatim("v ".into()));
+    flow.push(inline_verbatim("v ".into()));
     let out = render(&flow, &options(None));
     assert_eq!(out, "a v \n");
     assert_ne!(
@@ -227,7 +245,7 @@ proptest! {
     fn verbatim_payloads_are_preserved(flow in flow_of(any_item()), wrap in 1usize..12) {
         let out = render(&flow, &options(Some(wrap)));
         for item in flow.items() {
-            if let FlowItem::Verbatim(payload) = item {
+            if let FlowItem::Verbatim { text: payload, .. } = item {
                 let body = payload.strip_suffix('\n').unwrap_or(payload);
                 if !body.is_empty() {
                     prop_assert!(

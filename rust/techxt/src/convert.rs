@@ -51,7 +51,7 @@ use crate::def::{
     TemplateError, TemplateScope, TextRule,
 };
 use crate::flow::Flow;
-use crate::layout::{render, LayoutOptions};
+use crate::layout::{render_with_regions, LayoutOptions};
 use crate::render::{RenderConfig, RenderState, TextRenderer};
 
 pub use crate::mathfmt::{FontStyle, FontStyleKind, MathWrapDelims, MatrixDelims};
@@ -138,6 +138,15 @@ pub use techy::latexlike::ArgumentCodeError;
 /// a resolver value, or one already shared in an `Arc`.
 pub use techy::source::IntoSourceResolver;
 
+/// Where a run of the output came from, for the [`regions`](Conversion::regions) table:
+/// the range type and the tag it carries.
+///
+/// Both are defined where they are produced — [`OutputRegion`] by the
+/// [layout engine](crate::layout), [`VerbatimProvenance`] on the
+/// [flow item](crate::flow::FlowItem) that carries it — and re-exported here so that an
+/// embedder reading a [`Conversion`] stays at one import.
+pub use crate::{flow::VerbatimProvenance, layout::OutputRegion};
+
 /// The result of a conversion (PLAN.md §11.1).
 #[derive(Clone, Debug)]
 pub struct Conversion {
@@ -145,6 +154,37 @@ pub struct Conversion {
     pub text: String,
     /// Everything the conversion reported, parse diagnostics first.
     pub diagnostics: Diagnostics<Option<String>>,
+    /// The runs of [`text`](Self::text) that are *not* converted text but preformatted
+    /// content copied through — a `verbatim` body, a construct kept as source, a
+    /// formula in [`MathMode::Source`] — as byte ranges into
+    /// [`text`](Self::text), in output order and never overlapping.
+    ///
+    /// This is a side table, not markup: the text is exactly what it would be without
+    /// it, so anything the user copies or saves is untouched, and a consumer with no
+    /// use for the regions ignores the field. It is also the one fact about the output
+    /// that cannot be recovered from the string afterwards — `\$` converts to a `$`
+    /// that no amount of scanning distinguishes from the `$` of a source-mode formula
+    /// — which is why an embedder rendering into anything richer than a terminal (a
+    /// GUI styling verbatim in monospace, an HTML backend, a math typesetter) needs it
+    /// reported rather than inferred.
+    ///
+    /// ```
+    /// use techxt::convert::{MathMode, VerbatimProvenance};
+    /// use techxt::Converter;
+    ///
+    /// let converter = Converter::builder().math_mode(MathMode::Source).build()?;
+    /// let out = converter.latex_to_text("but not these \\$3 and $x$ values")?;
+    /// assert_eq!(out.text, "but not these $3 and $x$ values\n");
+    /// // one region, and it is the formula rather than the escaped dollar
+    /// assert_eq!(out.regions.len(), 1);
+    /// assert_eq!(&out.text[out.regions[0].start..out.regions[0].end], "$x$");
+    /// assert_eq!(
+    ///     out.regions[0].kind,
+    ///     VerbatimProvenance::MathSource { display: false }
+    /// );
+    /// # Ok::<(), Box<dyn core::error::Error>>(())
+    /// ```
+    pub regions: Vec<OutputRegion>,
 }
 
 /// Converts LaTeX-like markup to plain text (PLAN.md §11.1).
@@ -202,10 +242,12 @@ impl Converter {
     pub fn latex_to_text(&self, latex: &str) -> Result<Conversion, ParseError<Option<String>>> {
         let parsed = self.inner.language.parse(latex)?;
         let (flow, render_diagnostics) = self.tree_to_flow(&parsed.tree);
+        let (text, regions) = self.lay_out(&flow);
         Ok(Conversion {
-            text: self.lay_out(&flow),
+            text,
             // Parse diagnostics come first: they describe what the tree even is.
             diagnostics: merge(&parsed.diagnostics, &render_diagnostics),
+            regions,
         })
     }
 
@@ -224,9 +266,11 @@ impl Converter {
     /// §10.3 step 3).
     pub fn tree_to_text<LLL: RenderLang>(&self, tree: &NodeTree<LLL>) -> Conversion {
         let (flow, diagnostics) = self.tree_to_flow(tree);
+        let (text, regions) = self.lay_out(&flow);
         Conversion {
-            text: self.lay_out(&flow),
+            text,
             diagnostics,
+            regions,
         }
     }
 
@@ -285,9 +329,10 @@ impl Converter {
         TextRenderer::new(&self.inner.config)
     }
 
-    /// Lay a flow out with this converter's options.
-    fn lay_out(&self, flow: &Flow) -> String {
-        render(
+    /// Lay a flow out with this converter's options, keeping the region table layout
+    /// records as it writes.
+    fn lay_out(&self, flow: &Flow) -> (String, Vec<OutputRegion>) {
+        render_with_regions(
             flow,
             &LayoutOptions {
                 wrap_width: self.inner.config.options.wrap_width,

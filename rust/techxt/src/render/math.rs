@@ -32,7 +32,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use crate::convert::{MathMode, Options};
-use crate::flow::{BlockKind, Flow, FlowItem};
+use crate::flow::{BlockKind, Flow, FlowItem, VerbatimProvenance};
 use crate::layout::render_inline;
 use crate::mathfmt::{
     join_atoms_with, segment_plain, Atom, AtomBody, AtomClass, MathBox, MathWrapDelims,
@@ -81,10 +81,17 @@ pub(crate) fn source_scope(node: NodeView<'_>, display: bool, options: &Options)
     }
     let latex = node.source();
     let mut flow = Flow::new();
+    let provenance = VerbatimProvenance::MathSource { display };
     flow.push(if display {
-        FlowItem::Verbatim(latex.into())
+        FlowItem::Verbatim {
+            text: latex.into(),
+            provenance,
+        }
     } else {
-        FlowItem::InlineVerbatim(latex.into())
+        FlowItem::InlineVerbatim {
+            text: latex.into(),
+            provenance,
+        }
     });
     Some(flow)
 }
@@ -303,7 +310,10 @@ fn push_word(flow: &mut Flow, word: &mut String) {
         return;
     }
     if word.contains(' ') {
-        flow.push(FlowItem::InlineVerbatim(word.as_str().into()));
+        flow.push(FlowItem::InlineVerbatim {
+            text: word.as_str().into(),
+            provenance: VerbatimProvenance::MathRendered { display: false },
+        });
     } else {
         flow.push(FlowItem::Text(word.as_str().into()));
     }
@@ -327,7 +337,10 @@ fn display_block(boxes: &[MathBox]) -> Flow {
         first: DISPLAY_INDENT.into(),
         cont: DISPLAY_INDENT.into(),
     }));
-    flow.push(FlowItem::Verbatim(text.into()));
+    flow.push(FlowItem::Verbatim {
+        text: text.into(),
+        provenance: VerbatimProvenance::MathRendered { display: true },
+    });
     flow.push(FlowItem::BlockEnd);
     flow
 }
@@ -348,11 +361,11 @@ fn atoms_of(items: &[FlowItem]) -> Vec<Atom> {
                 flush_text(&mut run, &mut atoms);
                 atoms.push(built.clone());
             }
-            FlowItem::Text(text) | FlowItem::InlineVerbatim(text) => run.push_str(text),
+            FlowItem::Text(text) | FlowItem::InlineVerbatim { text, .. } => run.push_str(text),
             // A formula has no lines and no paragraphs; whatever asked for one meant a
             // gap, and a gap is what the joiner already understands.
             FlowItem::Glue | FlowItem::HardBreak | FlowItem::ParagraphBreak => run.push(' '),
-            FlowItem::Verbatim(text) => {
+            FlowItem::Verbatim { text, .. } => {
                 run.extend(text.chars().map(|c| if c == '\n' { ' ' } else { c }));
             }
             // Block structure inside a formula (a stray `\begin{quote}`, say) has no

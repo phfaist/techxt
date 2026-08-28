@@ -4,7 +4,7 @@
 //! milestone can already answer, with the flows built by hand (no parser needed), plus
 //! the composition scenarios that only show up once several rules meet.
 
-use techxt::flow::{BlockKind, Flow, FlowItem};
+use techxt::flow::{BlockKind, Flow, FlowItem, VerbatimProvenance};
 use techxt::layout::{render, render_inline, render_to, LayoutOptions};
 
 /// Build a flow from a list of items.
@@ -109,7 +109,10 @@ fn example_24_verbatim_is_preserved() {
     let body = "  keep   this\n\n    exactly\n";
     let f = flow(vec![
         text("before"),
-        FlowItem::Verbatim(body.into()),
+        FlowItem::Verbatim {
+            text: body.into(),
+            provenance: VerbatimProvenance::Verbatim,
+        },
         text("after"),
     ]);
     let expected = "before\n\n  keep   this\n\n    exactly\n\nafter\n";

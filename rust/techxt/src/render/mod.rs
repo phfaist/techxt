@@ -143,7 +143,7 @@ use techy::recompose::{ConcatPieces, Recompose, RecomposeContext, Recomposer};
 use crate::convert::{FootnoteStyle, Options};
 use crate::def::{embedded_rule, is_refusal, CallableKind, RuleTable};
 use crate::diag::{RenderAborted, TechxtCondition};
-use crate::flow::{display_width, BlockKind, Flow, FlowItem};
+use crate::flow::{display_width, BlockKind, Flow, FlowItem, VerbatimProvenance};
 
 use cx::RunState;
 
@@ -239,12 +239,18 @@ impl<'a> TextRenderer<'a> {
 
         if in_verbatim_group(node) {
             let mut flow = Flow::new();
-            flow.push(FlowItem::InlineVerbatim(text.into()));
+            flow.push(FlowItem::InlineVerbatim {
+                text: text.into(),
+                provenance: VerbatimProvenance::Verbatim,
+            });
             return flow;
         }
         if in_verbatim_body(node) {
             let mut flow = Flow::new();
-            flow.push(FlowItem::Verbatim(text.into()));
+            flow.push(FlowItem::Verbatim {
+                text: text.into(),
+                provenance: VerbatimProvenance::Verbatim,
+            });
             return flow;
         }
 
@@ -332,7 +338,10 @@ impl<'a> TextRenderer<'a> {
                 // read here rather than folded.
                 let raw = node.child(0).and_then(|child| child.chars()).unwrap_or("");
                 let mut flow = Flow::new();
-                flow.push(FlowItem::InlineVerbatim(raw.into()));
+                flow.push(FlowItem::InlineVerbatim {
+                    text: raw.into(),
+                    provenance: VerbatimProvenance::Verbatim,
+                });
                 return Recompose::Emit(flow);
             }
         }
