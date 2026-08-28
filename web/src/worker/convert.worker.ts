@@ -19,11 +19,14 @@ import type { ConversionResult, FromWorker, ToWorker } from './protocol';
 // `lib.dom` and `lib.webworker` both declare `self`; this is the worker's.
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
+/** The one request shape this worker answers today; see the note below about the other. */
+type ConvertRequest = Extract<ToWorker, { type: 'convert' }>;
+
 let session: Session | null = null;
 let ready = false;
 /** Set by the first failure, and never unset — see the note about panics above. */
 let broken = false;
-let queued: ToWorker | null = null;
+let queued: ConvertRequest | null = null;
 
 function post(message: FromWorker): void {
   ctx.postMessage(message);
@@ -46,7 +49,7 @@ function fail(error: unknown): void {
   post({ type: 'fatal', message: describe(error) });
 }
 
-function handle(request: ToWorker): void {
+function handle(request: ConvertRequest): void {
   if (broken || !session) return;
   try {
     const result = session.convert(request.text, request.options) as ConversionResult;
@@ -57,6 +60,10 @@ function handle(request: ToWorker): void {
   }
 }
 
+// `protocol.ts` also declares a `complete` request, for the editor's completion chips.
+// Answering it is TODO item 5's — it needs a `Session.complete` the binding does not
+// export yet — so for now anything that is not a `convert` is ignored here rather than
+// mistaken for one.
 ctx.addEventListener('message', (event: MessageEvent<ToWorker>) => {
   const message = event.data;
   if (!message || message.type !== 'convert' || broken) return;

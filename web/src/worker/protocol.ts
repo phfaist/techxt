@@ -147,6 +147,32 @@ export interface Diagnostic {
   frames: TraceFrame[];
 }
 
+/**
+ * A run of the converted **output** that is a formula's own LaTeX source.
+ *
+ * Offsets are UTF-16 code units into {@link ConversionResult.text}, mapped in the
+ * binding by the same single pass a diagnostic's span goes through (§4.4). The app
+ * wraps each range in an element and hands the element to MathJax; the text itself is
+ * untouched, so what the user copies, downloads or saves is still the library's own
+ * string (§4.3, §6.3).
+ *
+ * The list is already filtered. techxt reports four kinds of preformatted run — a
+ * source-mode formula, a formula it rendered and laid out itself, a construct kept as
+ * source, a `verbatim` body — and only the first is LaTeX anyone can typeset, so the
+ * binding drops the other three rather than making the app reason about a provenance.
+ *
+ * Three properties worth knowing before wrapping these in elements: a display formula's
+ * range **excludes** the newline that ends its last line; a construct that renders to
+ * nothing reports nothing; and a range may span a line break, so it is not guaranteed to
+ * sit within one line of the output.
+ */
+export interface MathRegion {
+  start: number;
+  end: number;
+  /** Display math (`\[…\]`, `equation`, `align`) rather than inline (`$…$`). */
+  display: boolean;
+}
+
 export interface ConversionResult {
   /** `false` only for a hard parse failure (strict mode). */
   ok: boolean;
@@ -159,18 +185,67 @@ export interface ConversionResult {
   /** `Diagnostics::suppressed()` — the "and N more" count. */
   suppressed: number;
   truncated: boolean;
+  /**
+   * The formulas in {@link text}, in output order, never overlapping.
+   *
+   * Reported unconditionally — there is no option that turns it on — and empty for the
+   * two math modes that do not re-emit source. The app ignores it unless the user asked
+   * for MathJax.
+   */
+  regions: MathRegion[];
+}
+
+/* ------------------------------------------------------------- completions out */
+
+/**
+ * One completion the binding offers for a prefix, ranked and merged there.
+ *
+ * The JS side does no matching, no merging and no ranking: it sends a prefix and
+ * renders what comes back, so every rule about what is offered and in what order lives
+ * next to the symbol table it is drawn from (TODO item 5).
+ */
+export interface Completion {
+  /** The name without its backslash, e.g. `alpha`. */
+  name: string;
+  kind: 'macro' | 'environment' | 'specials';
+  /** What it renders as when the rule is a plain literal (`\alpha` → `α`), else null. */
+  replacement: string | null;
+  arity: number;
+  /** Whether it came from a `\newcommand` and friends in the document being edited. */
+  fromDocument: boolean;
 }
 
 /* -------------------------------------------------------------- the messages */
 
-export type ToWorker = {
-  type: 'convert';
-  id: number;
-  text: string;
-  options: OptionsPayload;
-};
+/**
+ * Both requests carry a monotonic `id` and are answered under the same rule: a reply
+ * whose id is not the latest is dropped by the client rather than rendered.
+ *
+ * `complete` belongs to TODO item 5 — the editor's completion chips. Its wire shape is
+ * declared here, with the rest of the contract, ahead of the handler that answers it:
+ * this file is the one place the Rust side and the app agree on a message, so the shape
+ * has to exist before either end can be written against it.
+ */
+export type ToWorker =
+  | {
+      type: 'convert';
+      id: number;
+      text: string;
+      options: OptionsPayload;
+    }
+  | {
+      type: 'complete';
+      id: number;
+      /** The whole document, so the binding can scan it for the user's own definitions. */
+      text: string;
+      /** What has been typed after the backslash, without the backslash. */
+      prefix: string;
+      /** At most this many entries; the chip row shows a handful. */
+      limit: number;
+    };
 
 export type FromWorker =
   | { type: 'ready'; version: string }
   | { type: 'result'; id: number; result: ConversionResult }
+  | { type: 'completions'; id: number; items: Completion[] }
   | { type: 'fatal'; message: string };

@@ -93,7 +93,15 @@ class FakeWorker {
 }
 
 function result(text: string): ConversionResult {
-  return { ok: true, text, ms: 1, diagnostics: [], suppressed: 0, truncated: false };
+  return {
+    ok: true,
+    text,
+    ms: 1,
+    diagnostics: [],
+    suppressed: 0,
+    truncated: false,
+    regions: [],
+  };
 }
 
 interface Harness {
