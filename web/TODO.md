@@ -1178,9 +1178,9 @@ offered, and the row is usable by thumb on a 390 px screen.
 
 # 6. The size and optimisation pass — *last*, after everything else lands
 
-> **Done** — 2026-08-28. `opt-level = "s"` + `wasm-opt -Os` taken, MathJax switched from
-> the SVG output to CHTML, and four budgets set from the measurements. PLAN §4.7, §9.1,
-> §11 and §14 updated; §14 gains two new subsections, one per decision.
+> **Done** — 2026-08-28, `a4ce824`. `opt-level = "s"` + `wasm-opt -Os` taken, MathJax
+> switched from the SVG output to CHTML, and four budgets set from the measurements.
+> PLAN §4.7, §9.1, §11 and §14 updated; §14 gains two new subsections, one per decision.
 >
 > **Both trades came out the same way, and neither on the number that was being argued
 > about.**
