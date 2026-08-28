@@ -1534,7 +1534,7 @@ throwing converts normally with Save, ★ and the chip hidden and the pane hones
 
 # 9. What MathJax does not know that techxt does
 
-> **Done** — 2026-08-28. The gap is measured, the mathematics half of it is closed, and
+> **Done** — 2026-08-28, `1149fed`. The gap is measured, the mathematics half of it is closed, and
 > `web/tools/mathjax_coverage.mjs` is the gate that keeps it closed: it reads every name
 > `DefinitionSet::symbols()` reports through a new `web/crate/examples/symbol_index.rs`,
 > typesets each one under **the app's own TeX configuration, imported rather than
