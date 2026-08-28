@@ -1331,7 +1331,7 @@ budget raise was recorded as a deferral rather than a decision.**
 
 # 7. The input pane's own keystroke cost, on a very large document
 
-> **Done** — 2026-08-28, `PENDING`. The mirror is rebuilt by splice rather than replaced:
+> **Done** — 2026-08-28, `7f8c5b0`. The mirror is rebuilt by splice rather than replaced:
 > `ui/panes.ts` keeps the list of runs it is showing, and `chunkSplice` in `src/highlight.ts`
 > says what the next painting differs by — **one run**, on a keystroke, on every document
 > size. Nothing in the keystroke asks the browser a question about geometry any more: the
