@@ -10,8 +10,8 @@
 //!
 //! # What cannot be a plain symbol
 //!
-//! Three kinds of entry declare their atom class themselves instead, because no
-//! character carries it:
+//! Four kinds of entry declare their atom class themselves instead, because the
+//! character does not carry it:
 //!
 //! - **operator names** (`\sin`, `\limsup`) are [`Op`](crate::mathfmt::AtomClass::Op)
 //!   atoms of literal text. Segmentation would nearly do it — a run of upright latin
@@ -22,7 +22,13 @@
 //!   delimiters, and what they present to their neighbours depends on the answer
 //!   ([`frac_atom`], [`sqrt_atom`]);
 //! - **`\operatorname{…}`** renders its argument upright and then declares it an
-//!   operator, which is exactly what the named operators above are shorthand for.
+//!   operator, which is exactly what the named operators above are shorthand for;
+//! - **a relation whose character the class tables do not carry** — today only
+//!   `\coloneqq` → `≔`. The character *would* be the class if
+//!   [`segment_plain`](crate::mathfmt::segment_plain)'s relation table listed it, but
+//!   that table is a faithful port of pylatexenc v3's (PLAN.md §9.5) and one curated
+//!   macro is no reason to grow it, so the macro carries a
+//!   [`Rel`](crate::mathfmt::AtomClass::Rel) atom of its own.
 //!
 //! # Fonts do not reach any of it
 //!
@@ -148,7 +154,24 @@ fn symbols(category: &mut Category) {
     for (name, replacement) in SYMBOLS {
         category.add_macro(MacroDef::symbol(*name, *replacement));
     }
+
+    // `\coloneqq` is the definition assignment `:=` written as one character, and the
+    // one symbol in this section that cannot be a table row: `≔` is not in
+    // `segment_plain`'s relation table, so a plain replacement would come out
+    // `𝑎≔𝑏` — an ordinary atom, spaced like a variable. It says `Rel` for itself.
+    //
+    // Only this spelling. `mathtools` also has `\coloneq`, `\Coloneqq` and
+    // `\eqqcolon`, but `\coloneq` is `:−` there and `≔` elsewhere — a name whose
+    // meaning depends on the package is one techxt should not guess at — and the other
+    // two are different characters under different names, which is a package's job.
+    category.add_macro(MacroDef::new("coloneqq").rule(handler(FixedAtom {
+        text: COLON_EQUALS,
+        cls: AtomClass::both(AtomClass::Rel),
+    })));
 }
+
+/// `\coloneqq`'s character: U+2254 COLON EQUALS, the one Unicode spells for `:=`.
+const COLON_EQUALS: &str = "\u{2254}";
 
 /// The curated symbol table (see the module documentation on why the character is the
 /// class).
@@ -601,25 +624,56 @@ fn delimiters(category: &mut Category) {
     // absolute value looks like, and `segment_plain` leaves it unclassified precisely
     // because it is a delimiter as often as a relation.
     for name in ["vert", "lvert", "rvert"] {
-        category.add_macro(MacroDef::symbol(name, "|"));
+        category.add_macro(MacroDef::symbol(name, ABS_BAR));
     }
     // `\|` is the double bar, and `\backslash` the character `\` itself.
-    category.add_macro(MacroDef::symbol("|", "\u{2016}"));
+    category.add_macro(MacroDef::symbol("|", NORM_BAR));
     category.add_macro(MacroDef::symbol("backslash", "\\"));
     // The bracket macros, for the two brackets that are also LaTeX syntax.
     category.add_macro(MacroDef::symbol("lbrack", "["));
     category.add_macro(MacroDef::symbol("rbrack", "]"));
     category.add_macro(MacroDef::symbol("lbrace", "{"));
     category.add_macro(MacroDef::symbol("rbrace", "}"));
+    // `\abs` and `\norm`: the two delimiter pairs an author writes as one macro over
+    // their content rather than as a left half and a right half. The same kind of
+    // convenience as `\ket` and `\braket`, which the library has defined ever since it
+    // ported v3's table — which is the whole argument for defining these.
+    //
+    // Each is the bar this module already resolves the halves to, on both sides of the
+    // rendered argument: `\abs{x}` is `\lvert x \rvert` written once, character for
+    // character. Both take the star `physics` gives them for `\left…\right`
+    // auto-sizing — plain text has one size, so it changes nothing, but declaring it
+    // is what stops `\abs*{x}` reading the `*` as its argument and printing `|*|𝑥`.
+    for (name, bar) in [("abs", ABS_BAR), ("norm", NORM_BAR)] {
+        category.add_macro(
+            MacroDef::new(name)
+                .star()
+                .arg("m", QUANTITY)
+                .rule(TextRule::Template(Template::new(format!(
+                    "{bar}{{{QUANTITY}}}{bar}"
+                )))),
+        );
+    }
 }
 
 /// The argument name the sizing macros give their delimiter.
 const DELIMITER: &str = "delimiter";
 
+/// The bar an absolute value is drawn with: the ASCII `|` that `\vert`, `\lvert` and
+/// `\rvert` are, so that `\abs{x}` and `\lvert x \rvert` come out the same string.
+const ABS_BAR: &str = "|";
+
+/// The bar a norm is drawn with: U+2016 DOUBLE VERTICAL LINE, which is what `\Vert`,
+/// `\lVert` and `\rVert` are in [`SYMBOLS`] and what `\|` is above.
+const NORM_BAR: &str = "\u{2016}";
+
+/// The argument name `\abs` and `\norm` give the quantity between their bars.
+const QUANTITY: &str = "quantity";
+
 // ------------------------------------------------------------------ handlers
 
 /// A construct whose rendering is fixed text of a fixed atom class: an operator name,
-/// `\bmod`.
+/// `\bmod`, `\coloneqq`.
 #[derive(Debug)]
 struct FixedAtom {
     /// The text, which is never styled — it is not document text (DECISIONS.md D6).

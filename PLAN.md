@@ -708,6 +708,30 @@ the joiner's spaces (long formulas may wrap there); display → the box's lines 
 as `Verbatim` lines inside the display indent block (wrap never touches them).
 `MathAtom` items never escape to layout.
 
+**Conveniences the port does not carry.** `defs::mathcore` defines three names v3's
+tables do not: `\abs{x}` → `|𝑥|`, `\norm{x}` → `‖𝑥‖`, `\coloneqq` → `≔` U+2254. The
+argument for them is not that they are common; it is that the library already defines
+`\ket`, `\bra`, `\braket` and `\ketbra`, conveniences of exactly the same kind that
+arrived with the generated table by accident of what pylatexenc happened to list. A
+document writing `\abs{x}` beside `\ket{\psi}` gets one of them typeset and the other
+silently reduced to its argument, and no rule a reader could state predicts which. These
+three close that gap and stop there: this is not the place to reimplement `physics` or
+`mathtools`, and a name whose meaning depends on which package defined it — `\coloneq`
+is `:−` in `mathtools` and `≔` elsewhere — is one techxt declines to guess at.
+
+Each is written in terms of what the module already resolves. The bars are the same `|`
+that `\vert`/`\lvert`/`\rvert` are and the same `‖` that `\Vert`/`\lVert`/`\rVert` are,
+so `\abs{x}` and `\lvert x \rvert` produce the same string, character for character.
+`\abs` and `\norm` are templates over one mandatory argument, with `physics`'s star
+declared and ignored: plain text has one size, but an *undeclared* star is read as the
+argument. `\coloneqq` is the one of the three that cannot be a plain replacement — `≔`
+is not in the segmentation tables above, and those stay a faithful port — so it carries
+a `Rel` atom of its own and is spaced as the relation it is. None of the three is
+mode-restricted: two of them take an argument, and a restriction leaks one — the hidden
+name still resolves through the catch-all, as a *zero-argument* callable whose braces
+are then read as an ordinary group — while the rest of mathcore is unrestricted anyway.
+Tests: `techxt/tests/defs_math_conveniences.rs`.
+
 ### 9.6 Tables (defs::tables)
 
 `tabular`/`tabular*`/`tabularx` (leading width args parsed and ignored; colspec arg
