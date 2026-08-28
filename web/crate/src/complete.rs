@@ -18,17 +18,42 @@
 //!
 //! The order is, in full:
 //!
-//! 1. **What the document defines, before what the library ships.** A name the author
+//! 1. **An exact match on the prefix, before anything else**, whatever its kind and
+//!    whichever source it came from. Someone who has typed the whole name is not asking
+//!    to be shown something longer — and without this rule first, a name that is also
+//!    the beginning of a more famous one could never be completed at all.
+//! 2. **What the document defines, before what the library ships.** A name the author
 //!    wrote themselves is the one they meant, and it is also the one that will actually
 //!    fire: a `\renewcommand` in the document shadows the library's definition, so the
 //!    document's entry *replaces* the shipped one rather than sitting above it.
-//! 2. **An exact match first**, whatever its kind. Someone who has typed the whole name
-//!    is not asking to be shown something longer.
-//! 3. **Macros, then environments, then specials.** Completion is triggered by an escape
+//! 3. **The curated names, in the curated order.** [`curated_names`] is the hundred-odd
+//!    macros people actually type, and it ranks each of them above everything else that
+//!    shares its prefix. Its own order is the ranking and is never re-sorted.
+//! 4. **Macros, then environments, then specials.** Completion is triggered by an escape
 //!    character, and what follows one is usually a macro.
-//! 4. **The shortest name**, which is the one closest to what has been typed, and then
+//! 5. **The shortest name**, which is the one closest to what has been typed, and then
 //!    **alphabetically** so that the answer to a given prefix never depends on the order
 //!    the table happened to be built in.
+//!
+//! # Why there is a curated list at all, and why it is here
+//!
+//! Rules 4 and 5 are the whole of what a table of definitions can say: they measure the
+//! *name*, because a definition set knows nothing about the person typing it. Ranked by
+//! them alone, `\alp` offers `\alph` before `\alpha` — defensible, and wrong. `\alph` is
+//! LaTeX's alphabetic counter format, `\alpha` is a letter of the Greek alphabet, and
+//! nothing measurable here separates them. So the separation is written down instead, as
+//! a short explicit list, with rule 1 keeping `\alph` reachable by typing it in full.
+//!
+//! The list is short on purpose. A list long enough to cover the table is rule 5 again
+//! with extra steps, and every name on it is a name whose ranking someone has to
+//! justify.
+//!
+//! It lives in the binding rather than in `rust/techxt` because *what people type most*
+//! is a fact about a completion UI, not about LaTeX: it changes with the audience,
+//! nothing in the library could test it, and a converter is no better at converting for
+//! knowing that `\alpha` is popular. What the library owed this feature it has already
+//! given — `DefinitionSet::symbols()`, the readable half of a data structure that could
+//! previously only be written to.
 //!
 //! # What the scan can and cannot see
 //!
@@ -297,26 +322,213 @@ pub fn complete_native(
         }
     }
 
-    offered.sort_by(|left, right| rank(left, prefix).cmp(&rank(right, prefix)));
-    offered.truncate(limit);
-    offered
+    // Each key is computed once and carried beside its entry rather than computed inside
+    // the comparator: placing a name in the curated list is a walk over a hundred of
+    // them, and a comparison sort would repeat that walk for every comparison the entry
+    // takes part in. The alphabetical tiebreak is read off the entry instead of being
+    // stored in the key, because a key borrowing the value it is paired with is a struct
+    // that cannot be written.
+    let mut ordered: Vec<(Rank, CompletionDto)> = offered
+        .into_iter()
+        .map(|entry| (rank(&entry, prefix), entry))
+        .collect();
+    ordered.sort_by(|(left_rank, left), (right_rank, right)| {
+        left_rank
+            .cmp(right_rank)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    ordered.truncate(limit);
+    ordered.into_iter().map(|(_, entry)| entry).collect()
 }
 
-/// A suggestion's sort key, in the order this module's documentation gives.
+/// A suggestion's sort key: this module's order down to, but not including, the
+/// alphabetical tiebreak.
 ///
 /// The two leading `bool`s read backwards on purpose: `false` sorts first, so the
-/// negation is what puts the document's own names, and then an exact match, at the top.
-fn rank<'a>(
-    entry: &'a CompletionDto,
-    prefix: &str,
-) -> (bool, bool, CompletionKindDto, usize, &'a str) {
+/// negation is what puts an exact match, and then the document's own names, at the top.
+type Rank = (bool, bool, usize, CompletionKindDto, usize);
+
+/// A suggestion's sort key, in the order this module's documentation gives.
+fn rank(entry: &CompletionDto, prefix: &str) -> Rank {
     (
-        !entry.from_document,
         entry.name != prefix,
+        !entry.from_document,
+        curated_rank(entry),
         entry.kind,
         entry.name.len(),
-        entry.name.as_str(),
     )
+}
+
+/// Where `entry` stands in [`curated_names`], or [`usize::MAX`] — which is to say last —
+/// for the overwhelming majority of names, which are not on it.
+///
+/// Only a macro can match. The list is about what follows an escape character, and an
+/// environment name is not typed there but inside `\begin{…}`, where this completion
+/// does not fire; a macro and an environment can also share a name and mean different
+/// things, so matching on the name alone would rank the wrong one.
+fn curated_rank(entry: &CompletionDto) -> usize {
+    if entry.kind != CompletionKindDto::Macro {
+        return usize::MAX;
+    }
+    CURATED
+        .iter()
+        .position(|name| *name == entry.name)
+        .unwrap_or(usize::MAX)
+}
+
+/// The macros people actually type, in the order a chip row should prefer them
+/// (web/PLAN.md §4.9).
+///
+/// **A ranking overlay, never a source of entries.** Nothing is offered because it
+/// appears here: every suggestion still comes out of the [`SymbolTable`] or the
+/// document, and a name on this list that techxt does not define simply never appears in
+/// an answer. That failure is silent, so `tests/completion.rs` resolves every name here
+/// against the shipped definitions and a typo is a red test rather than a dead entry.
+///
+/// **The order below is the ranking.** It is grouped — the Greek alphabet, then the
+/// mathematics one writes with it, then the text and structure macros — and within a
+/// group it runs roughly from what is typed most to what is typed least, which is why
+/// `\varepsilon` leads the variants although it is the longest of the six, and why
+/// `\int` and `\infty` come before `\in`. Nothing re-sorts it: two names sharing a
+/// prefix appear in a chip row in the order they appear here.
+///
+/// **`\begin` and `\end` are absent because they cannot be present.** They are the
+/// obvious omission from a list of everyday macros, and techxt does not define either:
+/// they are structure the parser handles itself, not entries in a `DefinitionSet`, so no
+/// completion can offer them however they are ranked. `equation` and `align`, checked
+/// for the same reason, *are* defined — as environments, which is why they are not here
+/// either. `tests/completion.rs` pins both findings, so the day `\begin` becomes
+/// completable someone is told rather than left to notice.
+static CURATED: [&str; 99] = [
+    // The Greek alphabet, in its own order: it is learned as a sequence and a reader
+    // scanning for one letter expects to find it where the alphabet keeps it. All of it
+    // but `\omicron`, which techxt does define and nobody types, because it renders as a
+    // Latin `o` and a Latin `o` is one keystroke.
+    "alpha",
+    "beta",
+    "gamma",
+    "delta",
+    "epsilon",
+    "zeta",
+    "eta",
+    "theta",
+    "iota",
+    "kappa",
+    "lambda",
+    "mu",
+    "nu",
+    "xi",
+    "pi",
+    "rho",
+    "sigma",
+    "tau",
+    "upsilon",
+    "phi",
+    "chi",
+    "psi",
+    "omega",
+    // The capitals that have a shape of their own. The rest of the Greek capitals are
+    // Latin letters — `\Alpha` is `A` — and a person types `A`.
+    "Gamma",
+    "Delta",
+    "Theta",
+    "Lambda",
+    "Xi",
+    "Pi",
+    "Sigma",
+    "Upsilon",
+    "Phi",
+    "Psi",
+    "Omega",
+    // The variants, most-typed first, which is the opposite of shortest-first: unranked,
+    // `\var` offers `\varpi` and buries `\varepsilon` behind five rarer letters.
+    "varepsilon",
+    "varphi",
+    "vartheta",
+    "varrho",
+    "varsigma",
+    "varpi",
+    // Mathematics: the constructs that take arguments, then the decorations that go on
+    // them.
+    "frac",
+    "sqrt",
+    "left",
+    "right",
+    "sum",
+    "int",
+    "prod",
+    "hat",
+    "bar",
+    "vec",
+    "tilde",
+    "dot",
+    // The symbols that stand on their own.
+    "infty",
+    "partial",
+    "nabla",
+    "cdot",
+    "times",
+    "pm",
+    "langle",
+    "rangle",
+    // Relations.
+    "leq",
+    "geq",
+    "neq",
+    "approx",
+    "equiv",
+    "sim",
+    "propto",
+    // Arrows.
+    "to",
+    "rightarrow",
+    "Rightarrow",
+    "leftarrow",
+    // Sets and logic.
+    "in",
+    "notin",
+    "subset",
+    "subseteq",
+    "cup",
+    "cap",
+    "forall",
+    "exists",
+    // Text: the font-changing macros, with `\text` first because it is the base of the
+    // family and the one a formula reaches for.
+    "text",
+    "textbf",
+    "textit",
+    "texttt",
+    "emph",
+    // The mathematical alphabets.
+    "mathbb",
+    "mathcal",
+    "mathrm",
+    "mathbf",
+    // Structure, and the cross-references that hang off it.
+    "section",
+    "subsection",
+    "label",
+    "ref",
+    "eqref",
+    "cite",
+    "item",
+    "footnote",
+    "caption",
+    "includegraphics",
+    "newcommand",
+];
+
+/// The curated names, in the curated order (web/PLAN.md §4.9).
+///
+/// This is a ranking overlay and never a source of entries: a name here is offered only
+/// if techxt defines it, and one that techxt does not define simply never appears. That
+/// failure is silent, which is why the slice is public — `tests/completion.rs` walks it
+/// and resolves every name in it, so a typo is a red test rather than a dead entry. The
+/// list's own source is where the order, and what is deliberately missing from it, are
+/// explained.
+pub fn curated_names() -> &'static [&'static str] {
+    &CURATED
 }
 
 /// Add `entry`, replacing any earlier definition of the same name and kind.
