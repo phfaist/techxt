@@ -259,13 +259,36 @@ second conversion.
 
 ## The binding and the protocol
 
-- [ ] `web/crate/src/diag.rs`: map `regions` into the result DTO, converting byte
-      offsets to **UTF-16 code units** — the same mapping §4.4 already does for
-      diagnostic spans; reuse that machinery rather than writing a second one.
+**L1 landed, and it changed one thing here — read its `> **Done**` note above before
+starting.** `Conversion.regions` is a `Vec<OutputRegion>` whose `kind` is a
+`VerbatimProvenance` with **four** variants, not the single `Math { display }` this
+section was written against:
+
+| variant | what the bytes are | goes to MathJax? |
+|---|---|---|
+| `MathSource { display }` | the formula's own LaTeX, post-expansion | **yes — only this one** |
+| `MathRendered { display }` | techxt's *rendered* aligned math, already Unicode text | no |
+| `KeptSource` | a construct's source under a `KeepSource` policy | no |
+| `Verbatim` | a `verbatim` body, `\verb` | no |
+
+- [ ] `web/crate/src/diag.rs`: map regions into the result DTO, **filtering to
+      `MathSource`** — handing MathJax a `MathRendered` region feeds it techxt's own
+      converted Unicode and it will produce nonsense. Convert byte offsets to
+      **UTF-16 code units** with the machinery §4.4 already uses for diagnostic spans;
+      do not write a second one.
 - [ ] `src/worker/protocol.ts`: `ConversionResult` gains
-      `regions: MathRegion[]` (`{ start, end, display }`).
+      `regions: MathRegion[]` (`{ start, end, display }`) — already flat and already
+      filtered, so the app never meets a provenance it has to reason about.
 - [ ] The binding reports regions unconditionally; the app ignores them unless it is
       in MathJax mode. There is no option to turn them on.
+- [ ] Three properties L1 measured that the DOM-wrapping code will meet:
+      a block region's range **excludes** the newline that ends its last line; a
+      construct that renders to nothing reports nothing; and an inline region can
+      contain a newline (a `KeepSource` macro keeps its post-newline), so a region is
+      not guaranteed to sit within one line of the output.
+- [ ] `MathMode::Plain` reports no math regions at all — it flattens formulas into
+      ordinary text. Nothing to do about it, but do not treat an empty region list as
+      a bug when testing across modes.
 
 ## Shipping MathJax
 
