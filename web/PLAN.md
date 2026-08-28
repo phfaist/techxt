@@ -376,10 +376,22 @@ wasm-pack ships a newer binaryen the flags become harmless.
 
 `opt-level = 3` is the choice: conversion speed is what a person feels while typing,
 and 296 KB gzipped is not a heavy page. `"s"` and `"z"` are measured alternatives
-(§14) held in reserve — if the module grows past roughly 400 KB gzipped, or a phone
-profile shows the download hurting more than the speed helps, drop to `"s"` first
-(`"z"` costs the most speed for the last few tens of kilobytes). The CI size budget
-of §11 is what makes that growth visible.
+(§14) held in reserve — if the module grows past the gzip ceiling, or a phone profile
+shows the download hurting more than the speed helps, drop to `"s"` first (`"z"` costs
+the most speed for the last few tens of kilobytes). The CI size budget of §11 is what
+makes that growth visible.
+
+The ceiling itself is **not written down here**: `WASM_MAX_GZIP_BYTES` (and
+`WASM_MAX_BYTES`) in `.github/workflows/web.yml` are its only authoritative copy, with
+the reasoning for their current values in the comment above them. This section owns the
+*policy* — grow past the ceiling and the first response is `"s"` — not the number.
+
+**Reached once, and deferred (2026-08-28).** M10 took the module past the gzip ceiling
+and CI fired. The owner's call was to raise that ceiling for now rather than drop to
+`"s"`; see §14 for the measurement. The paragraph above is not withdrawn — `"s"` is
+still the first response, still worth 56 KB gzipped, and still waiting on the
+browser-side speed measurement that would let the trade be made on evidence. What moved
+is where the tripwire sits, not the plan.
 
 ### 4.8 Tests
 
@@ -960,9 +972,11 @@ A new `.github/workflows/web.yml` — `ci.yml` stays untouched and `rust/`-scope
    inside `web/crate`, restoring the gates the crate loses by living outside `rust/`
    (D1). The `[lints]` block copies `rust/`'s policy verbatim.
 3. `wasm-pack build …` (§10), then assert the emitted `.wasm` is under a size budget
-   — 1.1 MB raw / 350 KB gzipped, roughly 20 % over today's `opt-level = 3` figures —
-   so a dependency mistake shows up as a failed build rather than a slow page, and so
-   the §4.7 decision to trade size for speed gets revisited deliberately.
+   set roughly 20 % over the measured `opt-level = 3` figures — so a dependency mistake
+   shows up as a failed build rather than a slow page, and so the §4.7 decision to
+   trade size for speed gets revisited deliberately. The budget's actual values live in
+   `.github/workflows/web.yml` (`WASM_MAX_BYTES`, `WASM_MAX_GZIP_BYTES`) and nowhere
+   else; §14 records what each measured build came in at.
 4. Node 22, `npm ci`, `npm run typecheck`, `npm test`, `npm run build`.
 5. `pip install fonttools brotli && python3 web/tools/coverage_check.py --check` —
    fails on a default-face gap, warns (into the job summary) on the others (§8.5).
@@ -1089,26 +1103,29 @@ machinery is in the module whether a document defines a macro or not:
 |---|---|
 | wasm as shipped, before M9 (W7 figure above) | 939 287 B raw · 333 KB gzip |
 | wasm as shipped, at M9 (`opt-level = 3` + LTO + `wasm-opt -O3`) | **1 120 513 B raw · 398 525 B gzip** |
-| CI budget (§11) | 1 150 000 B raw · 400 000 B gzip |
+| CI budget *as it stood at M9* (§11) | 1 150 000 B raw · 400 000 B gzip |
 | headroom | 29 487 B raw (2.6 %) · **1 475 B gzip (0.4 %)** |
 | the same build at `opt-level = "s"` (`wasm-opt -O3` unchanged) | 895 214 B raw · 343 435 B gzip |
 
 **The gzip budget is now a tripwire rather than a ceiling.** 1 475 bytes is one
 `String::from` away from red, and the number that matters is the one §4.7 names as the
-decision point: "if the module grows past roughly 400 KB gzipped … drop to `"s"` first".
-This build is at 398.5 KB. The budgets are deliberately left where they are — raising
+decision point: "if the module grows past the gzip ceiling … drop to `"s"` first".
+This build is 1 475 B short of it. The budgets are deliberately left where they are — raising
 one is how a size budget stops meaning anything — and the last row is here so the trade
 can be made on evidence: `opt-level = "s"` buys 55 KB gzipped back, at a speed cost this
 file has still never measured — the paragraph below has said so since W1, and it is the
 measurement to take before the trade, not after. It is a decision for the owner
 (Appendix D), not something to slip into a commit that was only meant to make CI green.
 
+*(Superseded — read the present tense above as of M9. The tripwire fired at M10 and the
+ceiling was raised on 2026-08-28; see the rev-bump subsection below.)*
+
 The three build profiles differ by 106 KB gzipped between the fastest and the
 smallest. `opt-level = 3` takes the speed; the other two rows are here so the trade
 can be reversed on evidence rather than re-measured from scratch (§4.7). The speed
 side of that table is still unmeasured — W7 fills it in from the browser.
 
-### Measured at the techy `736c97c` / techy-xp `58c8aef` rev bump — the tripwire is red
+### Measured at the techy `736c97c` / techy-xp `58c8aef` rev bump — the tripwire fires
 
 The upstream parse-entry rework (`parse_source` becoming `parse_setup(...).parse()`,
 plus a defaulted `ParseDriver::make_root_parser`) touches nothing this app calls, and it
@@ -1119,21 +1136,33 @@ is not what moved the needle:
 | wasm at M9 (table above) | 1 120 513 B raw · 398 525 B gzip |
 | wasm on `main` at 94c0366, **before** this bump (M10 in, never re-measured) | 1 130 119 B raw · **401 841 B gzip** |
 | wasm at techy `736c97c` + techy-xp `58c8aef` (`opt-level = 3` + LTO + `wasm-opt -O3`) | **1 130 392 B raw · 400 993 B gzip** |
-| CI budget (§11) | 1 150 000 B raw · 400 000 B gzip |
-| headroom | 19 608 B raw (1.7 %) · **−993 B gzip — over** |
 | the same build at `opt-level = "s"` (`wasm-opt -O3` unchanged) | 898 175 B raw · 344 828 B gzip |
+
+Measured against the gzip ceiling **as it stood that day**, the middle row was 993 B
+over and the row above it 1 841 B over. (The ceilings themselves are not restated here
+— `.github/workflows/web.yml` holds the only copy, per §4.7.)
 
 The bump itself is size-neutral, marginally favourable: −848 B gzipped, +273 B raw.
 **The gzip budget was already breached on `main` before it.** M10 (the render side made
 generic over `LatexlikeLang`, root PLAN §16) spent the 1 475 B of headroom M9 left and
-was never re-measured, so the size step of `.github/workflows/web.yml` fails on `main`
-today for reasons that have nothing to do with techy's revision.
+was never re-measured, so the size step failed on `main` for reasons that had nothing to
+do with techy's revision.
 
-So §4.7's decision point has been reached exactly as the M9 note above predicted, and
-the answer it names is unchanged: `opt-level = "s"` buys 56.2 KB gzipped back and lands
-at 344 828 B, 14 % under the ceiling — at a speed cost this file has still never
-measured. It is a decision for the owner (Appendix D), not something to slip into a
-rev bump. The budgets stay where they are until it is made.
+So §4.7's decision point was reached exactly as the M9 note above predicted, and the
+answer it names is unchanged: `opt-level = "s"` buys 56.2 KB gzipped back — at a speed
+cost this file has still never measured.
+
+**The owner's decision (2026-08-28): raise the gzip ceiling for now, and leave
+`opt-level` alone.** The measurement is why it is only *for now*: 993 B over is not
+evidence that the module is too big, it is evidence that the tripwire sat where the plan
+wanted it and has now fired once. The M9 note's warning — "raising one is how a size
+budget stops meaning anything" — is the cost being accepted here, knowingly and once.
+The answer to a *second* firing is `"s"`, and the input that trade still lacks is the
+browser-side speed comparison the profile table has wanted since W1.
+
+The **raw** ceiling was left untouched, and the same build sits 19 608 B (1.7 %) under
+it — proportionally tighter than the gzip line now is. Raw is the likelier of the two to
+fire next.
 
 ## 15. Milestones
 

@@ -48,17 +48,30 @@ env:
   # roughly 20 % over the measured figure, so a dependency mistake shows up as a
   # failed build rather than a slow page.
   #
-  # The gzip ceiling is set at 400 KB deliberately: that is the number §4.7 names as
-  # the point to drop to `opt-level = "s"`, so CI fails exactly when the plan says the
-  # size/speed trade should be revisited — not before.
+  # **The two values below are the only authoritative copy of the size ceiling.** The
+  # plan (§4.7, §11, §14) describes the policy and records measurements but deliberately
+  # restates neither number, so a budget change is a one-file edit and cannot go stale
+  # in prose.
   #
-  # M9 measurement, unchanged budgets: linking techy-xp in took the module to
-  # 1 120 513 B raw / 398 525 B gzipped (§14) — 29 KB and **1.4 KB** of headroom. The
-  # gzip ceiling is therefore about to do exactly what it was set up to do, and the
-  # answer when it does is §4.7's first response (`opt-level = "s"`, measured at
-  # 343 KB gzipped), not a larger number on the line below.
+  # The gzip ceiling started at the figure §4.7 names as the point to drop to
+  # `opt-level = "s"`, so CI fails exactly when the plan says the size/speed trade
+  # should be revisited — not before. It did that: M9 took the module to 1 120 513 B
+  # raw / 398 525 B gzipped (§14), leaving 29 KB and **1.4 KB** of headroom, and M10
+  # (the render side made generic over `LatexlikeLang`) then spent the gzip headroom
+  # without a re-measure and tripped the wire at 401 841 B.
+  #
+  # **The owner's call, 2026-08-28: raise the gzip ceiling for now** rather than take
+  # §4.7's first response (`opt-level = "s"`, measured at 344 828 B gzipped — 56 KB
+  # back, at a speed cost still unmeasured). A deferral, not a reversal: `"s"` is still
+  # the answer, and what it waits on is the browser-side speed comparison §14's profile
+  # table has wanted since W1. The answer to a *second* firing is that measurement, not
+  # another raise.
+  #
+  # The **raw** ceiling is deliberately left where it was: the same build sits 19 608 B
+  # (1.7 %) under it, proportionally tighter than the gzip line now is, so raw is the
+  # likelier of the two to fire next.
   WASM_MAX_BYTES: 1150000
-  WASM_MAX_GZIP_BYTES: 400000
+  WASM_MAX_GZIP_BYTES: 450000
 
 jobs:
   web:
