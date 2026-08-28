@@ -29,16 +29,40 @@ const MATHJAX_VERSION = (require('mathjax/package.json') as { version: string })
 const MATHJAX_DIR = `mathjax/${MATHJAX_VERSION}`;
 
 /**
- * The three trees copied under it: the combined TeX→CHTML bundle, the font's
- * dynamically loaded character ranges, and the woff2 faces those ranges are metrics for.
+ * The TeX extensions that must be served from our own origin, by their file name under
+ * `mathjax/input/tex/extensions/`.
+ *
+ * `tex-chtml.js` carries `ams`, `newcommand`, `configmacros`, `noundefined`,
+ * `textmacros`, `require` and `autoload`; every other package is a file of its own that
+ * MathJax's loader fetches from `loader.paths.mathjax`, which is us (§9.1). So a package
+ * named in `src/mathjax.ts`'s `TEX_INPUT.packages` and *not* copied here would be a 404
+ * at startup on a page whose whole promise is that it asks nobody for anything.
+ *
+ * Two of these three are the packages TODO item 9 chose; `boldsymbol` is here because
+ * `mathtools` depends on it, which is the kind of thing only the loader knows —
+ * `tools/mathjax_coverage.mjs` runs MathJax under the app's own package list, asks the
+ * loader what it loaded, and fails if the answer is not covered by this list.
+ */
+export const MATHJAX_TEX_EXTENSIONS: readonly string[] = [
+  'mathtools',
+  'upgreek',
+  'boldsymbol',
+];
+
+/**
+ * The trees and files copied under it: the combined TeX→CHTML bundle, the TeX extensions
+ * above, the font's dynamically loaded character ranges, and the woff2 faces those
+ * ranges are metrics for.
  *
  * The ranges are the surprise in MathJax 4 (see §9.1 and the note in TODO item 2): the
  * bundle carries the common characters, and a formula reaching outside them —
  * `\mathbb{R}`, `\mathcal{H}` — asks for one more file, which by default comes from
- * jsdelivr. Serving the whole set ourselves is what keeps "no CDN, ever" true. All three
- * trees are lazily fetched and never precached, so the weight is in `dist/` and almost
- * none of it on the wire: a reader who opens every shipped example fetches eleven of
- * these files and 414 KB (§14).
+ * jsdelivr. Serving the whole set ourselves is what keeps "no CDN, ever" true. Everything
+ * here is lazily fetched and never precached, so the weight is in `dist/` and almost none
+ * of it on the wire: a reader who opens every shipped example fetches eleven of these
+ * files and 414 KB (§14), plus the three extensions — 27 006 B on disk, 9 658 B gzipped —
+ * which are fetched at startup rather than on demand, because a package the configuration
+ * names has to be there before the first formula is.
  *
  * Under the SVG output this was two trees and 11.8 MB, because an SVG range carries
  * glyph outlines where a CHTML range carries metrics and lets a woff2 face do the
@@ -49,6 +73,10 @@ const MATHJAX_DIR = `mathjax/${MATHJAX_VERSION}`;
  */
 const MATHJAX_ASSETS: readonly { readonly from: string; readonly to: string }[] = [
   { from: require.resolve('mathjax/tex-chtml.js'), to: 'tex-chtml.js' },
+  ...MATHJAX_TEX_EXTENSIONS.map((name) => ({
+    from: require.resolve(`mathjax/input/tex/extensions/${name}.js`),
+    to: `input/tex/extensions/${name}.js`,
+  })),
   {
     from: join(
       dirname(require.resolve('@mathjax/mathjax-newcm-font/package.json')),

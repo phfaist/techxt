@@ -18,7 +18,8 @@ web/
   crate/          the wasm binding — a standalone cargo package, not a rust/ member
   fonts/          six unsubsetted woff2 faces and their licences, committed
   public/         icons and the social card, generated and committed
-  tools/          dev-only Python: font packaging, glyph coverage, icons
+  tools/          dev-only checks: font packaging, glyph coverage, icons (Python)
+                  and MathJax's coverage of techxt's symbols (Node)
   test/           vitest over the pure logic
 ```
 
@@ -88,7 +89,17 @@ python3 tools/fetch_fonts.py            # obtain and re-package fonts/
 python3 tools/fetch_fonts.py --check    # verify the committed files against SOURCES.md
 python3 tools/coverage_check.py --check # the CI glyph-coverage gate
 python3 tools/make_icons.py             # icon.svg → public/icons/ and public/og.png
+node tools/mathjax_coverage.mjs         # what MathJax does not know that techxt does
+node tools/mathjax_coverage.mjs --check # the same, as the CI gate
 ```
+
+`mathjax_coverage.mjs` is the odd one out: it produces nothing to commit, and it runs
+in CI on every push rather than when a font changes. It asks `cargo run --example
+symbol_index` for every name the library defines, typesets each one under the TeX
+configuration `src/mathjax.ts` exports, and fails when a construct techxt calls
+mathematics is one MathJax cannot read — which, since `noundefined` makes an unknown
+construct *render* rather than fail, nothing else would notice. See
+[`PLAN.md`](PLAN.md) §9.1.
 
 `fetch_fonts.py` **never subsets**. A subset is a bet on which codepoints will
 appear, and this app cannot make that bet: the document is whatever the user pastes,
@@ -98,8 +109,9 @@ ships whole, behind a CSS fallback chain, and is fetched only when it is selecte
 ## Deployment
 
 `.github/workflows/web.yml` builds on every push touching `web/**` or
-`rust/techxt/**`, enforces the wasm and font size budgets and the glyph-coverage
-gate, and deploys `web/dist` to GitHub Pages on a push to `main`.
+`rust/techxt/**`, enforces the wasm, MathJax and font size budgets and the
+glyph-coverage and MathJax-coverage gates, and deploys `web/dist` to GitHub Pages on a
+push to `main`.
 
 > **One manual step, outside the repository.** Settings → Pages → Source →
 > **GitHub Actions**. Until that is set, `deploy-pages` succeeds and publishes

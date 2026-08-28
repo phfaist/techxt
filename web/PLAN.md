@@ -1871,6 +1871,67 @@ spent on visitors who never turn the mode on, which is the whole point of the ro
 above. **Keep everything offline** (§8.3) asks for it too, deliberately, for the person
 who is about to lose the network on purpose.
 
+#### What MathJax is told to understand, and how that is kept true
+
+Source mode re-emits a formula's own LaTeX post-expansion (§4.3), so the names MathJax
+has to read are not the user's macros but *techxt's own* — the 1 406 that
+`DefinitionSet::symbols()` reports (§4.9). Those two lists had never been compared, and
+when they were, **770 of the 1 394 macros and environments were names MathJax does not
+know**: the owner had reported eight of them.
+
+The configuration is therefore chosen against that measurement and is kept honest by it.
+`TEX_INPUT` in `src/mathjax.ts` is the packages and the definitions in one exported
+object, and `tools/mathjax_coverage.mjs` **imports that object** and typesets every name
+under it, so the checker cannot be measuring a copy of the configuration that has since
+moved. `noundefined` means MathJax never *fails* on a name it does not know — it draws it
+in red and reports success — so a settled promise is no evidence at all: the checker reads
+`noundefined`'s own marker out of the MathML, and two canaries (a name nobody defines, and
+`\alpha`) abort the run if that classification has stopped working.
+
+**What the gap is made of.** Nearly all of it is document structure — `\section`,
+`\cite`, `itemize`, `tabular`, the text accents, the text font declarations — which
+reaches MathJax only inside a formula that has no business containing it, plus the
+generated symbol tail of Cyrillic, zodiac signs and the exotica pylatexenc's tables carry.
+The part that is *mathematics* — techxt's `mathcore`, `mathenvs` and `subsuperscripts`
+categories, and the Dirac notation the generated table happens to hold — was **88 names**,
+and that part is closed:
+
+- **`mathtools`** and **`upgreek`**, served from our own origin like everything else,
+  close 46: the `psmallmatrix`/`bsmallmatrix`/`dcases` family, `\overbracket` and
+  `\underbracket`, and the 41 upright Greek letters. Both were measured against the whole
+  table first: neither changes the rendering of a single name that already worked.
+- **Definitions in the configuration** close the other 40, through `configmacros`, which
+  is in the package list already. Where techxt's own rule is a literal — the Greek
+  capitals `\Alpha`…`\Zeta`, `\degree`, `\llbracket` — the definition *is* that literal,
+  read out of the symbol table rather than invented, so the two Math modes cannot drift
+  apart.
+- **`physics` was rejected on the measurement**, which is what the caution about it was
+  for: it closes the four Dirac names and silently changes five it was never asked about,
+  three of them into something techxt disagrees with — `\div` becomes ∇· where techxt
+  renders ÷, `\Im` and `\Re` become upright *Im* and *Re* where techxt renders ℑ and ℜ,
+  and `\Pr` and `\det` stop being operators, so a subscript sits beside them rather than
+  under.
+- **`braket` was rejected too**, which was not expected: three of its four macros are
+  exactly what techxt defines, and its `\braket` is a *different macro* — one argument
+  with the bar inside it, where techxt takes two — so `\braket{\phi}{\psi}` typeset as
+  ⟨ϕ⟩ψ beside a Fancy mode rendering ⟨ϕ|ψ⟩. A `configmacros` definition cannot correct
+  that: a package's macro map is consulted before the configuration's whatever order the
+  package list is in. The four are defined here instead, the three that agreed carrying
+  the extension's own bodies byte for byte.
+
+**Two gaps are recorded rather than closed**, each with the measurement that says why, in
+`ACCEPTED_GAPS` in the checker: `\intertext`, which as `\text{#1}` typesets but drops the
+prose into the first column of the next row of the alignment, and `subequations`, which
+MathJax refuses inside the `align` it is always wrapped around. The long tail is not
+gated — no package would close it, and several hundred names would be a baseline nobody
+can read — but it is counted per category into the job summary, so a name worth promoting
+is found rather than discovered.
+
+**What the check does not see.** It asks whether MathJax can *read* a name, not whether it
+reads it the way techxt does. `\braket` was caught by driving a browser and comparing the
+two modes by eye, and a checker that compared what each side renders — argument counts at
+the least — would have caught it without that. Nothing here measures that yet.
+
 **Three things here are load-bearing and were all found in a browser rather than on
 paper**, because none of them fails loudly:
 
@@ -1909,11 +1970,16 @@ entry can never outlive the engine that understands it. The version is read from
 installed package, in one place, in `vite.config.ts`, and reaches `src/mathjax.ts`
 through a `define`.
 
-**What it costs.** 3 171 162 B in `dist/`: 997 445 B for `tex-chtml.js` (280 899 B
-gzipped), 550 677 B for the 40 metric ranges and 1 623 040 B for the 105 woff2 faces. The
-app's own bundle does not move — MathJax is not imported by it — and neither does the
-precache manifest. Under SVG the same three lines were 11 817 943 B, which is what the
-size pass went looking at.
+**What it costs.** 3 198 168 B in `dist/`: 997 445 B for `tex-chtml.js` (280 899 B
+gzipped), 550 677 B for the 40 metric ranges, 1 623 040 B for the 105 woff2 faces and
+27 006 B for the three TeX extension files — `mathtools`, `upgreek` and the `boldsymbol`
+the first depends on — which `MATHJAX_TEX_EXTENSIONS` in `vite.config.ts` copies beside
+the bundle so that a package named in `TEX_INPUT` is never a request to somebody else.
+Those three are 9 658 B gzipped and are fetched at startup rather than on demand: a
+package the configuration names has to be there before the first formula is.
+The app's own bundle carries the definitions and no more: it does not import MathJax, and
+the precache manifest still holds none of this. Under SVG the same lines were
+11 817 943 B, which is what the size pass went looking at.
 
 The ceiling is **not written down here**, for the same reason §4.7's is not:
 `MATHJAX_MAX_BYTES` and `MATHJAX_MAX_GZIP_BYTES` in `.github/workflows/web.yml` are the
@@ -1969,6 +2035,12 @@ A new `.github/workflows/web.yml` — `ci.yml` stays untouched and `rust/`-scope
    MathJax asset budget: the `dist/mathjax/` tree, and `tex-chtml.js` gzipped. It is a
    lazily fetched asset (§9.1), so no other gate here would see it grow.
    `MATHJAX_MAX_BYTES` and `MATHJAX_MAX_GZIP_BYTES`, in the same file and nowhere else.
+   Then `node tools/mathjax_coverage.mjs --check`, which typesets every name
+   `DefinitionSet::symbols()` reports under the app's own TeX configuration and fails on a
+   construct techxt calls mathematics that MathJax cannot read (§9.1). Same policy as the
+   glyph gate below — a hard gate on the core, the long tail into the job summary — and
+   the same reason for existing: nothing else here would notice, because `noundefined`
+   makes an unknown construct render rather than fail.
 5. `pip install fonttools brotli && python3 web/tools/coverage_check.py --check` —
    fails on a default-face gap, warns (into the job summary) on the others (§8.5).
 6. Assert the font budget: no single `web/fonts/*.woff2` over 900 KB, no more than
@@ -2284,6 +2356,74 @@ output, because Source had already expanded it; Copy returns the Source-mode tex
 for byte, compared against the same document under *Math: Source*; switching back leaves
 no wrapper elements; a reload with the network off still typesets from the service
 worker's cache; and **not one request left the origin in any run**.
+
+### Measured after the size pass — what MathJax does not know that techxt does
+
+The first comparison of the two vocabularies (§9.1, TODO item 9). Every name
+`techxt::defs::standard()` resolves, through `DefinitionSet::symbols()`, typeset one at a
+time by MathJax 4.1.3 under the app's own TeX configuration and classified by
+`noundefined`'s marker in the MathML. **1 406 names in the table; 1 394 walked**, the 12
+*specials* excluded because a character trigger — `~`, `^`, `--` — cannot be an undefined
+control sequence and there is no question there to answer.
+
+| configuration | unknown, of 1 394 | of those, mathematics |
+|---|---|---|
+| `base, ams, newcommand, configmacros, noundefined` — as it shipped | **770** | **88** |
+| the same, `+ mathtools, upgreek` | 724 | 42 |
+| the same, `+ 38 macro and 2 environment definitions` — as it ships now | **684** | **2** |
+
+The 684 that remain are the long tail, and they are left alone deliberately: 376 are the
+generated `symbols_extra` table — Cyrillic, the zodiac, `\LeftTeeVector`, `\textbaht` —
+and 308 are document structure (`\section`, `\cite`, `itemize`, `tabular`, the text
+accents, the text font declarations) which reaches a typesetter only inside a formula that
+should not contain it. No package would close either group.
+
+What each candidate package closes, and what it changes, measured over the whole table
+rather than over the eight names that were reported:
+
+| package | names closed | renderings changed |
+|---|---|---|
+| `braket` | 4 — `\bra`, `\ket`, `\braket`, `\ketbra` | none — but `\braket` is a *different macro*, below |
+| `mathtools` | 5 — `psmallmatrix`, `bsmallmatrix`, `dcases`, `\overbracket`, `\underbracket` | none |
+| `upgreek` | 41 — `\upalpha`…`\Upomega` | none |
+| `physics` | 4 — the same Dirac names | **5**: `\div` → ∇·, `\Im`/`\Re` → upright *Im*/*Re*, `\Pr`/`\det` no longer operators |
+
+`physics` is the one the item warned about and the measurement agrees: three of those
+five changes make MathJax mode disagree with what techxt renders in Fancy mode, and `\div`
+is a symbol schoolchildren use. It is not loaded.
+
+**`braket` was rejected for a reason nothing on paper would have found.** Its `\ket`,
+`\bra` and `\ketbra` are exactly techxt's, byte for byte the same MathML as the
+definitions that replaced them. Its `\braket` takes *one* argument with the bar inside it
+— `\braket{a|b}` — where techxt takes two, so `\braket{\phi}{\psi}` typeset as ⟨ϕ⟩ψ with
+a stray ψ beside it while the same document in Fancy mode read ⟨ϕ|ψ⟩. A `configmacros`
+definition does not override it: a package's macro map is consulted first whatever the
+order of the package list, which was measured after trying it. So the four are definitions
+in the configuration and the extension is not fetched at all. The other half of that
+finding is a **library** question: techxt reads `\braket{\phi|\psi}`, which is what the
+LaTeX package's own documentation writes, as one argument plus whatever follows the
+formula, and raises *missing mandatory argument*.
+
+**What it cost.** `dist/` excluding source maps 7 071 829 → 7 099 657 B, of which
+27 006 B is the three extension files and 822 B is the app's own bundle carrying the
+definitions (111 348 → 112 170 B raw, 38 738 → 39 133 B gzipped). `dist/mathjax/` is
+3 198 168 B against a 3 600 000 B ceiling, and `tex-chtml.js` is unchanged at 280 899 B
+gzipped against 320 000 B. The wasm module does not move: nothing in the binding changed
+except an example that never ships.
+
+*Observed*, in headless Chromium 141 against `npm run preview`, with a request log: the
+constructs the owner reported that techxt defines — `\ket`, `\bra`, `\braket`, `\ketbra`,
+`psmallmatrix`, `bsmallmatrix`, `smallmatrix` — typeset with no error node and no red
+marker, in a document of twelve formulas that also exercises `\upalpha`, `\Upgamma`,
+`\Alpha`, `\Zeta`, `\llbracket`, `\nicefrac`, `\arccosh` and `\degree`, and
+`\braket{\phi}{\psi}` reads ⟨ϕ|ψ⟩ exactly as Fancy mode does;
+all six shipped examples typeset with no error node; Copy returns the Source-mode text
+byte for byte; Fancy mode is unchanged and switching back and forth leaves nothing behind;
+Download still writes `converted.txt`; a reload with the network off typesets a formula
+that needs `mathtools` and one that needs the `double-struck` range, both from the service
+worker's cache; the console is silent, one long-standing warning about an unrecognised
+menu option having been removed with it; and **not one request left the origin in any
+run**.
 
 ## 15. Milestones
 

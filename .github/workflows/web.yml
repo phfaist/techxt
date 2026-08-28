@@ -212,6 +212,18 @@ jobs:
           fi
           exit $fail
 
+      # §9.1. The same shape as the glyph gate below, over a different table: every name
+      # `DefinitionSet::symbols()` reports is typeset under the app's own TeX
+      # configuration, read out of `src/mathjax.ts` rather than copied. techxt's own
+      # mathematics is a hard gate — a construct it calls mathematics and MathJax cannot
+      # read is the bug this closed, and the fix is one line in that file — while the
+      # long tail of the generated symbol table warns into the job summary. Nothing here
+      # touches `dist/`; it needs `npm ci` for the `mathjax` package and cargo for the
+      # symbol dump, both of which are already done above.
+      - name: MathJax coverage
+        working-directory: web
+        run: node tools/mathjax_coverage.mjs --check
+
       # §8.5. The default face is a hard gate — the out-of-the-box rendering of
       # techxt's own output is not allowed to regress. The other four warn into the
       # job summary: a handful of gaps filled by the fallback chain is a documented

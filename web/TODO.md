@@ -122,8 +122,16 @@ Measured, not assumed. Re-measure rather than trust these if the pins move.
    398 525 B from a newer stable at M9 — the toolchain moves the number by tens of
    kilobytes, which is worth remembering before reading anything into a size.
 5. **`opt-level = "s"` buys 264 KB raw / 68 KB gzipped** — the table in item 6.
-6. **techxt ships ~1 100 macros** (956 in the generated `symbols_extra` long tail plus
-   ~150 curated), and `Category` currently exposes **no** way to read them back.
+6. ~~**techxt ships ~1 100 macros** (956 in the generated `symbols_extra` long tail plus
+   ~150 curated), and `Category` currently exposes **no** way to read them back.~~
+   **Both halves of this were wrong, and the numbers matter to items 5 and 9**, so the
+   fact is corrected here rather than only in the items that found it out — a correction
+   that lives in one item's status note is a correction the next reader misses, which is
+   what happened to this one. L2 (item 5) added the reading half: `DefinitionSet::symbols()`
+   resolves the shipped library to **1 406 names — 1 311 macros, 83 environments and 12
+   specials** (declared: 1 757 macros, 991 of them in `symbols_extra` and 766 across the
+   curated categories, before shadowing). Item 9 walked all 1 406 a second time and got
+   the same table. Where an item below still says "~1 100 macros", read 1 311.
 
 ## Two changes to `rust/techxt` are in scope
 
@@ -1526,6 +1534,119 @@ throwing converts normally with Save, ★ and the chip hidden and the pane hones
 
 # 9. What MathJax does not know that techxt does
 
+> **Done** — 2026-08-28. The gap is measured, the mathematics half of it is closed, and
+> `web/tools/mathjax_coverage.mjs` is the gate that keeps it closed: it reads every name
+> `DefinitionSet::symbols()` reports through a new `web/crate/examples/symbol_index.rs`,
+> typesets each one under **the app's own TeX configuration, imported rather than
+> copied** (`TEX_INPUT`, now exported from `src/mathjax.ts`), and fails on a construct
+> techxt calls mathematics that MathJax cannot read. A new *MathJax coverage* step in
+> `.github/workflows/web.yml` runs it beside *Glyph coverage* and follows the same
+> policy. `web/PLAN.md` §9.1 and §11 updated, §14 gains a subsection with the numbers,
+> `web/README.md` gains the tool; five vitest cases in `test/mathjax-config.test.ts`
+> hold the configuration to what a unit test can reach — starting with `noundefined`,
+> which stays.
+>
+> **The size of the gap: 770 of 1 394 names.** Not eight. The 12 *specials* are excluded
+> because a character trigger cannot be an undefined control sequence, which leaves
+> 1 394 macros and environments of the 1 406 in the table. Of the 770, **88 were
+> mathematics** — techxt's `mathcore`, `mathenvs` and `subsuperscripts` categories plus
+> the Dirac notation the generated table happens to hold — and that 88 is now **2**. The
+> rest is the long tail this item predicted: 376 names of the generated `symbols_extra`
+> table (Cyrillic, the zodiac, `\LeftTeeVector`) and 308 of document structure
+> (`\section`, `\cite`, `itemize`, `tabular`, the text accents, the text font
+> declarations), which reach a typesetter only inside a formula that should not contain
+> them. They are counted per category into the job summary and gated on nothing.
+>
+> **How "unknown" is decided, since `noundefined` means nothing ever fails.** MathJax
+> draws an unknown command in red and reports success, so the checker reads
+> `noundefined`'s own marker out of the MathML — `<mtext mathcolor="red"
+> data-latex="\name">`, which names the macro, so a red `\foo` inside a `\bar` that
+> MathJax does know is not blamed on `\bar` — and the `Unknown environment 'name'` error
+> for an environment. Any *other* error (`Missing argument for \dddot`, `Illegal
+> pream-token`) means the name is known and the checker's filler argument was wrong;
+> those 41 are reported and never gated on. Two canaries abort the run if the
+> classification stops working: a name nobody defines must come back unknown and
+> `\alpha` must come back known.
+>
+> **Two packages, not the two this item named.** `mathtools` and `upgreek` close 46 of
+> the 88 and — measured over the whole table, which is the "check what is actually lost"
+> this item asked for — change the rendering of *nothing* that already worked. 38 macro
+> and 2 environment definitions through `configmacros` close the other 40, and where
+> techxt's own rule is a literal the definition **is** that literal, read out of the
+> symbol table rather than invented. `physics` was measured and rejected exactly as
+> predicted: it closes the four Dirac names and changes five it was never asked about,
+> three of them into something techxt disagrees with — `\div` becomes ∇· where techxt
+> renders ÷, `\Im`/`\Re` become upright *Im*/*Re* where techxt renders ℑ/ℜ, and
+> `\Pr`/`\det` stop being operators.
+>
+> **`braket` was rejected too, and that is the thing this item could not have foreseen.**
+> Its `\ket`, `\bra` and `\ketbra` are exactly techxt's — the definitions that replaced
+> them carry the extension's own bodies and produce byte-identical MathML — but its
+> `\braket` is a *different macro*: one argument with the bar inside it, `\braket{a|b}`,
+> where techxt takes two. So with the package loaded, `\braket{\phi}{\psi}` typeset as
+> ⟨ϕ⟩ψ while the same document in Fancy mode read ⟨ϕ|ψ⟩ — the two modes disagreeing about
+> a formula, which is the bug this item exists to remove, introduced by the fix for it.
+> A `configmacros` definition does not correct it either: a package's macro map is
+> consulted first whatever order the package list is in, which was measured after trying
+> it. So all four are definitions and the extension is not fetched at all. Two things
+> follow. The `\ketbra` note in the table below is wrong in a harmless direction —
+> `braket` has `\ketbra`, `physics` was never needed for it — and there is **a second
+> library question** beside `\norm`/`\abs`/`\coloneqq`: techxt reads `\braket{\phi|\psi}`,
+> which is what the braket package's own documentation writes, as one argument plus
+> whatever follows the formula, and raises *missing mandatory argument*.
+>
+> **What the check does not see, and it is worth writing down.** It asks whether MathJax
+> can *read* a name, not whether it reads it the way techxt does. `\braket` was caught in
+> a browser, by looking at the two modes side by side; a checker comparing argument
+> counts would have caught it without that, and nothing here does. See the new box at the
+> foot of this item.
+>
+> **Two gaps are recorded rather than closed**, each with the measurement that says why,
+> in `ACCEPTED_GAPS`: `\intertext` typesets as `\text{#1}` but drops the prose into the
+> first column of the next row of the alignment, and `subequations` is refused by MathJax
+> inside the `align` it is always wrapped around ("Erroneous nesting of equation
+> structures"). breqn's `dmath`/`dmath*` *can* be mapped — a transparent wrapper, since
+> each display formula already scrolls in a box of its own — so they are, rather than
+> recorded.
+>
+> **`smallmatrix` needed nothing**: `ams` has had it all along, so the table below is
+> wrong about that too. Only `psmallmatrix` and `bsmallmatrix` were missing.
+>
+> **What it cost in `dist/`**: **+27 828 B** (7 071 829 → 7 099 657 B excluding source
+> maps). 27 006 B of that is three TeX extension files — `mathtools`, `upgreek` and the
+> `boldsymbol` the first depends on — served from our own origin like the font ranges,
+> and 822 B is the app's own bundle carrying the definitions (111 348 → 112 170 B raw,
+> 38 738 → 39 133 B gzipped). `dist/mathjax/` is 3 198 168 B against the 3 600 000 B
+> ceiling and `tex-chtml.js` is unchanged at 280 899 B gzipped against 320 000 B, so the
+> size step stays green with 401 832 B and 39 101 B of room. The wasm module does not
+> move: the only Rust here is an example that never ships.
+>
+> **The gate was seen to fail before it was seen to pass**, which is the only way to know
+> it is one: against the configuration this item found, `--check` exits 1 and names 86
+> constructs, `\ket`, `\bra`, `\braket`, `\ketbra`, `psmallmatrix` and `bsmallmatrix`
+> among them; against the configuration that ships it exits 0. Its second half was
+> checked the same way — commenting `boldsymbol` out of `MATHJAX_TEX_EXTENSIONS` fails
+> with "MathJax loaded boldsymbol.js, which `vite.config.ts` does not copy into `dist/`",
+> which in the browser would be a 404 and a package that silently does nothing.
+>
+> *Observed*, in headless Chromium 141 against `npm run preview` with a request log: the
+> reported constructs techxt defines — `\ket`, `\bra`, `\braket`, `\ketbra`,
+> `psmallmatrix`, `bsmallmatrix`, `smallmatrix` — typeset with no error node and no red
+> marker, in a document of twelve formulas that also exercises `\upalpha`, `\Upgamma`,
+> `\Alpha`, `\Zeta`, `\llbracket`, `\nicefrac`, `\arccosh` and `\degree`, and with
+> `\braket{\phi}{\psi}` reading ⟨ϕ|ψ⟩ exactly as Fancy mode does; all six shipped examples typeset with no error node; Copy returns the Source-mode
+> text byte for byte; Fancy mode is unchanged and switching back and forth leaves nothing
+> behind; Download still writes `converted.txt`; a reload with the network off typesets a
+> formula needing `mathtools` and one needing the `double-struck` range, both from the
+> service worker's cache; the console is silent; and **not one request left the origin in
+> any run** — 22 requests, all of them ours.
+>
+> **One drive-by in the same file.** `menuOptions.settings` carried `explorer`, which the
+> bundle does not define, and MathJax said so in the console on every single run — the one
+> warning on a page that promises a clean console, right under a comment claiming every
+> name in that block is one the bundle defines a default for. Removing it turns nothing
+> back on (`enableExplorer` is the switch) and the console is now silent.
+
 Owner feedback from running the branch: several constructs render as *undefined* in
 MathJax mode — `\ket`, `\bra`, `\ketbra`, `\norm`, `\abs`, `\coloneqq`,
 `psmallmatrix`, `bsmallmatrix`.
@@ -1556,13 +1677,13 @@ current MathJax package list is `base, ams, newcommand, configmacros, noundefine
 nobody has ever compared the two. Patch the list and the next document finds the next
 gap.
 
-- [ ] **Measure the whole gap.** L2 gave the binding a `SymbolIndex`, so the set of
+- [x] **Measure the whole gap.** L2 gave the binding a `SymbolIndex`, so the set of
       names techxt defines is now enumerable. Walk it, typeset each construct in
       MathJax under Node, and produce the definitive list of what MathJax does not
       know. This is the same idea as `tools/coverage_check.py`, which already gates
       *glyph* coverage in CI — that script is the precedent for both the shape and
       the reporting.
-- [ ] **Then choose packages against the measurement**, not against the report. Two
+- [x] **Then choose packages against the measurement**, not against the report. Two
       cautions:
       - **`physics` is the risky one.** The LaTeX package aggressively redefines
         unrelated things (`\div`, `\dd` and friends) and MathJax's port carries that,
@@ -1572,12 +1693,22 @@ gap.
         be supplied as a definition in the MathJax config — precise, no collateral,
         and it keeps the package list short. Prefer this over a heavyweight package
         pulled in for two names.
-- [ ] **Gate it.** Once the gap is closed, a check that fails when a techxt-known
+- [x] **Gate it.** Once the gap is closed, a check that fails when a techxt-known
       construct is unknown to MathJax stops it silently reopening. Follow
       `coverage_check.py`'s policy: a hard gate on the core, a warning into the job
       summary for the long tail, since some of ~1 100 names will never matter.
-- [ ] Whatever the outcome, `noundefined` stays: a construct nobody anticipated should
+- [x] Whatever the outcome, `noundefined` stays: a construct nobody anticipated should
       render as a marker, not kill the formula.
+
+- [ ] **New, found while closing this: the check reads names, not meanings.**
+      `tools/mathjax_coverage.mjs` asks whether MathJax can read a construct, and
+      `\braket` proved that a name both sides know can still mean different things —
+      one argument against two, and a formula that reads ⟨ϕ⟩ψ in one mode and ⟨ϕ|ψ⟩ in
+      the other. That was caught by eye in a browser. Comparing what each side does with
+      a name — argument counts first, since that is where the disagreement showed —
+      would catch the next one without a person looking. Not urgent: the four Dirac
+      macros are the only place the two vocabularies are known to overlap and disagree,
+      and they are now defined here.
 
 **Depends on item 6**, which owns `web/src/mathjax.ts` and may replace its output
 renderer entirely (the SVG→CHTML re-weigh). Do not start until that has landed —
