@@ -19,6 +19,7 @@ import {
   byRecency,
   createLibrary,
   describeOptions,
+  adoptionOnOpen,
   describeSession,
   entryTitle,
   forksEntry,
@@ -672,6 +673,31 @@ describe('sealing', () => {
     expect((await log.list())[0]?.preview).toBe('');
   });
 
+  it('keeps an entry the user opened from the pane, and starts a new one on the edit', async () => {
+    const log = library();
+    log.record('the version that was kept', {}, '');
+    clock.advance(2000);
+    await log.flush();
+    const kept = (await log.list())[0]!;
+
+    // What `main.ts` now does for every entry but the live draft (§6.10): the document
+    // comes back on screen, and nothing is written until it changes.
+    log.adoptSealed(kept);
+    expect(log.session).toEqual({ entryId: kept.id, sealed: true });
+
+    expect(log.noteEdit('the version that was kept', 'the version that was kept, edited')).toEqual({
+      kind: 'unsealed',
+      from: kept.id,
+    });
+    log.record('the version that was kept, edited', {}, '');
+    clock.advance(2000);
+    await log.flush();
+
+    const entries = await log.list();
+    expect(entries).toHaveLength(2);
+    expect(entries.find((item) => item.id === kept.id)?.source).toBe('the version that was kept');
+  });
+
   it('comes back to a sealed entry after a reload without logging a second copy', async () => {
     const log = library();
     log.record('a kept document', {}, '');
@@ -836,6 +862,25 @@ describe('★', () => {
     expect(entries).toHaveLength(2);
     expect(entries.find((item) => item.starred)?.source).toBe('body');
     expect(entries.find((item) => !item.starred)?.source).toBe('body, edited');
+  });
+});
+
+/* --------------------------------------------------- what opening an entry does */
+
+describe('adoptionOnOpen', () => {
+  it('seals every entry but the one being written into', () => {
+    // A version the user moved on from: reading it must not put it back under the
+    // keyboard, which is the whole of item 8's complaint.
+    expect(adoptionOnOpen({ entryId: 'e1', sealed: false }, 'e2')).toBe('sealed');
+    expect(adoptionOnOpen({ entryId: null, sealed: false }, 'e2')).toBe('sealed');
+    // Already sealed on to it, and opened again: still sealed, not un-sealed by a look.
+    expect(adoptionOnOpen({ entryId: 'e1', sealed: true }, 'e1')).toBe('sealed');
+  });
+
+  it('leaves the live draft live', () => {
+    // Opening the document you are already writing is not moving on from it, so this
+    // is the one case that must not fork on the next keystroke.
+    expect(adoptionOnOpen({ entryId: 'e1', sealed: false }, 'e1')).toBe('open');
   });
 });
 

@@ -23,6 +23,7 @@ import { applyFont, preloadAllFonts } from './fonts';
 import type { FontId } from './fonts';
 import {
   PRUNE_PROPOSAL_SIZE,
+  adoptionOnOpen,
   createLibrary,
   describeSession,
   makePreview,
@@ -920,7 +921,11 @@ async function start(): Promise<void> {
     const previousSession = library?.session ?? { entryId: null, sealed: false };
     const previousEntry = shownEntry;
 
-    library?.adopt(entry.id);
+    // Sealed unless this *is* the entry being written to (§6.10): a version the user
+    // moved on from comes back to be read and copied from, and the first edit to it
+    // starts a new entry instead of overwriting what they kept.
+    if (adoptionOnOpen(previousSession, entry.id) === 'open') library?.adopt(entry.id);
+    else library?.adoptSealed(entry);
     applyOptions(withDefaults(entry.options));
     setDocument(entry.source, false);
     sheets.close();
@@ -1179,7 +1184,9 @@ async function start(): Promise<void> {
    * the user has moved on to something else — Load ▾, the file handler, opening a
    * library entry, an Undo — which is exactly where a new library entry begins
    * (§6.10). Opening an entry from the library is the one exception, and passes
-   * `false`: the entry it just adopted *is* where those keystrokes belong.
+   * `false`: it has just settled the session itself — writing into that entry when it
+   * is the one already open, sealed on to it otherwise — and this must not overwrite
+   * that answer with a third.
    */
   function setDocument(text: string, startNewEntry = true): void {
     state.doc = text;

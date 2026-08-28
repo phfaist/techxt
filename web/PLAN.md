@@ -1244,6 +1244,19 @@ Opening an entry restores its document *and* its options. That is not destructiv
 settings being replaced belong to the current entry, which is itself in the log and one
 click away — and it still offers the usual single-level undo in the toast.
 
+**An entry comes back sealed unless it is the one being written into.** Sealing does not
+have to be stored on an entry to survive being opened, because the log already says which
+entry is which: everything in it is sealed except the one this session is writing into.
+So `adoptionOnOpen` is the whole rule — opening the live draft leaves it live, since
+looking at the document you are already writing is not moving on from it, and opening
+anything else seals on to it, so the first edit starts a new entry instead of overwriting
+a version the user kept. What it costs is one extra entry when somebody opens an older
+version meaning to carry on with it, which is the asymmetry every other seal is decided
+on: a wrong fork costs an entry in a log that is filterable and only ever pruned
+deliberately, and a wrong non-fork costs work. What it saves is a `sealed` field in the
+entry model, in the export format of §6.11 and in every import that would then have to
+sanitise it — to say something the session already knows.
+
 Every node in the pane is built with `createElement` and `textContent`: entry titles,
 previews and imported text are all somebody's own text, and §6.3's rule about
 `innerHTML` is not relaxed for a card.

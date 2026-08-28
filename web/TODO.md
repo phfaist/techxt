@@ -1464,16 +1464,51 @@ Star on an already-sealed entry just toggles the flag — no second seal.
 - [x] Keep the source and the rendered preview both reachable in the detail view, per
       item 3's split; on a phone the list → detail shape already there still applies.
 
-## Left open
+## Left open — answered
 
-- [ ] **Opening a sealed entry from the pane comes back *unsealed*.** Sealing is a
-      fact about the editing session and is not stored on the entry, so a version the
-      user kept a week ago starts absorbing edits again the moment it is opened — item
-      3's rule for Open, unchanged. It may well be the wrong one now that Save exists:
-      the argument for making it come back sealed is that "keep this version" ought to
-      outlive the session, and the argument against is a `sealed` field in the entry,
-      in the export format, and in every import that has to sanitise it. Left as a
-      question rather than a silent decision.
+> **Answered and implemented** — 2026-08-28, `HEAD`. The owner's answer removes the
+> question rather than picking a side of it: *everything in the library is sealed except
+> the very last one* — meaning the entry the session is writing into. Seal-ness is
+> therefore **derived**, and the `sealed` field the argument-against was about — in the
+> entry model, in §6.11's export format, in every import that would have to sanitise it —
+> never has to exist. `adoptionOnOpen` in `src/library.ts` is the whole of it, `openEntry`
+> in `src/main.ts` is its only caller, and PLAN §6.10 carries the rule.
+>
+> **Three consequences, written down because none of them is obvious from the rule.**
+> (1) After Save, ★ or New *nothing at all* is unsealed until the next edit — the next
+> entry is created lazily, so the invariant is "at most one unsealed entry, and if there
+> is one it is the most recent", not "the last one is always unsealed". (2) The rule is
+> about identity, not list position: a filtered or searched list can perfectly well show
+> a sealed entry at the top, so the chip stays the thing that says which entry is live.
+> (3) Editing an entry you opened never updates it in place any more — it forks a copy —
+> which is the asymmetry every other seal is already decided on: a wrong fork costs an
+> entry in a filterable log that is only ever pruned deliberately, and a wrong non-fork
+> costs work. Unlike the automatic fork, this one offers no Undo toast, because nothing
+> was lost to undo: the kept version is untouched and the edits are in the new entry.
+>
+> **What the browser showed that the code did not.** The forked entry takes its title
+> from the same `\section` as the entry it came from, so the chip reads ● *Alpha* where
+> it read ✓ *Alpha* a moment earlier and the list holds two rows called Alpha. That is
+> honest — they are two versions of one document, which is what the log is for — but the
+> glyph is the only thing that distinguishes them, and it is worth knowing before someone
+> reports it as a bug.
+
+- [x] **Opening an entry comes back sealed unless it is the one being written into.**
+      Sealing is a fact about the editing session and is not stored on the entry, so a
+      version the user kept a week ago started absorbing edits again the moment it was
+      opened — item 3's rule for Open, unchanged. It may well be the wrong one now that
+      Save exists: the argument for making it come back sealed is that "keep this
+      version" ought to outlive the session, and the argument against is a `sealed` field
+      in the entry, in the export format, and in every import that has to sanitise it.
+      Left as a question rather than a silent decision — and answered by the owner, in
+      the note above, in the one way that pays neither price.
+
+*Observed* for the sealing rule, in Chromium against `npm run preview` on 2026-08-28:
+typing one document, pressing **New**, typing a second, then opening the first from the
+pane brings it back as ✓ *Alpha* — sealed — and the next keystroke leaves the kept
+version byte for byte as it was and starts a third entry holding the edit; opening the
+*live* draft instead leaves it ● and typing into it adds no entry at all, which is the
+one case the rule must not fork.
 
 *Observed*, in Chromium on 2026-08-28: typing a document and then pasting a different
 one over it with everything selected leaves **both** in the library, with a toast that

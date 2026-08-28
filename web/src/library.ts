@@ -501,8 +501,9 @@ function failureOf(error: unknown): WriteFailure {
  *
  * *Sealing* is the one primitive under New, Save and ★: a sealed entry stops absorbing
  * edits, and the next change to the document starts a new one. It is a fact about the
- * editing session rather than about the entry — the entry itself is unchanged, and
- * opening it later from the pane writes into it again.
+ * editing session rather than about the entry, and it does not have to be stored on one:
+ * **everything in the log is sealed except the entry this session is writing into**, so
+ * the flag below is the whole of it and {@link adoptionOnOpen} derives the rest.
  */
 export interface SessionState {
   /** The entry the document belongs to, or `null` before it has been logged. */
@@ -522,6 +523,25 @@ export type EditOutcome =
   | { kind: 'none' }
   | { kind: 'unsealed'; from: string }
   | { kind: 'forked'; from: string };
+
+/**
+ * What opening `entryId` from the pane does to the session (§6.10).
+ *
+ * Everything in the log is sealed except the entry the session is writing into, so
+ * opening one is only *not* a seal when it is that entry: looking at the draft you are
+ * already writing changes nothing about it, and it would be a poor answer to fork a
+ * document because its author opened the pane to check the title. Every other entry is a
+ * version the user has moved on from — a `'sealed'` answer means the document comes back
+ * on screen intact and the first edit to it starts a new entry, rather than overwriting
+ * what was kept.
+ *
+ * Deriving this rather than storing a `sealed` field on the entry is the decision, and
+ * it is what keeps the flag out of the entry model, out of the v1 export format and out
+ * of every import that would otherwise have to sanitise it.
+ */
+export function adoptionOnOpen(state: SessionState, entryId: string): 'open' | 'sealed' {
+  return state.entryId === entryId && !state.sealed ? 'open' : 'sealed';
+}
 
 /** What the input pane's header says about {@link SessionState}, in words (§6.10). */
 export interface SessionLabel {
