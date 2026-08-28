@@ -534,14 +534,45 @@ wrote is the one they meant — and, since a `\renewcommand` in the document is 
 definition that will actually fire, the document's entry *replaces* the library's rather
 than sitting above a duplicate of it.
 
-**The order, in full**, which is to say the answer to "what does Tab take?": what the
-document defines, then an exact match, then macros before environments before specials,
-then the shortest name — the one closest to what has been typed — then alphabetically so
-that the same prefix always gives the same answer. The last two rules together mean the
-famous name does not always lead: `\alp` offers `\alph` before `\alpha`, because `\alph`
-is a real macro and a shorter completion, and ranking `\alpha` first would mean nobody
-can ever Tab-complete `\alph`. Nothing available here measures which is *wanted* more
-often, so the rule that can be stated is the one that is applied.
+**The order, in full**, which is to say the answer to "what does the first Tab take, and
+what does the Tab after it take?": an exact match on what has been typed, before
+anything else; then what the document defines; then the curated names, in the curated
+order; then macros before environments before specials; then the shortest name — the one
+closest to what has been typed — and then alphabetically, so that the same prefix always
+gives the same answer.
+
+**The curated list, and why the ranking needed one.** The last two rules measure the
+*name*, because a table of definitions knows nothing about the person typing it. By them
+alone `\alp` offers `\alph` — LaTeX's alphabetic counter format — ahead of `\alpha`,
+which is defensible and wrong. Nothing available here measures which of the two is
+*wanted* more often, so the answer is written down rather than derived: a hundred macros
+in `complete.rs`, the Greek alphabet, the mathematics one writes with it, and the
+everyday text and structure macros, in an explicit order that is never re-sorted. Two
+properties make it safe to hand-write. It is a **ranking overlay and never a source of
+entries** — every suggestion still comes out of the table or the document, so a curated
+name techxt does not define does not appear at all, which is a silent failure and is
+therefore pinned by a test that resolves every name on the list against the shipped
+definitions. And **the exact-match rule sits above it**, which is what keeps the list
+from moving the bug instead of fixing it: `\alp` now offers `\alpha` first, and `\alph`
+typed in full still offers `\alph`, so the shorter name stays reachable.
+
+**The list is short on purpose, and it lives in the binding.** A list long enough to
+cover the table is the shortest-first rule again with extra steps, and every name on one
+is a ranking someone has to justify. It is in `web/crate/src/complete.rs` rather than in
+`rust/techxt` because *what people type most* is a fact about a completion UI and not
+about LaTeX: it would change with the audience, nothing in the library could test it, and
+a converter converts no better for knowing that `\alpha` is popular. What the library
+owed this feature it has already given, in `DefinitionSet::symbols()`.
+
+**What writing the list found out.** `\begin` and `\end` — the two macros a LaTeX
+document has most of, and the obvious head of any such list — are not on it, because
+techxt does not define them: they are structure the parser handles itself rather than
+entries in a `DefinitionSet`, so no ranking can offer them and a completion for `\begi`
+is empty. `equation` and `align`, checked for the same reason, *are* defined — as
+environments, and they are not curated either, because the row fires on an escape
+character and an environment name is not typed after one. Both findings are pinned by
+tests, so the day `\begin` becomes completable somebody is told rather than left to
+notice.
 
 **The table is built once and kept.** `Session` builds it lazily on the first completion
 request, so a session whose user never types a `\` never pays for it, and then holds it:
@@ -563,7 +594,10 @@ than a browser (2026-08-28 container): the first call costs **7.4 ms**, which is
 table being built and is why it is built lazily; after that a call is **0.03 ms** on an
 empty or an ordinary 2 KB document and **1.1 ms** on a 197 KB one, where the linear scan
 is the whole of the difference. So the cost is the document's length and not the table's
-size, and even the large case is well inside a keystroke.
+size, and even the large case is well inside a keystroke. Placing a candidate in the
+curated list is a walk over a hundred short names, which is cheap once and not cheap
+inside a comparator, so each candidate's sort key is computed once and carried beside it
+rather than recomputed for every comparison the entry takes part in.
 
 **What the scan cannot see, and why that is the right line.** It is a scan and not a
 parse: `Conversion` exposes the converted text and its diagnostics and no parsing state,
@@ -587,7 +621,12 @@ arity it declared, and exactly once; every definer is recognized in every spelli
 later definition replaces an earlier one; a commented-out definer is not offered and an
 escaped percent does not swallow the line; a definer in a `verbatim` body is offered, on
 purpose; the limit is a cap; an empty prefix and a prefix matching nothing both behave;
-and each ranking rule is asserted on its own. Plus `wasm_completion.rs`, the browser-only
+and each ranking rule is asserted on its own. The curated list gets four of its own:
+every name on it resolves against the shipped definitions as a macro, no name is listed
+twice, the order a chip row shows is the list's own order and not a re-sort of it — the
+six Greek variants, `\varepsilon` first, are the case where the two orders are exact
+opposites — and everything past the curated names is still shortest-first. Plus the pair
+that record the reversal: `\alp` leads with `\alpha`, and `\alph` leads with `\alph`. Plus `wasm_completion.rs`, the browser-only
 half, which is about the wire spelling alone — `fromDocument` in camelCase, a kind as a
 lowercase string, `replacement: null` rather than an absent key, and an `arity` that is a
 number and not the `BigInt` a 64-bit integer would have become.

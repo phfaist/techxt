@@ -2,10 +2,12 @@
 //!
 //! What is under test is the shape *and the order* of the answer. The order is the part
 //! worth testing hardest: the JavaScript side does no ranking of its own, so a chip row
-//! is exactly what these functions return, and "which suggestion does Tab take?" is
-//! decided here and nowhere else.
+//! is exactly what these functions return, and "which suggestion does Tab take first,
+//! and what does the Tab after it take?" is decided here and nowhere else.
 
-use techxt_web::complete::{complete_native, document_definitions, CompletionKindDto, SymbolTable};
+use techxt_web::complete::{
+    complete_native, curated_names, document_definitions, CompletionKindDto, SymbolTable,
+};
 
 /// The shipped table, built once for the whole file.
 ///
@@ -313,22 +315,158 @@ fn macros_come_before_environments() {
     assert!(first_environment > 0, "there are macros too: {items:?}");
 }
 
-/// **Where the TODO's example is wrong, and deliberately left wrong.** Its *Done when*
-/// line says typing `\alp` offers `\alpha  α` and Tab completes it. It does offer it —
-/// second. `\alph`, LaTeX's alphabetic counter format, is a real macro and a shorter
-/// completion of `\alp`, so the shortest-first rule puts it first and Tab takes it.
+/// **The TODO's example, and the reversal it took to make it true.** Its *Done when*
+/// line says typing `\alp` offers `\alpha  α`, and for as long as the ranking measured
+/// only the name it offered `\alph` instead: LaTeX's alphabetic counter format is a real
+/// macro and a shorter completion of the same prefix, so shortest-first put it first.
 ///
-/// The alternative would be to rank by something other than the length of what was
-/// matched — how much a symbol renders to, how often it is used — and nothing available
-/// here measures either. Offering `\alpha` ahead of `\alph` would mean the person typing
-/// `\alph` can never Tab-complete it, which is the same complaint in the other direction
-/// with no more evidence behind it. So the rule stays, and this test is the record of
-/// what it does to the example that motivated the feature.
+/// Nothing measurable separates the two — that is still true, and it is why the
+/// separation is now written down as a list rather than derived. The objection that kept
+/// the old rule, that ranking `\alpha` first would mean nobody can ever complete
+/// `\alph`, is answered by the rule above it rather than by argument: an exact match
+/// comes first, so `\alph` is one keystroke away and the test below pins it.
 #[test]
-fn the_shortest_completion_wins_even_when_a_longer_one_is_more_famous() {
+fn a_curated_name_outranks_a_shorter_neighbour() {
     let items = offered("alp", 8);
+    assert_eq!(items[0], "alpha");
+    assert_eq!(items[1], "alph");
+}
+
+/// The other half of the reversal: typing the shorter name *in full* still puts it
+/// first, because an exact match outranks the curated list.
+///
+/// Without this rule the curated list would not have fixed the ranking, it would have
+/// moved the bug: `\alph` would be a macro no amount of typing could complete.
+#[test]
+fn a_prefix_typed_in_full_still_leads_even_against_a_curated_name() {
+    let items = offered("alph", 8);
     assert_eq!(items[0], "alph");
-    assert_eq!(items[1], "alpha");
+    assert_eq!(
+        items[1], "alpha",
+        "and the famous one is still right behind it"
+    );
+}
+
+/// **The test the curated list cannot do without.** It is a ranking overlay and never a
+/// source of entries: a name on it is offered only because the library defines it, so a
+/// name the library does *not* define is not a wrong suggestion but no suggestion at all
+/// — a typo that ranks nothing and says nothing.
+///
+/// So every name is resolved here, as a macro, against the shipped definitions. The kind
+/// is part of the assertion because it is part of the identity: `equation` is a name
+/// techxt defines, and curating it as a macro would rank a macro that does not exist.
+#[test]
+fn every_curated_name_is_a_macro_the_library_defines() {
+    let undefined: Vec<&str> = curated_names()
+        .iter()
+        .copied()
+        .filter(|name| {
+            !complete_native(shipped(), "", name, 200)
+                .iter()
+                .any(|entry| entry.name == *name && entry.kind == CompletionKindDto::Macro)
+        })
+        .collect();
+    assert!(
+        undefined.is_empty(),
+        "curated names the library does not define as macros: {undefined:?}",
+    );
+}
+
+/// A name listed twice would be ranked by its first appearance and dead at its second,
+/// which is exactly the kind of quiet wrongness a hand-written list collects.
+#[test]
+fn the_curated_list_names_each_macro_once() {
+    let mut names: Vec<&str> = curated_names().to_vec();
+    let listed = names.len();
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(
+        names.len(),
+        listed,
+        "a name appears twice in the curated list"
+    );
+}
+
+/// **The curated order is the list's own**, not a re-sort of it: the six Greek variants
+/// come back in the order they are written down, which is the order they are typed in.
+///
+/// It is the clearest case there is, because it is the exact inverse of the rule that
+/// would otherwise apply: `\varepsilon` is the longest of the six and by far the most
+/// used, and shortest-first buries it behind five rarer letters, `\varpi` leading.
+#[test]
+fn the_curated_order_is_not_re_sorted() {
+    let items = offered("var", 6);
+    assert_eq!(
+        items,
+        vec![
+            "varepsilon",
+            "varphi",
+            "vartheta",
+            "varrho",
+            "varsigma",
+            "varpi",
+        ],
+    );
+}
+
+/// Past the curated names the old rule is untouched: everything else is shortest first
+/// and then alphabetical. The list re-ranks a hundred names; it does not re-rank the
+/// table.
+#[test]
+fn names_outside_the_curated_list_are_still_shortest_first() {
+    let items = offered("var", 12);
+    assert_eq!(
+        &items[6..],
+        [
+            "varkappa",   // 8
+            "varinjlim",  // 9, and then alphabetically
+            "varliminf",  // 9
+            "varlimsup",  // 9
+            "varnothing", // 10
+            "varprojlim", // 10
+        ],
+    );
+}
+
+/// The document still outranks the curated list, which is the order the two rules have
+/// to be in: a name the author defined is a name that will fire, and no amount of
+/// popularity beats that.
+#[test]
+fn the_documents_own_definition_outranks_a_curated_name() {
+    let latex = r"\newcommand{\alphabet}{ABC}";
+    let items: Vec<String> = complete_native(shipped(), latex, "alp", 8)
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect();
+    assert_eq!(items, vec!["alphabet", "alpha", "alph"]);
+}
+
+/// **Why `\begin` and `\end` are not on the curated list**, although they are the two
+/// macros a LaTeX document contains most of: techxt does not define them. They are
+/// structure the parser handles itself rather than entries in a `DefinitionSet`, so no
+/// ranking can offer them and putting them on the list would only have made the test
+/// above red.
+///
+/// What `\begin{…}` names is defined, and is an environment rather than a macro — which
+/// is why `equation` and `align` are not curated either: the chip row fires on an escape
+/// character, and an environment name is not typed after one.
+///
+/// This test is the notice. If `\begin` ever becomes a name the library defines, it goes
+/// red, and whoever is holding it should put `\begin` and `\end` at the head of the list
+/// where they belong.
+#[test]
+fn begin_and_end_are_not_names_the_library_defines() {
+    assert!(offered("begin", 8).is_empty());
+    assert!(!offered("end", 8).iter().any(|name| name == "end"));
+
+    for environment in ["equation", "align"] {
+        let items = complete_native(shipped(), "", environment, 8);
+        let found = items
+            .iter()
+            .find(|entry| entry.name == environment)
+            .expect("the library ships it");
+        assert_eq!(found.kind, CompletionKindDto::Environment);
+    }
 }
 
 /// Names of the same kind and length are alphabetical, so the answer to a given prefix

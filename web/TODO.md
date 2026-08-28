@@ -856,6 +856,56 @@ and the door stays open.
 >    on the wire, because the app cannot know which mode the cursor is in without a
 >    parse.
 
+> **The ranking is curated now, and fact 4 above is no longer what the code does** —
+> 2026-08-28, `93780b8`. `\alp` offers `\alpha` first. The reasoning in fact 4 is left standing
+> because it is still true, and because it is the reason this fix has the shape it has:
+> nothing available here measures which of `\alph` and `\alpha` is wanted more often, so
+> the answer is not measured but *written down*. `web/crate/src/complete.rs` grows a
+> hand-written list of **99 macros** — the Greek alphabet with its capitals and variants,
+> about forty mathematical symbols and constructs, twenty everyday text and structure
+> macros — and ranks them, in the list's own order, above everything else that shares
+> their prefix.
+>
+> **The objection fact 4 raised is answered by the rule above the list, not by
+> argument.** An exact match now outranks everything, so `\alph` typed in full still
+> offers `\alph` first and stays completable; without that rule the curated list would
+> have moved the bug rather than fixed it. The two cases are pinned by
+> `a_curated_name_outranks_a_shorter_neighbour` and
+> `a_prefix_typed_in_full_still_leads_even_against_a_curated_name`.
+>
+> **The list is a ranking overlay and never a source of entries.** Every suggestion still
+> comes out of the `SymbolIndex` or the document scan, so a curated name techxt does not
+> define is offered by nobody and noticed by nobody — a silent failure, and therefore the
+> one thing a hand-written list must be tested for:
+> `every_curated_name_is_a_macro_the_library_defines` resolves all 99 against the shipped
+> definitions, as macros, so a typo in the list is a red test.
+>
+> **`\begin` and `\end` could not be curated, because techxt does not define them.** They
+> are the head any list of everyday macros would start with, and they are structure the
+> parser handles itself rather than entries in a `DefinitionSet`: `\begi` completes to
+> nothing at all, and no ranking can change that. Checked for the same reason,
+> `equation` and `align` *are* defined — as **environments**, not macros — and they are
+> not on the list either, because the row fires on an escape character and an environment
+> name is not typed after one. Both findings are pinned by
+> `begin_and_end_are_not_names_the_library_defines`, which goes red the day either
+> becomes completable and tells whoever is holding it to put them at the head of the
+> list.
+>
+> **Where the list lives is the decision behind it.** "What people type most" is a fact
+> about a completion UI and not about LaTeX — it changes with the audience, nothing in
+> the library could test it, and it comes nowhere near the bar this file sets for a
+> change to `rust/techxt` (L2 cleared that bar because a data structure you can only
+> write to is half a data structure; `\alpha` being popular is not that). So the list
+> sits in the binding, next to the ranking it feeds.
+>
+> **What it cost the module**, for item 6's ledger — release build, this container, the
+> same toolchain and flags at both ends: **+4 290 B raw / +1 628 B gzipped**
+> (1 236 973 → 1 241 263 raw, 438 459 → 440 087 gzipped). Measured a third way, against
+> the same code with the list emptied to `[]`, the hundred names themselves are **1 298 B
+> raw / 545 B gzipped** and the remaining ~3 KB is the ranking machinery — the extra sort
+> key and the walk that places a name in the list. Nothing here is a dependency and
+> nothing reaches `dist/` beyond the module itself.
+
 **Where the suggestions come from.**
 
 - [x] **techxt's own declared symbols**, through the wasm module (below).
@@ -984,16 +1034,56 @@ Root `PLAN.md` entry and tests as usual.
       when there is nothing to suggest.
 - [ ] Trigger only after `\` plus at least one letter. Never on `\` alone, never in the
       middle of a word.
-- [ ] **Tab accepts the first chip**, which is visually highlighted to show that it is
-      the one Tab takes. Click or tap accepts any chip.
+- [ ] **Tab applies the first candidate; the Tab after it applies the second.** Tab is a
+      cycle, not an accept: each press replaces the text the previous press inserted with
+      the next candidate, walking the row from left to right. **Shift-Tab steps back**
+      through it. Tapping or clicking a chip applies that chip directly, and ends the
+      cycle there.
+- [ ] **The candidate list freezes when the cycle starts**, keyed to the prefix the user
+      typed rather than to what is in the buffer now. This is not an optimisation, it is
+      what makes the cycle exist: re-filtering on the newly inserted text would collapse
+      the list to the one entry just inserted, and the second Tab would have nowhere to
+      go.
+- [ ] **Both ends of the cycle come back to the user's own text.** Shift-Tab from the
+      first candidate restores exactly what was typed — that is the undo half, and it is
+      how a person who Tabbed by accident gets their `\alp` back — and Tab past the last
+      candidate wraps to it as well. Whichever direction you keep pressing in, your own
+      text comes round again.
+- [ ] **The chip row highlights the candidate currently applied**, moving the highlight
+      as the cycle moves, so that pressing Tab three times is a visible act rather than a
+      guess. With the user's own text restored, nothing is highlighted.
+- [ ] **The cycle ends** on any other keystroke, on a cursor move, on Escape and on blur.
+      Once it has ended the inserted text is just text: the next Tab is the next Tab, not
+      the fourth press of the old cycle.
+- [ ] **Tab is intercepted only while the row is showing**, and the row only appears
+      after `\` plus at least one letter — so for all the rest of the time Tab moves
+      focus out of the textarea exactly as it always did. State it as the obligation it
+      is: a keyboard-only user who could not leave the editor would be trapped in it, and
+      that is an accessibility failure and not a rough edge.
 - [ ] **Enter and space are never intercepted** — the user's newlines are their own.
-      This is the whole point of Tab-only acceptance.
-- [ ] Escape dismisses the row until the next `\`.
-- [ ] A tiny persistent hint on the row: **"Tab to accept"**.
+      This is the whole point of hanging completion off Tab.
+- [ ] Escape dismisses the row until the next `\`. Mid-cycle it also ends the cycle,
+      leaving the last applied candidate in place — Escape is "stop bothering me", not
+      "undo"; the undo is Shift-Tab back to the start.
+- [ ] A tiny persistent hint on the row: **"Tab to cycle"** — it accepts nothing, it
+      moves through them.
 - [ ] Show the replacement beside the name where there is one (`\alpha  α`), which is
       what makes the list worth reading.
 - [ ] Cap the row at a handful of entries; a scrolling chip row is a popup with extra
-      steps.
+      steps. The cycle is over the row as shown, so the cap is also the length of the
+      cycle — one more reason it stays small.
+- [x] **The order the cycle walks, decided and implemented in the binding.** The app
+      renders the array it is given, left to right, and Tab walks it in that order.
+      In full: **an exact match on what was typed**, first of all and whatever its kind;
+      then **what the document defines** (`fromDocument: true`), which also *replaces* a
+      shipped entry of the same name rather than doubling it; then the **curated names,
+      in the curated list's own order**, which is deliberate and is never re-sorted; then
+      everything else by the old rule — macros before environments before specials, then
+      the shortest name, then alphabetically. The curated list is 99 macros in
+      `web/crate/src/complete.rs`, and it belongs there rather than in `rust/techxt`
+      because "what people type most" is a fact about a completion UI and not about
+      LaTeX; the note at the top of this section has the rest of the reasoning, what
+      writing the list found out about `\begin`, and what it cost.
 
 *Done when*: typing `\alp` offers `\alpha  α`, Tab completes it, Enter still inserts a
 newline while the row is showing, a `\newcommand` written earlier in the document is
