@@ -786,7 +786,7 @@ and the door stays open.
 >    parse.
 
 > **The ranking is curated now, and fact 4 above is no longer what the code does** —
-> 2026-08-28. `\alp` offers `\alpha` first. The reasoning in fact 4 is left standing
+> 2026-08-28, `93780b8`. `\alp` offers `\alpha` first. The reasoning in fact 4 is left standing
 > because it is still true, and because it is the reason this fix has the shape it has:
 > nothing available here measures which of `\alph` and `\alpha` is wanted more often, so
 > the answer is not measured but *written down*. `web/crate/src/complete.rs` grows a
