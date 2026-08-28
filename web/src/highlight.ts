@@ -10,9 +10,12 @@
  * the character, where anything that had to ask the parser would trail the cursor by the
  * conversion's debounce and its round trip through the worker (§6.12).
  *
- * The DOM half lives in `ui/panes.ts` and is a loop over {@link editorChunks}; everything
- * that decides *what* is coloured is here, because vitest runs in `node` with no DOM and
- * this is the half worth testing.
+ * The DOM half lives in `ui/panes.ts`; everything that decides *what* is coloured is here,
+ * and so is everything that decides *what changed* — {@link textEdit} reads one edit as the
+ * single range it replaced, and {@link chunkSplice} turns two paintings into the one splice
+ * between them, which is what keeps a keystroke from rebuilding the mirror whole (§6.12).
+ * Both are here because vitest runs in `node` with no DOM, and this is the half worth
+ * testing.
  *
  * The one invariant, and the reason for every clamp below: **the chunks concatenate back
  * to the text they were cut from**. The mirror they are rendered into sits behind the
@@ -348,4 +351,100 @@ export function editorChunks(
     });
   }
   return chunks;
+}
+
+/**
+ * What one edit did to the text, as the single replaced range it can always be read as.
+ *
+ * `prefix` is where the two versions first differ, `oldEnd` is where the replaced range
+ * ends in the *old* text, and `delta` is how much longer the text got. An offset at or
+ * after `oldEnd` moves by `delta`; an offset at or before `prefix` does not move at all;
+ * an offset between them was inside what the edit replaced and has no answer.
+ *
+ * It is the smallest description of a keystroke that both of the things that track one
+ * need: the diagnostics' cached spans, which have to stay on their own characters until
+ * the next conversion result arrives (§7), and the highlight window, which has to stay
+ * over the same characters so that the mirror's rebuild can be a splice rather than a
+ * replacement (§6.12).
+ */
+export interface TextEdit {
+  prefix: number;
+  oldEnd: number;
+  delta: number;
+}
+
+/** See {@link TextEdit}. Two identical strings give a zero-width edit at their end. */
+export function textEdit(before: string, after: string): TextEdit {
+  const maxCommon = Math.min(before.length, after.length);
+  let prefix = 0;
+  while (prefix < maxCommon && before.charCodeAt(prefix) === after.charCodeAt(prefix)) prefix += 1;
+  let suffix = 0;
+  const maxSuffix = maxCommon - prefix;
+  while (
+    suffix < maxSuffix &&
+    before.charCodeAt(before.length - 1 - suffix) === after.charCodeAt(after.length - 1 - suffix)
+  ) {
+    suffix += 1;
+  }
+  return { prefix, oldEnd: before.length - suffix, delta: after.length - before.length };
+}
+
+/**
+ * The one contiguous stretch of runs in which two chunk lists differ — the whole of the
+ * mirror's incremental rebuild (§6.12).
+ *
+ * A keystroke changes one run of the document and leaves every other run exactly as it
+ * was, so the list the mirror should be holding shares a long head and a long tail with
+ * the list it is holding. This finds both and reports the gap between them as a splice:
+ * drop `removed` runs starting at `at`, put `inserted` in their place. `null` means the
+ * two lists are the same and the mirror does not have to be touched at all.
+ *
+ * It is deliberately a *single* splice rather than a minimal edit script. Two runs of the
+ * same text are interchangeable — a chunk carries no identity beyond what it says — so a
+ * cleverer diff would spend its time proving that the middle of a paragraph can be
+ * reused, on a list where the middle is exactly what changed. A head-and-tail scan is
+ * O(n) in the runs and, on the edit a keystroke actually makes, finds a splice of one.
+ */
+export interface ChunkSplice {
+  /** Index of the first run that differs. */
+  at: number;
+  /** How many runs to drop, starting at {@link at}. */
+  removed: number;
+  /** What to put in their place. */
+  inserted: EditorChunk[];
+}
+
+function sameChunk(a: EditorChunk, b: EditorChunk): boolean {
+  return (
+    a.text === b.text && a.token === b.token && a.inMath === b.inMath && a.severity === b.severity
+  );
+}
+
+/** See {@link ChunkSplice}. `null` when the two lists are identical. */
+export function chunkSplice(
+  before: readonly EditorChunk[],
+  after: readonly EditorChunk[],
+): ChunkSplice | null {
+  const shorter = Math.min(before.length, after.length);
+  let head = 0;
+  while (head < shorter) {
+    const a = before[head];
+    const b = after[head];
+    if (a === undefined || b === undefined || !sameChunk(a, b)) break;
+    head += 1;
+  }
+  let tail = 0;
+  // The head and the tail may not claim the same run twice, or a splice would delete
+  // text that is still wanted.
+  const maxTail = shorter - head;
+  while (tail < maxTail) {
+    const a = before[before.length - 1 - tail];
+    const b = after[after.length - 1 - tail];
+    if (a === undefined || b === undefined || !sameChunk(a, b)) break;
+    tail += 1;
+  }
+  const removed = before.length - head - tail;
+  const inserted = after.slice(head, after.length - tail);
+  if (removed === 0 && inserted.length === 0) return null;
+  return { at: head, removed, inserted };
 }

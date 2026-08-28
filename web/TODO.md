@@ -1331,6 +1331,87 @@ budget raise was recorded as a deferral rather than a decision.**
 
 # 7. The input pane's own keystroke cost, on a very large document
 
+> **Done** — 2026-08-28, `PENDING`. The mirror is rebuilt by splice rather than replaced:
+> `ui/panes.ts` keeps the list of runs it is showing, and `chunkSplice` in `src/highlight.ts`
+> says what the next painting differs by — **one run**, on a keystroke, on every document
+> size. Nothing in the keystroke asks the browser a question about geometry any more: the
+> highlight window is placed from a cached reading refreshed where a layout is already being
+> paid for, and `backdrop.scrollTop = input.scrollTop` has moved into a
+> `requestAnimationFrame`. `web/PLAN.md` §6.12 is rewritten around both and §14 grows a
+> subsection with the A/B beside the rows it supersedes. **`dist/` cost: +1 468 B of
+> `index.js` raw, +531 B gzipped — no CSS, no dependency, nothing at all to the wasm module,
+> so none of the four size budgets in `.github/workflows/web.yml` moves.**
+>
+> **Measured A/B in one browser** — Chromium 141 **headed under Xvfb**, both builds served
+> side by side and driven alternately in rounds, because this container is shared and a run
+> of one build followed by a run of the other measures the machine as much as the change.
+> Fifteen keystrokes a round, median of five rounds' medians. The forced layout is counted
+> and timed separately by instrumented `scrollTop`/`scrollHeight`/`clientHeight`/
+> `getBoundingClientRect` accessors installed before the app loads.
+>
+> | document | before | after | forced layout inside the keystroke |
+> |---|---|---|---|
+> | 5 KB (whole) | 5.0 ms | **2.1 ms** | 2.6 ms over 4 accesses → **none** |
+> | 20 KB (windowed) | 8.7 ms | **4.1 ms** | 5.3 ms over 8 accesses → **none** |
+> | 200 KB (windowed) | 49.6 ms | **22.5 ms** | 37.0 ms over 8 accesses → **none** |
+>
+> **Observed in the browser, not reasoned about**, on the ~27 KB paper of item 5's shape and
+> on 200 KB: mirror and textarea at the same content width (561.2 px) and the same
+> `scrollHeight` (14 681 px); the mirror holding every character; a click on a glyph putting
+> the caret within one character of it at 5 %, 35 %, 65 % and 90 % depth; the diagnostic
+> underline on its own characters before and after an edit inserted ahead of it; a gutter
+> marker 0.0 px off its row; the chip row, Tab, and Ctrl+Z; IME composition suppressing the
+> colours and giving them back; selection and paste; both the windowed and the
+> whole-document path; and the two layers photographed in turn — the mirror's glyphs, then
+> the textarea's own under `is-composing` — and diffed, **1.14 % of the pane, the same 1.14 %
+> before and after**. Twenty-two checks, green on both builds, plus ten scroll positions on a
+> 200 KB document giving span-for-span identical answers before and after.
+>
+> **Five things reality settled.**
+>
+> 1. **The 83 ms would not reproduce, and that is a fact about the machine, not the pane.**
+>    On this container the unfixed pane costs **49.6 ms** on a 200 KB document where §6.12
+>    records 83.6 ms. That is why the number recorded is an A/B measured side by side in one
+>    browser rather than a new absolute to be compared against an old one, and why both
+>    tables now say which machine they came from.
+> 2. **Incremental was worth nothing until the window stopped moving.** Diffing the runs is
+>    the easy half; the hard half is that the window's edges are *offsets*, and an offset
+>    that stays put while the text slides under it rewrites the hundred-kilobyte text node at
+>    the far edge on every keystroke. Watched from outside with a `MutationObserver` on a
+>    200 KB document: the old pane replaced **all 1 165** of the mirror's nodes per
+>    keystroke, the first version of this change **577 of them** — everything from the caret
+>    to the end — and the version that ships replaces **1**, because the window now rides the
+>    edit exactly as the diagnostics' spans do. `test/editor-splice.test.ts` keeps the
+>    tempting version and the shipped one side by side on purpose.
+> 3. **A sticky window can only ever grow, which is a bug, and it took the node count to see
+>    it.** A window that already covers the screen can never be *left*, so nothing made it
+>    shrink: one paint from a stale geometry — the first paint of a pasted document, where
+>    the cache still described the document before it — left the whole of a 200 KB buffer
+>    spanned (33 783 nodes) for as long as it stayed open. The timings barely noticed. The
+>    node count did. There are now two answers: a paste re-reads the geometry, since a paste
+>    is not a keystroke and can afford one layout, and a window wider than a screenful plus
+>    three margins is re-derived whatever the screen is doing.
+> 4. **The forced layout was most of it, and the deferral costs nothing visible.** Eight
+>    geometry accesses per keystroke, 37 of the 49.6 ms at 200 KB. Moving the scroll sync
+>    into a `requestAnimationFrame` is safe because a scroll event is dispatched *before* that
+>    frame's animation callbacks: over 49 real keystrokes at the bottom of a long document,
+>    11 of which scrolled the textarea, the mirror and the textarea were **0.0 px apart in the
+>    frame that painted**, measured in a callback registered after the pane's own.
+> 5. **What is left is largely not ours.** A bare 200 KB textarea with nothing attached costs
+>    **4.2 ms** for the same keystroke, and a profile puts the app's own script under 2 ms of
+>    the 22.5; the rest is the browser laying out 200 KB of wrapped text in the mirror, which
+>    is the price of the mirror existing. Going further would mean not holding every character,
+>    and that is the invariant, not an implementation detail.
+>
+> **One thing in this item was not true.** It says the release checklist's item 5 "has in fact
+> recorded *a keystroke round-trips in ~100 ms* since W7". §13's item 5 records no such
+> number — it asks that typing stay responsive and that the colours follow a scroll. The
+> sentence with the 100 ms in it is in §14's *Measured at W7* subsection, in a paragraph
+> *about* §13 item 5, and it is about a keystroke landing while a 200 KB conversion is in
+> flight, which is not only this. It is outside the sections this item was given, so it is
+> left alone and flagged here rather than quietly rewritten; the number the *Done when* line
+> asks for is in §6.12 and §14 instead.
+
 *Found while measuring item 5, and not caused by it.* A keystroke in a 200 KB document
 costs about **83 ms** on the main thread before a single character is coloured, measured
 in Chromium: `setRangeText` on a textarea that size, a forced layout to read `scrollTop`
@@ -1343,16 +1424,16 @@ It went unnoticed because the expensive-looking half of the app is behind a work
 in fact recorded "a keystroke round-trips in ~100 ms" since W7 without anyone asking what
 the 100 ms was.
 
-- [ ] **Rebuild the mirror incrementally, not wholly.** It has to *hold* every character
+- [x] **Rebuild the mirror incrementally, not wholly.** It has to *hold* every character
       — the alignment with the textarea above it is the whole mechanism — but an edit
       that changes one line need not replace every node. The chunk list is already
       computed from a window; keeping the nodes outside the edit and replacing only the
       run that changed is the obvious shape.
-- [ ] **Stop forcing a layout inside the keystroke.** `backdrop.scrollTop =
+- [x] **Stop forcing a layout inside the keystroke.** `backdrop.scrollTop =
       input.scrollTop` reads a value the edit just invalidated. Deferring the scroll sync
       to a `requestAnimationFrame` would let the browser lay out once instead of twice —
       check that the mirror does not visibly lag the textarea by a frame when it does.
-- [ ] Re-measure with the A/B harness item 5 used (a 5 KB, a 20 KB and a 200 KB document,
+- [x] Re-measure with the A/B harness item 5 used (a 5 KB, a 20 KB and a 200 KB document,
       median of fifteen keystrokes, with the forced layout timed separately), and record
       the result in `web/PLAN.md` §6.12 and §14 beside the numbers it replaces.
 

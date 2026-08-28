@@ -32,8 +32,8 @@ import { candidatesFor, completionTrigger, nextInCycle } from '../completion';
 import type { CompletionTrigger, TriggerKind } from '../completion';
 import { applyFont } from '../fonts';
 import type { FontId } from '../fonts';
-import { editorChunks, tokenize } from '../highlight';
-import type { Mark } from '../highlight';
+import { chunkSplice, editorChunks, textEdit, tokenize } from '../highlight';
+import type { EditorChunk, Mark, TextEdit } from '../highlight';
 import { splitMathRuns } from '../math-regions';
 import { MIN_FIT_COLUMNS, columnsFor } from '../state';
 import type { ExampleDoc } from '../types';
@@ -75,13 +75,16 @@ const KEYBOARD_THRESHOLD = 120;
  * Up to this many characters are lexed and spanned whole; past that, only a window
  * around what is on screen is (§6.12).
  *
- * Both numbers were measured rather than chosen. A mirror rebuild costs about 4.5 ms
- * for the text alone and **5.3 µs per span** on top of it, and a densely marked-up
- * LaTeX document carries roughly 120 spans per kilobyte — so the cost of highlighting
- * is the size of the window and almost nothing else. A window of the screenful in view
- * plus this margin on each side is a few hundred spans and a few milliseconds; the whole
- * of a 20 KB document is 2 400 spans and 17 ms, which is a keystroke a typist would
- * feel.
+ * Both numbers were measured rather than chosen. Building a span costs **5.3 µs**, and a
+ * densely marked-up LaTeX document carries roughly 120 spans per kilobyte — so the cost of
+ * highlighting is the size of the window and almost nothing else. A window of the
+ * screenful in view plus this margin on each side is a few hundred spans; the whole of a
+ * 20 KB document is 2 400 spans and 17 ms, which is a keystroke a typist would feel.
+ *
+ * The window survives the incremental rebuild that came after it, and for a second reason:
+ * a repaint now replaces only the runs that changed, but the run *list* is still built
+ * whole every time, so the window is still what keeps that list a thousand entries rather
+ * than a hundred thousand.
  */
 const HIGHLIGHT_WHOLE_LIMIT = 6_000;
 /**
@@ -158,9 +161,46 @@ export function initPanes(init: PanesInit): Panes {
    * colourless second rather than a broken editor.
    */
   let composing = false;
-  /** The window `rebuildBackdrop` last spanned, in characters — see `highlightWindow`. */
+  /** The window the mirror is currently spanned over, in characters — see `takeWindow`. */
   let windowFrom = 0;
   let windowTo = 0;
+  /**
+   * The runs the mirror is holding right now, one per child node of `backdrop` and in
+   * the same order.
+   *
+   * This is what makes the rebuild incremental (§6.12): the next repaint is diffed
+   * against it, and only the runs that actually changed are touched. It is the mirror's
+   * own record of itself, so anything that replaces the mirror's children by another
+   * route has to replace this too, or the two fall out of step — `paintBackdrop` checks
+   * that they agree before believing either.
+   */
+  let backdropChunks: EditorChunk[] = [];
+  /** The text `backdropChunks` and the window were computed for — see `paintBackdrop`. */
+  let paintedText = '';
+
+  /**
+   * The pane's geometry as of the last time it was cheap to ask, which is what places the
+   * highlight window (§6.12).
+   *
+   * Reading `scrollTop`, `clientHeight` or `scrollHeight` from an element whose text has
+   * just changed makes the browser lay the whole document out before it can answer, and
+   * inside a keystroke that is the most expensive thing the pane does. So the keystroke
+   * reads this instead, and the record is refreshed where a layout is already happening
+   * or already paid for: on a scroll, in the frame after an edit, in the debounced
+   * relayout that measures the gutter, and on a paste — which can change the document's
+   * height by a factor and is not something anyone does sixty times a second.
+   *
+   * It is allowed to be a frame out of date. What it decides is which characters get
+   * *colour*, and the margin around the window is three thousand characters wide.
+   */
+  let geometry = { scrollTop: 0, clientHeight: 0, scrollHeight: 0 };
+  function readGeometry(): void {
+    geometry = {
+      scrollTop: input.scrollTop,
+      clientHeight: input.clientHeight,
+      scrollHeight: input.scrollHeight,
+    };
+  }
 
   /* ------------------------------------------------------------------ DOM */
 
@@ -608,7 +648,12 @@ export function initPanes(init: PanesInit): Panes {
     advanceCache.clear();
     scheduleMeasure();
   });
-  requestAnimationFrame(measure);
+  requestAnimationFrame(() => {
+    measure();
+    // The first honest answer about the pane's geometry, which every later keystroke
+    // reads instead of asking again.
+    readGeometry();
+  });
 
   /* ------------------------------------------------------ diagnostics in the editor */
 
@@ -625,19 +670,7 @@ export function initPanes(init: PanesInit): Panes {
    */
   function remapPaintDiagnostics(before: string, after: string): void {
     if (paintDiagnostics.length === 0 || before === after) return;
-    const maxCommon = Math.min(before.length, after.length);
-    let prefix = 0;
-    while (prefix < maxCommon && before[prefix] === after[prefix]) prefix += 1;
-    let suffix = 0;
-    const maxSuffix = maxCommon - prefix;
-    while (
-      suffix < maxSuffix &&
-      before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
-    ) {
-      suffix += 1;
-    }
-    const oldEditEnd = before.length - suffix;
-    const delta = after.length - before.length;
+    const { prefix, oldEnd: oldEditEnd, delta } = textEdit(before, after);
 
     const next: Array<Diagnostic & { span: Span }> = [];
     for (const diagnostic of paintDiagnostics) {
@@ -664,42 +697,127 @@ export function initPanes(init: PanesInit): Panes {
   }
 
   /**
-   * Which characters are worth turning into elements (§6.12).
+   * Which characters are on screen, estimated from the scroll offset (§6.12).
+   *
+   * A character is a character's share of the content height. The alternative — asking
+   * the browser where a character actually is — means a forced layout, and on a 200 KB
+   * document that is the single most expensive thing a keystroke can do, so the estimate
+   * is taken from `geometry`, which the pane refreshes where a layout is already being
+   * paid for. Measured against the truth (a binary search with a `Range` over the mirror)
+   * on a deliberately uneven 200 KB document it was wrong by at most 1 033 characters,
+   * which is what {@link HIGHLIGHT_MARGIN} is sized for.
+   */
+  function seenRange(text: string): { from: number; to: number } | null {
+    if (!(geometry.scrollHeight > 0)) return null;
+    const perPixel = text.length / geometry.scrollHeight;
+    return {
+      from: Math.round(geometry.scrollTop * perPixel),
+      to: Math.round((geometry.scrollTop + geometry.clientHeight) * perPixel),
+    };
+  }
+
+  /**
+   * Settle `windowFrom`/`windowTo`: which characters are worth turning into elements
+   * (§6.12).
    *
    * A short document is all of them: it is a few hundred spans and the whole question
    * does not arise. Past {@link HIGHLIGHT_WHOLE_LIMIT} the mirror still holds every
    * character — the alignment with the textarea above it depends on that — but only a
    * window of them is *spanned*, and the rest is one text node per side.
    *
-   * The window is estimated from the scroll offset rather than measured — see
-   * {@link HIGHLIGHT_MARGIN} for what that costs in accuracy and what the margin does
-   * about it — and it is re-taken on every keystroke and every scroll. What an error
-   * would cost is a screenful of uncoloured text, never a character out of place: the
-   * mirror holds the same characters either way, and only their colour is at stake.
+   * **The window is over characters, not over offsets, and it stays over the same ones
+   * until the screen leaves it.** That is what lets the rebuild be a splice. Re-deriving
+   * the window from the estimate on every keystroke moves both its edges by a fraction of
+   * a character each time, and an edge that moves rewrites the hundred-kilobyte text node
+   * on that side of it — so the mirror would be rebuilt whole again by a different route.
+   * So the edges are instead carried along by the edit, exactly as the diagnostics' spans
+   * are, and only a screen that has scrolled out of the window makes it move. The margin
+   * is what makes that safe: by the time the screen reaches an edge there are three
+   * thousand characters of coloured text beyond it.
    */
-  function highlightWindow(text: string): {
-    from: number;
-    to: number;
-    seenFrom: number;
-    seenTo: number;
-  } {
+  function takeWindow(text: string, edit: TextEdit | null): void {
     if (text.length <= HIGHLIGHT_WHOLE_LIMIT) {
-      return { from: 0, to: text.length, seenFrom: 0, seenTo: text.length };
+      windowFrom = 0;
+      windowTo = text.length;
+      return;
     }
-    const height = input.scrollHeight;
-    if (!(height > 0)) {
-      const to = Math.min(text.length, HIGHLIGHT_WHOLE_LIMIT);
-      return { from: 0, to, seenFrom: 0, seenTo: to };
+    if (edit !== null) {
+      // An edge the edit happened before moves with it; one it happened after does not.
+      if (edit.oldEnd <= windowFrom) windowFrom += edit.delta;
+      if (edit.oldEnd <= windowTo) windowTo += edit.delta;
     }
-    const perPixel = text.length / height;
-    const seenFrom = Math.round(input.scrollTop * perPixel);
-    const seenTo = Math.round((input.scrollTop + input.clientHeight) * perPixel);
-    return {
-      from: Math.max(0, seenFrom - HIGHLIGHT_MARGIN),
-      to: Math.min(text.length, seenTo + HIGHLIGHT_MARGIN),
-      seenFrom,
-      seenTo,
-    };
+    windowTo = clamp(windowTo, 0, text.length);
+    windowFrom = clamp(windowFrom, 0, windowTo);
+    const seen = seenRange(text);
+    if (seen === null) {
+      // Nothing laid out yet — the top of the document is the only honest guess.
+      windowFrom = 0;
+      windowTo = Math.min(text.length, HIGHLIGHT_WHOLE_LIMIT);
+      return;
+    }
+    // Keeping the window still is only worth anything while it is still about the right
+    // size. It grows a character every time an edit lands inside it, and it can start out
+    // far too wide if the geometry it was first derived from was a document ago — and a
+    // window that covers the screen can never be *left*, so without this it would stay
+    // too wide for as long as the document was open, spanning text nobody is looking at.
+    const roomy = seen.to - seen.from + 3 * HIGHLIGHT_MARGIN;
+    if (
+      windowTo > windowFrom &&
+      seen.from >= windowFrom &&
+      seen.to <= windowTo &&
+      windowTo - windowFrom <= roomy
+    ) {
+      return;
+    }
+    windowFrom = Math.max(0, seen.from - HIGHLIGHT_MARGIN);
+    windowTo = Math.min(text.length, seen.to + HIGHLIGHT_MARGIN);
+  }
+
+  /** The runs the mirror should be holding for `text`, in order, tiling it exactly. */
+  function backdropRuns(text: string, edit: TextEdit | null): EditorChunk[] {
+    const painting = highlighting && !composing;
+    if (painting) takeWindow(text, edit);
+    else {
+      windowFrom = 0;
+      windowTo = 0;
+    }
+
+    const tokens = painting ? tokenize(text, windowFrom, windowTo) : [];
+    // Outside the window the diagnostics still have to be painted: there are a handful
+    // of them, they are the older of the two channels, and a warning that stopped being
+    // underlined when the document grew would be a regression.
+    const spans = marks(text);
+    const cuts = painting
+      ? [
+          { from: 0, to: windowFrom, tokens: [] as ReturnType<typeof tokenize> },
+          { from: windowFrom, to: windowTo, tokens },
+          { from: windowTo, to: text.length, tokens: [] as ReturnType<typeof tokenize> },
+        ]
+      : [{ from: 0, to: text.length, tokens: [] as ReturnType<typeof tokenize> }];
+
+    const runs: EditorChunk[] = [];
+    for (const cut of cuts) {
+      if (cut.to <= cut.from) continue;
+      for (const chunk of editorChunks(text, cut.tokens, spans, cut.from, cut.to)) runs.push(chunk);
+    }
+    // A textarea shows a trailing blank line when the value ends in `\n`; without
+    // this, the mirror's last line falls a row short and every marker below it drifts.
+    if (text === '' || text.endsWith('\n')) {
+      runs.push({ text: ' ', token: null, inMath: false, severity: null });
+    }
+    return runs;
+  }
+
+  /** One run, as the node the mirror holds it in. */
+  function runNode(chunk: EditorChunk): Node {
+    if (chunk.token === null && chunk.severity === null) return document.createTextNode(chunk.text);
+    const classes: string[] = [];
+    if (chunk.token !== null) {
+      classes.push(`tk-${chunk.token}`);
+      if (chunk.inMath) classes.push('tk-in-math');
+    }
+    if (chunk.severity !== null) classes.push(`hl-${chunk.severity}`);
+    return el('span', classes.join(' '), chunk.text);
   }
 
   /**
@@ -709,49 +827,41 @@ export function initPanes(init: PanesInit): Panes {
    * Every node is built here from slices of the textarea's own value — no markup is
    * parsed and no `innerHTML` is assigned — and the slices tile the text exactly, which
    * is what keeps every character in the mirror underneath the character it belongs to.
+   *
+   * **What changes is spliced in; what did not change is left alone.** A keystroke moves
+   * one run of a document, so `chunkSplice` finds the head and the tail the two paintings
+   * share and this touches only the gap between them. That saves building the hundreds of
+   * elements a window carries, and it saves the browser the style and layout work of
+   * adopting them — on a 200 KB document the second of those was most of what a keystroke
+   * cost. The mirror still holds every character either way; only the number of nodes
+   * that had to be replaced to get there is different.
    */
-  function rebuildBackdrop(): void {
+  function paintBackdrop(): void {
     const text = input.value;
-    const nodes: Node[] = [];
-    const painting = highlighting && !composing;
-    const view = painting ? highlightWindow(text) : { from: 0, to: 0, seenFrom: 0, seenTo: 0 };
-    windowFrom = view.from;
-    windowTo = view.to;
-
-    const tokens = painting ? tokenize(text, view.from, view.to) : [];
-    // Outside the window the diagnostics still have to be painted: there are a handful
-    // of them, they are the older of the two channels, and a warning that stopped being
-    // underlined when the document grew would be a regression.
-    const spans = marks(text);
-    const cuts = painting
-      ? [
-          { from: 0, to: view.from, tokens: [] as ReturnType<typeof tokenize> },
-          { from: view.from, to: view.to, tokens },
-          { from: view.to, to: text.length, tokens: [] as ReturnType<typeof tokenize> },
-        ]
-      : [{ from: 0, to: text.length, tokens: [] as ReturnType<typeof tokenize> }];
-
-    for (const cut of cuts) {
-      if (cut.to <= cut.from) continue;
-      for (const chunk of editorChunks(text, cut.tokens, spans, cut.from, cut.to)) {
-        if (chunk.token === null && chunk.severity === null) {
-          nodes.push(document.createTextNode(chunk.text));
-          continue;
-        }
-        const classes: string[] = [];
-        if (chunk.token !== null) {
-          classes.push(`tk-${chunk.token}`);
-          if (chunk.inMath) classes.push('tk-in-math');
-        }
-        if (chunk.severity !== null) classes.push(`hl-${chunk.severity}`);
-        nodes.push(el('span', classes.join(' '), chunk.text));
-      }
+    const edit = text === paintedText ? null : textEdit(paintedText, text);
+    paintedText = text;
+    const runs = backdropRuns(text, edit);
+    // If anything has replaced the mirror's children behind this module's back, the
+    // record of what it holds is a lie and the safe answer is to build it again.
+    if (backdrop.childNodes.length !== backdropChunks.length) {
+      backdrop.replaceChildren(...runs.map(runNode));
+      backdropChunks = runs;
+      return;
     }
-
-    // A textarea shows a trailing blank line when the value ends in `\n`; without
-    // this, the mirror's last line falls a row short and every marker below it drifts.
-    if (text === '' || text.endsWith('\n')) nodes.push(document.createTextNode(' '));
-    backdrop.replaceChildren(...nodes);
+    const splice = chunkSplice(backdropChunks, runs);
+    backdropChunks = runs;
+    if (splice === null) return;
+    const { at, removed, inserted } = splice;
+    for (let i = 0; i < removed; i += 1) {
+      const node = backdrop.childNodes[at];
+      if (node === undefined) break;
+      backdrop.removeChild(node);
+    }
+    if (inserted.length > 0) {
+      const fragment = document.createDocumentFragment();
+      for (const chunk of inserted) fragment.append(runNode(chunk));
+      backdrop.insertBefore(fragment, backdrop.childNodes[at] ?? null);
+    }
   }
 
   /** Rebuild the gutter's buttons and cache each one's position within the content. */
@@ -799,15 +909,43 @@ export function initPanes(init: PanesInit): Panes {
     }
   }
 
+  /**
+   * Put the mirror where the textarea is, in the next frame rather than in this
+   * keystroke (§6.12).
+   *
+   * `backdrop.scrollTop = input.scrollTop` looks free and is not: it reads a scroll
+   * offset from an element whose text the edit has just invalidated, so the browser has
+   * to lay the whole document out before it can answer, and then lay it out a second time
+   * for the frame. Asked in a `requestAnimationFrame` instead, the question arrives when
+   * the browser was going to do that work anyway, and it is done once. The scroll offset
+   * has not changed in the meantime unless the caret moved the view, and if it did, the
+   * scroll event that says so is dispatched before this callback runs.
+   */
+  let scrollSyncPending = 0;
+  function scheduleScrollSync(): void {
+    if (scrollSyncPending) return;
+    scrollSyncPending = requestAnimationFrame(() => {
+      scrollSyncPending = 0;
+      readGeometry();
+      backdrop.scrollTop = geometry.scrollTop;
+      backdrop.scrollLeft = input.scrollLeft;
+    });
+  }
+
   /** The cheap half of a relayout: string slicing and a handful of DOM nodes. */
   function syncBackdrop(): void {
-    rebuildBackdrop();
-    backdrop.scrollTop = input.scrollTop;
-    backdrop.scrollLeft = input.scrollLeft;
+    paintBackdrop();
+    scheduleScrollSync();
   }
 
   function relayoutDiagnostics(): void {
-    syncBackdrop();
+    // This one is not in a keystroke and measures the gutter in a throwaway mirror
+    // anyway, so the layout it forces is already paid for: take the geometry while it
+    // is fresh, which is what keeps the window estimate honest between bursts.
+    readGeometry();
+    paintBackdrop();
+    backdrop.scrollTop = input.scrollTop;
+    backdrop.scrollLeft = input.scrollLeft;
     rebuildGutter();
   }
 
@@ -822,15 +960,24 @@ export function initPanes(init: PanesInit): Panes {
   }
 
   input.addEventListener('scroll', () => {
-    backdrop.scrollTop = input.scrollTop;
+    // A scroll event is dispatched with the layout already up to date, so this is the
+    // one place the geometry can be had for nothing — and it is the place where it
+    // changes.
+    readGeometry();
+    backdrop.scrollTop = geometry.scrollTop;
     backdrop.scrollLeft = input.scrollLeft;
     positionGutter();
     // A document large enough to be windowed can be scrolled out of its window, and
     // the colours have to follow (§6.12). Cheap to ask, and the margin means the answer
     // is almost always no.
     if (highlighting && !composing && input.value.length > HIGHLIGHT_WHOLE_LIMIT) {
-      const view = highlightWindow(input.value);
-      if (view.seenFrom < windowFrom || view.seenTo > windowTo) syncBackdrop();
+      const seen = seenRange(input.value);
+      if (seen !== null && (seen.from < windowFrom || seen.to > windowTo)) {
+        paintBackdrop();
+        // A repaint replaces nodes under a scroll offset that was set a moment ago, so
+        // say it again once the browser has had a chance to disagree.
+        scheduleScrollSync();
+      }
     }
   });
 
@@ -1137,6 +1284,10 @@ export function initPanes(init: PanesInit): Panes {
     // stale wrapping, stale everything — for the whole burst. So this part runs now.
     remapPaintDiagnostics(paintDiagnosticsText, input.value);
     paintDiagnosticsText = input.value;
+    // A paste is not a keystroke. It can change the document's height by a factor, and
+    // the window is placed from a cached geometry that would then be a different document
+    // old — so this one edit pays for the layout a keystroke is not allowed to force.
+    if (bulk) readGeometry();
     syncBackdrop();
     init.onInput(input.value, bulk ? 'paste' : 'type');
     // Only the gutter still waits: it measures in a throwaway mirror, which forces a
@@ -1265,6 +1416,12 @@ export function initPanes(init: PanesInit): Panes {
       // document, and the old spans would light up unrelated text.
       paintDiagnostics = [];
       paintDiagnosticsText = value;
+      // The window is carried along by an edit, but this is not an edit: a different
+      // document has to be looked at again rather than coloured where the last one was
+      // being read (§6.12).
+      windowFrom = 0;
+      windowTo = 0;
+      paintedText = value;
       // The row was about a name in the document that has just been replaced.
       trigger = null;
       dismissedAt = null;

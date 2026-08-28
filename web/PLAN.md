@@ -1359,13 +1359,15 @@ the cursor by a visible fraction of a second on every keystroke. A dumb synchron
 repaints with the character. The door stays open for anything only a parse can know,
 since enriching the mirror from a conversion result is additive.
 
-**The window, and the measurement that sized it.** A mirror rebuild costs about 4.5 ms
-for the text alone and **5.3 µs per span** on top of it, and densely marked-up LaTeX
-carries roughly 120 spans per kilobyte — so the cost of highlighting is the size of the
-region spanned and almost nothing else. Spanning a whole 20 KB document is 2 400 spans
-and **+17 ms** on a keystroke, which a typist feels. So documents up to 6 000 characters
-are highlighted whole, and larger ones only within the screenful in view plus 3 000
-characters of margin on each side. Measured on Chromium, keystroke to keystroke:
+**The window, and the measurement that sized it.** A span costs **5.3 µs** to build, and
+densely marked-up LaTeX carries roughly 120 spans per kilobyte — so the cost of
+highlighting is the size of the region spanned and almost nothing else. Spanning a whole
+20 KB document is 2 400 spans and **+17 ms** on a keystroke, which a typist feels. So
+documents up to 6 000 characters are highlighted whole, and larger ones only within the
+screenful in view plus 3 000 characters of margin on each side. Measured on Chromium,
+keystroke to keystroke, when a repaint still replaced the mirror whole — which it no
+longer does, and the 4.5 ms that replacement cost for the text alone is where two
+paragraphs below start from:
 
 | document | mirror without colour | with colour | spans |
 |---|---|---|---|
@@ -1381,15 +1383,59 @@ wrapped prose with blocks of short lines: it was wrong by at most **1 033 charac
 which is why the margin is what it is. An error would cost a screenful of uncoloured
 text, never a character out of place — the mirror holds the same characters either way.
 
-**The 200 KB row is the honest finding of this section, and it is not the highlighting.**
-83 ms of it is what the pane already cost before any of this: `setRangeText` on a
-200 KB textarea, a forced layout to read `scrollTop`, and a mirror rebuilt whole on every
-keystroke. Highlighting adds 0.6 ms to it. The pane has been that slow on documents that
-size since the mirror arrived at W4, and nobody had measured it, because the conversion —
-the thing everyone expected to be slow — had a worker and a debounce in front of it while
-the keystroke did not. It is worth fixing and it is a separate piece of work: the mirror
-holds the whole text for alignment, but it does not have to be *rebuilt* whole, and an
-edit that changes one line could touch one node.
+**The window is over characters, not over offsets.** It is not re-derived on a keystroke.
+An edit carries its edges along, exactly as it carries the diagnostics' cached spans
+(§7), and only a screen that has scrolled out of the window — or a window that has drifted
+much wider than a screenful and two margins — makes it move. The reason is the paragraph
+below: a window whose edges move by a fraction of a character every time the text length
+changes rewrites the hundred-kilobyte text node on each side of it, and a mirror rebuilt
+whole by that route is a mirror rebuilt whole. The offsets it is derived *from* come from
+a cached reading of the pane's geometry, refreshed where a layout is already being paid
+for — on a scroll, in the frame after an edit, in the debounced relayout that measures
+the gutter, and on a paste, which can change the document's height by a factor and is not
+a keystroke. The cache is allowed to be a frame out of date: what it decides is which
+characters get colour, and the margin around the window is three thousand characters wide.
+
+**A keystroke changes one run, and forces no layout.** The mirror holds every character —
+that is the alignment, and it is not negotiable — but it does not have to be *rebuilt* to
+hold them. The pane keeps the list of runs it is showing, asks `chunkSplice` what the next
+painting differs by, and touches only that: on a keystroke, one node. And nothing in the
+keystroke asks the browser a question about geometry, which is what a forced layout is —
+`backdrop.scrollTop = input.scrollTop` reads a scroll offset from an element whose text
+the edit has just invalidated, so it makes the browser lay the whole document out before
+it can answer, and then lay it out again for the frame. Asked in a `requestAnimationFrame`
+instead, it arrives when that work was going to happen anyway and is done once. Measured
+on Chromium 141, keystroke to keystroke, against the same build without either change:
+
+| document | a keystroke before | after | forced layouts inside it |
+|---|---|---|---|
+| 5 KB (whole) | 5.0 ms | **2.1 ms** | 4 accesses, 2.6 ms → **none** |
+| 20 KB (windowed) | 8.7 ms | **4.1 ms** | 8 accesses, 5.3 ms → **none** |
+| 200 KB (windowed) | 49.6 ms | **22.5 ms** | 8 accesses, 37.0 ms → **none** |
+
+What is left at 200 KB is very largely not the app: a bare 200 KB textarea with nothing
+attached to it costs **4.2 ms** for the same keystroke on the same machine, and most of
+the remaining eighteen is the browser laying out two hundred kilobytes of wrapped text in
+the mirror, which is the price of the mirror existing. The app's own script is under two
+milliseconds of it.
+
+Both halves of that are pure and live in `src/highlight.ts` — `chunkSplice`, and the
+`textEdit` that reads one edit as the single range it replaced, which is also what moves
+the diagnostics' spans — because vitest runs in `node` with no DOM and this is the half
+worth testing. `ui/panes.ts` keeps the record of what the mirror is showing and does the
+DOM operation, and checks the two agree before it believes either: a mirror whose children
+someone else had replaced would be spliced against a description of a mirror that no
+longer exists, so a disagreement is answered by building it again from nothing.
+
+**Where the 200 KB row above came from, and why it is not the row here.** The 83 ms is
+what the pane cost before any of this: a forced layout to read `scrollTop`, and a mirror
+rebuilt whole on every keystroke. Highlighting added 0.6 ms to it. The pane had been that
+slow on documents that size since the mirror arrived at W4, and nobody had measured it,
+because the conversion — the thing everyone expected to be slow — had a worker and a
+debounce in front of it while the keystroke did not. The two tables are from different
+machines and their absolute numbers are not comparable: the container the A/B was run on
+put the unfixed pane at 49.6 ms rather than 83.6 ms. It is the same finding either way,
+and the A/B is the honest form of it, both halves measured side by side in one browser.
 
 **The failure modes an overlay has, and what is done about each.** *IME composition*: the
 composing run is drawn by the browser with its own underline and its own candidate
@@ -1397,7 +1443,11 @@ window, and an overlay that hid it would eat the input method — so `compositio
 puts the real text back on screen and `compositionend` takes the colours up again, which
 costs a colourless second and nothing else. *Scroll synchronisation*: the mirror's
 `scrollTop` and `scrollLeft` are set from the textarea's on every scroll, as they were for
-the gutter. *Metrics*: the mirror carries the textarea's own classes rather than a copy
+the gutter — and, after an edit, in the frame the edit paints in rather than in the edit
+itself, which is where the forced layout was. A scroll event is dispatched before that
+frame's animation callbacks run, so an edit that scrolled the textarea has already said
+so by the time the mirror is moved: the two are in step in the frame that paints, not one
+behind. *Metrics*: the mirror carries the textarea's own classes rather than a copy
 of its style, so there is one declaration and not two — see below for why that is
 necessary and was not sufficient. *Mobile autocorrect*: the
 textarea has turned off `autocapitalize`, `autocorrect`, `autocomplete` and `spellcheck`
@@ -1428,8 +1478,15 @@ underneath the same character in the textarea, at every width, with and without 
 scrollbar, in both wrapping states.** It is a fact about pixels, so `web/test/` can only
 guard the shape of the stylesheet that makes it true — that the metric-deciding
 properties are declared where both layers read them, that the mirror does not give its
-gutter back, and that nothing in the lexer's palette can move a glyph. The pixels
-themselves are checked in a browser.
+gutter back, and that nothing in the lexer's palette can move a glyph — and the arithmetic
+that decides what the mirror is made of: that the runs tile the text, and that applying a
+splice to the list of runs the mirror is holding gives the list it should be holding,
+since a splice that lied would take characters out of the mirror without anything saying
+so. The pixels themselves are checked in a browser, where the two layers are photographed
+in turn — the mirror's glyphs, then the textarea's own with `is-composing` — and the two
+pictures compared. **1.14 % of the pane differs**, the residue being the antialiasing at
+the edge of a coloured span, and the same 1.14 % before and after this section's runs
+stopped being rebuilt whole.
 
 **It ships on touch too.** The mirror has been carrying the diagnostic underline on
 phones since W4, so the alignment machinery is not new there; what is new — transparent
@@ -2264,6 +2321,7 @@ build, keystroke to keystroke; the method and what follows from each are in §6.
 | a keystroke in a 5 KB document, mirror without / with colour | 2.9 → **7.6 ms** |
 | a keystroke in a 20 KB document (windowed) | 8.5 → **12.5 ms** |
 | a keystroke in a 200 KB document (windowed) | 83.0 → **83.6 ms** |
+| …and what the same three cost once the mirror stopped being rebuilt whole | see below |
 | the window estimate's error against a `Range` binary search, 200 KB uneven document | ≤ **1 033 characters** |
 | completion, keystroke to chips: 2 KB document | 5.1 ms (5.7 ms behind a conversion) |
 | completion, keystroke to chips: 200 KB document | 47.8 ms — **249.2 ms** behind a conversion |
@@ -2273,6 +2331,45 @@ build, keystroke to keystroke; the method and what follows from each are in §6.
 **The 83 ms is not the highlighting** (§6.12): it is what a keystroke in a 200 KB
 document already cost, and the colour adds 0.6 ms to it. **The 249 ms is the head-of-line
 blocking** §6.13 predicted, on the one document size where it is visible.
+
+### Measured with the mirror rebuilt by splice — the A/B, in one browser
+
+The keystroke rows above, re-taken once the mirror stopped being rebuilt whole and the
+keystroke stopped forcing a layout (§6.12). Chromium 141 headed under Xvfb — headless
+draws overlay scrollbars, which hides the whole class of geometry bug this pane has had
+one of — on a repeated 225 B `\section`/`\emph`/`$…$`/`\footnote`/`itemize` unit, the same
+family this section has used since W7.
+
+**How.** Both builds are served side by side and driven alternately in the same browser,
+in rounds, because this container is shared: fifteen keystrokes a round, the median of a
+round, the median of five rounds' medians. One keystroke is
+`document.execCommand('insertText')` with the caret clicked into the middle of what is on
+screen — the only script-side edit that goes through the browser's own editing pipeline
+and dispatches `beforeinput`/`input` synchronously, so the whole cost of the edit and of
+everything the app does about it falls between two `performance.now()` readings. The
+figure below is that, plus the cost of then asking the textarea for its `scrollHeight`,
+which flushes the layout the keystroke made necessary whoever ends up paying for it. The
+forced layout is timed separately by instrumented `scrollTop`/`scrollHeight`/
+`clientHeight`/`getBoundingClientRect` accessors installed before the app loads, which
+count and time every geometry question the app asks while the handler is running.
+
+| document | before | after | forced layout inside the keystroke |
+|---|---|---|---|
+| 5 KB (whole) | 5.0 ms | **2.1 ms** | 2.6 ms over 4 accesses → **0.0 ms over 0** |
+| 20 KB (windowed) | 8.7 ms | **4.1 ms** | 5.3 ms over 8 accesses → **0.0 ms over 0** |
+| 200 KB (windowed) | 49.6 ms | **22.5 ms** | 37.0 ms over 8 accesses → **0.0 ms over 0** |
+| nodes the mirror replaces per keystroke, 200 KB | all 1 165 of them | **1** | |
+| …on a 5 KB document, highlighted whole | all 837 of them | **1** | |
+| a bare 200 KB textarea, nothing attached (the floor) | 4.2 ms | 4.2 ms | |
+| `dist/` cost, raw | | +1 468 B of `index.js` | |
+| …gzipped | | **+531 B** — no CSS, no dependency, no change to the module | |
+
+**This container is not the one the table above was measured on**, and the honest form of
+that is the A/B rather than either column on its own: here the unfixed pane costs 49.6 ms
+on a 200 KB document where the earlier table records 83.6 ms. The finding is the same and
+the ratio is what the change is judged by. What remains at 200 KB is mostly not the app:
+the bare-textarea row is the platform's own floor, and most of the rest is the browser
+laying out two hundred kilobytes of wrapped text in the mirror.
 
 ### Measured at the size pass — the speed half, at last
 
