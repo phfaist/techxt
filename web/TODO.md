@@ -1489,6 +1489,67 @@ throwing converts normally with Save, ★ and the chip hidden and the pane hones
 
 ---
 
+# 9. What MathJax does not know that techxt does
+
+Owner feedback from running the branch: several constructs render as *undefined* in
+MathJax mode — `\ket`, `\bra`, `\ketbra`, `\norm`, `\abs`, `\coloneqq`,
+`psmallmatrix`, `bsmallmatrix`.
+
+## What was measured, 2026-08-28
+
+The eight split into two different bugs, and only one of them is about MathJax:
+
+| construct | techxt | where MathJax has it |
+|---|---|---|
+| `\ket` `\bra` `\braket` `\ketbra` | **defines** | `braket` (`\ketbra` may need `physics`) |
+| `psmallmatrix` `bsmallmatrix` `smallmatrix` | **defines** | `mathtools` |
+| `\norm` `\abs` `\coloneqq` | **does not define** — `warning: no text rule for the macro` | `physics` / `mathtools` |
+
+`Source` mode re-emits every formula verbatim whether techxt understands it or not,
+which is why the last three reach MathJax at all and why the gap is only visible
+there. In `Fancy` mode they warn and render their argument bare.
+
+So `\norm`, `\abs` and `\coloneqq` are a **library** question — common enough that
+techxt arguably should define them — and not this item's. Raise it separately against
+`rust/techxt`; do not fix it by teaching MathJax alone, which would leave Fancy mode
+still wrong and the two modes disagreeing.
+
+## Do not patch eight names
+
+The reported eight are a sample, not the set. techxt ships ~1 100 macros and the
+current MathJax package list is `base, ams, newcommand, configmacros, noundefined`;
+nobody has ever compared the two. Patch the list and the next document finds the next
+gap.
+
+- [ ] **Measure the whole gap.** L2 gave the binding a `SymbolIndex`, so the set of
+      names techxt defines is now enumerable. Walk it, typeset each construct in
+      MathJax under Node, and produce the definitive list of what MathJax does not
+      know. This is the same idea as `tools/coverage_check.py`, which already gates
+      *glyph* coverage in CI — that script is the precedent for both the shape and
+      the reporting.
+- [ ] **Then choose packages against the measurement**, not against the report. Two
+      cautions:
+      - **`physics` is the risky one.** The LaTeX package aggressively redefines
+        unrelated things (`\div`, `\dd` and friends) and MathJax's port carries that,
+        so loading it globally changes documents that never mention `\ket`. Prefer
+        `braket` + `mathtools`, and check what is actually lost.
+      - **`configmacros` is already loaded**, so any remaining techxt-known macro can
+        be supplied as a definition in the MathJax config — precise, no collateral,
+        and it keeps the package list short. Prefer this over a heavyweight package
+        pulled in for two names.
+- [ ] **Gate it.** Once the gap is closed, a check that fails when a techxt-known
+      construct is unknown to MathJax stops it silently reopening. Follow
+      `coverage_check.py`'s policy: a hard gate on the core, a warning into the job
+      summary for the long tail, since some of ~1 100 names will never matter.
+- [ ] Whatever the outcome, `noundefined` stays: a construct nobody anticipated should
+      render as a marker, not kill the formula.
+
+**Depends on item 6**, which owns `web/src/mathjax.ts` and may replace its output
+renderer entirely (the SVG→CHTML re-weigh). Do not start until that has landed —
+the package list is a small part of a file item 6 may rewrite.
+
+---
+
 # Order of work
 
 1. **Item 1** — independent, small, unblocks nothing but costs nothing.
@@ -1502,7 +1563,9 @@ throwing converts normally with Save, ★ and the chip hidden and the pane hones
 5. **Items 7 and 8** — both found by using the app rather than by planning it. Item 8
    is owner feedback from running the branch and outranks item 6; item 7 is a
    latency bug that predates all of this work and is independent of everything.
-6. **Item 6 last**, once nothing else is going to move the number.
+6. ~~**Item 6 last**~~ — done. What remains after it is item 7 (a latency bug older
+   than all of this) and item 9 (which had to wait for item 6, since item 6 replaced
+   the file it edits).
 
 Item 7 was added while item 5 was being measured and is independent of all of them; it
 touches the pane and not the module, so it does not have to wait for item 6.
