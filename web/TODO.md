@@ -177,6 +177,40 @@ library keep handing over the library's own text.
 
 ## L1 — the library change: output regions
 
+> **Done** — 2026-08-28, `6400254`. `FlowItem::Verbatim`/`InlineVerbatim` carry a
+> `VerbatimProvenance`; `layout::render_with_regions`/`render_to_with_regions` answer
+> with `Vec<OutputRegion>` beside the text (`render`/`render_to` delegate, so it is one
+> pass); `Conversion.regions`, with both types re-exported from `convert`. Fact 3 above
+> is confirmed as written. Root `PLAN.md` gains §7.1; tests in
+> `rust/techxt/tests/output_regions.rs`. Nothing reaches `dist/`: no dependency, a
+> counter increment per write, and a `Vec` that never allocates on a document with no
+> verbatim content.
+>
+> **The tag splits in two, and the binding must respect it.** Not `Math { display }` but
+> `MathSource { display }` *and* `MathRendered { display }`, beside `KeptSource` and
+> `Verbatim`. Only `MathSource` is LaTeX; `MathRendered` is techxt's own aligned output
+> (a Fancy display formula's lines, an inline matrix's padded columns), preformatted
+> because its columns are fragile. So the binding checkbox below must map only
+> `MathSource` into `regions`, or MathJax gets handed rendered Unicode math. Two more
+> decisions the sketch left open: a block's range **excludes** the newline terminating
+> its last line (it separates the block from what follows), and an item that renders to
+> nothing reports nothing.
+>
+> **Three surprises.** (1) `MathMode::Plain` reports no *math* regions at all — it
+> flattens formulas to text, and its display block is an indented text block rather than
+> a `Verbatim` — so "all three math modes" has one mode whose math answer is empty. (A
+> `\verb` inside a Plain-mode formula still reports, as it should.) (2) An
+> `InlineVerbatim` payload can contain a newline — a `KeepSource` macro keeps its
+> post-newline — so a region can span a line break inside what layout treats as one
+> word. The app wraps regions in elements, so it will meet this. (3) Rendered *inline*
+> math contributes regions only where a fragment carries its own spacing, never one over
+> a whole formula — an asymmetry with display math that is inherent, not an oversight.
+>
+> Two files outside L1's stated scope needed mechanical fixes for the breaking enum
+> change: `rust/techxt/tests/layout.rs` and `layout_proptest.rs`, five construction
+> sites. `web/PLAN.md` is untouched — L1 is a library change and §6.3's sentence about
+> wrapping a region in an element belongs to item 2's app half.
+
 **What.** Some runs of techxt's output are not converted text at all: they are source
 copied through — math in `Source` mode, an unknown construct under a `KeepSource`
 policy, a `verbatim` body. The renderer knows which; the information is thrown away at
