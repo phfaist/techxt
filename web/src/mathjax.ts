@@ -10,12 +10,24 @@
  *
  * # It is fetched, not bundled into the app
  *
- * The TeX→SVG bundle is 1.8 MB, and most visitors never turn the mode on. So it is
+ * The TeX→CHTML bundle is 1.0 MB, and most visitors never turn the mode on. So it is
  * copied into `dist/` at a version-stamped path by the `techxt:mathjax` plugin in
  * `vite.config.ts` and pulled in with a `<script>` tag the first time
- * {@link loadMathJax} is called. The service worker holds it, and the font ranges it
- * asks for, in a `CacheFirst` route beside the one that holds the display faces, so the
- * second use is offline and so is every use after a reload.
+ * {@link loadMathJax} is called. The service worker holds it, and the metric ranges and
+ * woff2 faces it asks for, in a `CacheFirst` route beside the one that holds the display
+ * faces, so the second use is offline and so is every use after a reload.
+ *
+ * # CHTML, not SVG
+ *
+ * The mode shipped on the SVG output, chosen on the belief that an SVG bundle fetches no
+ * fonts at runtime. That was wrong — MathJax 4 splits *both* font formats into character
+ * ranges loaded on demand — and once the premise went, so did the argument. Measured at
+ * the size pass (§9.1, §14): a reader who turns the mode on and reads all six shipped
+ * examples fetches **414 244 B** here against 647 876 B under SVG, and the tree behind it
+ * is 3.2 MB in `dist/` against 11.8 MB. SVG's ranges carry glyph outlines as path data;
+ * CHTML's carry metrics and let the woff2 faces — which the browser fetches only for the
+ * glyphs a formula actually reaches — do the drawing. Nothing outside this file and
+ * `vite.config.ts` knew which it was.
  *
  * **Nothing here ever contacts a CDN.** MathJax 4 would, twice over, if left alone:
  * `loader.paths.fonts` defaults to jsdelivr, and the speech-rule engine fetches its
@@ -53,7 +65,7 @@ interface MathJaxGlobal {
     document: { clear(): void; updateDocument(): void };
   };
   /** Convert one formula. `display` chooses between `$…$` and `\[…\]` layout. */
-  tex2svgPromise(tex: string, options: { display: boolean }): Promise<HTMLElement>;
+  tex2chtmlPromise(tex: string, options: { display: boolean }): Promise<HTMLElement>;
   /** Forget the math typeset so far — the list, not the DOM. */
   typesetClear(): void;
   /** Reset the TeX input's per-document state: equation numbers and labels. */
@@ -73,8 +85,11 @@ function configure(): void {
       load: [],
       paths: {
         // All three would otherwise resolve to `https://cdn.jsdelivr.net/npm/@mathjax`.
-        // The last is the one that matters in practice: it is where a character outside
-        // the bundled ranges — a `\mathbb`, a `\mathcal` — is fetched from.
+        // The last is the one that matters in practice: MathJax derives both
+        // `chtml.fontURL` and the dynamic-range prefix from it, so it is where a
+        // character outside the bundled ranges — a `\mathbb`, a `\mathcal` — has its
+        // metrics fetched from, and where the browser is told to find the woff2 face
+        // that draws it.
         mathjax: ROOT,
         fonts: ROOT,
         'mathjax-newcm': `${ROOT}/mathjax-newcm-font`,
@@ -127,9 +142,9 @@ function configure(): void {
       // back on; `enableMenu: false` hides the menu without stopping that. The document
       // then reaches the `attachSpeech` render action, starts a web worker for the
       // speech-rule engine, and waits for an answer that never comes — the worker's
-      // script is not one of the two trees `vite.config.ts` copies, and even if it were,
+      // script is not one of the three trees `vite.config.ts` copies, and even if it were,
       // fetching locale tables is exactly what §9.1 says this app does not do. The
-      // symptom is not an error: `tex2svgPromise` simply never settles.
+      // symptom is not an error: `tex2chtmlPromise` simply never settles.
       menuOptions: {
         settings: { enrich: false, speech: false, braille: false, explorer: false, collapsible: false },
       },
@@ -160,11 +175,11 @@ export function loadMathJax(): Promise<void> {
   loading = new Promise<void>((resolve, reject) => {
     configure();
     const script = document.createElement('script');
-    script.src = `${ROOT}/tex-svg.js`;
+    script.src = `${ROOT}/tex-chtml.js`;
     script.async = true;
     script.addEventListener('load', () => {
       // The script installs the global synchronously but finishes starting up in a
-      // promise of its own, and `tex2svgPromise` does not exist until it has.
+      // promise of its own, and `tex2chtmlPromise` does not exist until it has.
       api()
         .startup.promise.then(() => {
           ready = true;
@@ -204,10 +219,10 @@ export async function typeset(elements: readonly HTMLElement[]): Promise<void> {
   for (const element of elements) {
     const formula = formulaIn(element.textContent ?? '');
     if (!formula) continue;
-    const rendered = await mathjax.tex2svgPromise(formula.tex, { display: formula.display });
+    const rendered = await mathjax.tex2chtmlPromise(formula.tex, { display: formula.display });
     element.replaceChildren(rendered);
   }
-  // `tex2svgPromise` converts without touching the page, so MathJax's own stylesheet —
+  // `tex2chtmlPromise` converts without touching the page, so MathJax's own stylesheet —
   // which is what gives `mjx-container` its layout — is only inserted when it is asked
   // to bring the document up to date. Clearing first keeps its list of typeset math from
   // growing over a session of editing.

@@ -1210,6 +1210,78 @@ offered, and the row is usable by thumb on a 390 px screen.
 
 # 6. The size and optimisation pass — *last*, after everything else lands
 
+> **Done** — 2026-08-28, `a4ce824`. `opt-level = "s"` + `wasm-opt -Os` taken, MathJax
+> switched from the SVG output to CHTML, and four budgets set from the measurements.
+> PLAN §4.7, §9.1, §11 and §14 updated; §14 gains two new subsections, one per decision.
+>
+> **Both trades came out the same way, and neither on the number that was being argued
+> about.**
+>
+> 1. **`opt-level = "s"`.** 1 241 264 B raw / 440 084 B gzipped → **971 601 / 370 323**,
+>    so 269 663 B and 69 761 B back. The speed half — the thing this item existed for —
+>    is that `"s"` costs about a fifth of the conversion *CPU* above 45 KB (27.4 → 34.0 ms
+>    at 45 KB, 114.5 → 138.2 ms at 200 KB) and nothing under it (6.4 → 6.6 ms at 4.5 KB).
+>    That reads like exactly the cost §4.7 was afraid of, until you ask where a person
+>    stands: conversion is behind a Worker and a 120 ms debounce, so measured through the
+>    whole app, keystroke to repaint, the same builds are 139.6 → 139.9 ms at 4.5 KB and
+>    371.6 → 399.1 ms at 200 KB. **The premise "conversion speed is what a person feels
+>    while typing" is false as stated** — what a person feels is the debounce — and it had
+>    been steering this decision since W1. Meanwhile `"s"` makes the module *start* a
+>    fifth faster (instantiation 17.5 → 14.5 ms, first convert 32.3 → 26.1 ms), because
+>    there is a quarter less code to compile, and that is paid by every visitor rather
+>    than by the rare 200 KB document.
+> 2. **CHTML.** On the wire, for a reader who turns the mode on and opens all six shipped
+>    examples: **414 244 B against SVG's 647 876 B**, and 3 171 162 B in `dist/` against
+>    11 817 943 B. Verified fact 4 was right that CHTML wins and understated by how much
+>    — it counted CHTML's woff2 but not its `chtml/dynamic` metric ranges, which are
+>    550 677 B where the SVG equivalents are 9 968 318 B. That difference *is* the story:
+>    an SVG range carries glyph outlines, a CHTML range carries metrics and lets a woff2
+>    face draw. The switch is 3 lines in `src/mathjax.ts` and one array in
+>    `vite.config.ts`, exactly as the item predicted.
+>
+> **Budgets.** `WASM_MAX_BYTES` 1 150 000 → **1 100 000**, `WASM_MAX_GZIP_BYTES`
+> 450 000 → **415 000** — *lower* than the ceilings they replace, even though the module
+> has gained L1, L2 and the completion surface since they were set, which is what taking
+> the trade instead of raising the wire a third time buys. New beside them:
+> `MATHJAX_MAX_BYTES` (**3 600 000**, the whole `dist/mathjax/` tree) and
+> `MATHJAX_MAX_GZIP_BYTES` (**320 000**, `tex-chtml.js` gzipped). All four are the only
+> authoritative copy; the plan restates none of them. Headroom is ~13 % on each, sized
+> from two things rather than a round percentage: the toolchain spread (the same commit
+> measured 1 199 689 B on a container's rustc and 1 120 513 B on a newer stable — 6.6 %,
+> larger than most features) plus about one more feature the size of the completion
+> surface. The size step is green: 128 399 B and 44 677 B of room on the module,
+> 428 838 B and 39 101 B on MathJax.
+>
+> **One thing had to change that the item did not foresee, and it would have been a
+> silent bug.** The service worker's display-font route matched *any* same-origin
+> `.woff2`, which was unambiguous while the only woff2 in `dist/` were the five display
+> faces — and stopped being so the moment the typesetter brought 105 of its own. Workbox
+> takes the first matching route, so MathJax's faces would have landed in `techxt-fonts`
+> and its `maxEntries: 8`, evicting the face the page is drawing in. It matches `/fonts/`
+> now, and the MathJax route's cap went 48 → 160 to cover bundle + 40 ranges + 105 faces.
+> This is a third entry in the family §9.1 already documents: nothing about it fails
+> loudly. PLAN §9.1 has it written down.
+>
+> **What surprised me.** (1) `wasm-opt`'s own flag is nearly irrelevant here — `"s"` with
+> `-O3` measured 978 045 B / 370 522 B and the same speed as `"s"` with `-Os`, so rustc's
+> `opt-level` is the whole of both effects and "move them together" costs nothing to
+> honour. (2) The measurement that had been deferred three times took about twenty
+> minutes once someone opened a browser, which is worth remembering the next time
+> something is waiting on evidence. (3) The `\$` document, the macro document, Copy, the
+> wide-formula box at 1200 px and 390 px, and the offline reload all behave under CHTML
+> exactly as item 2 recorded them under SVG — the four-function API really was
+> output-agnostic.
+>
+> *Observed*, in Chromium 141 against `npm run preview`, with a request log: the
+> *Mathematics* example typesets all six formulas with no error node and `\mathbb{R}`
+> drawn from our own origin; verified fact 2's sentence typesets one formula and leaves
+> both literal dollars; a `\newcommand{\ket}` document typesets inline and display with
+> no `ket` in the output; Copy returns the Source-mode text byte for byte against the same
+> document under *Math: Source*; switching back to *Fancy* leaves no wrapper elements; a
+> wide display formula scrolls inside its own box at 1200 px and at 390 px while the page
+> does not; a reload with the network off still typesets from the service worker's cache;
+> and **not one request left the origin in any run**.
+
 Everything about module size, optimisation flags and the CI budgets is deferred to
 here, on purpose. Earlier items add weight (MathJax above all) and none of them should
 be spending effort on a ceiling that the next item is going to move anyway.
@@ -1228,23 +1300,23 @@ with room left over. The gzip figure matches §4.7's earlier 344 828 B closely e
 trust. **The speed half is what is still missing, and it is the whole reason the last
 budget raise was recorded as a deferral rather than a decision.**
 
-- [ ] **Re-weigh SVG against CHTML for MathJax**, on the corrected numbers in
+- [x] **Re-weigh SVG against CHTML for MathJax**, on the corrected numbers in
       verified fact 4 above. The choice was made on a premise that turned out to be
       false (that SVG fetches no fonts at runtime), and on the true numbers CHTML is
       smaller both in JS and on disk. `src/mathjax.ts`'s API is output-agnostic, so a
       switch touches that file and `vite.config.ts` and nothing else. Measure what a
       reader actually fetches under each, not just what sits in `dist/`, and decide.
-- [ ] Re-measure both builds, since by then the module carries L1 and L2.
-- [ ] Measure conversion time **in a real browser**, before and after, on the §14
+- [x] Re-measure both builds, since by then the module carries L1 and L2.
+- [x] Measure conversion time **in a real browser**, before and after, on the §14
       documents. This is the measurement §14's profile table has wanted since W1. If
       `"s"` costs real typing latency, say so and take a different trade — do not flip
       it silently because the number looked good.
-- [ ] Decide and apply: `opt-level` and the `wasm-opt` flag together.
-- [ ] Set `WASM_MAX_BYTES` and `WASM_MAX_GZIP_BYTES` to the new reality, keeping the
+- [x] Decide and apply: `opt-level` and the `wasm-opt` flag together.
+- [x] Set `WASM_MAX_BYTES` and `WASM_MAX_GZIP_BYTES` to the new reality, keeping the
       existing discipline that those two values in `.github/workflows/web.yml` are the
       *only* authoritative copy of the ceiling and the plan restates neither.
-- [ ] Add the MathJax bundle's own budget line beside them, under the same rule.
-- [ ] Record the measurements in §14 and note in §4.7 that the deferred trade was
+- [x] Add the MathJax bundle's own budget line beside them, under the same rule.
+- [x] Record the measurements in §14 and note in §4.7 that the deferred trade was
       taken, and why.
 
 ---

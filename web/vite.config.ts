@@ -29,27 +29,41 @@ const MATHJAX_VERSION = (require('mathjax/package.json') as { version: string })
 const MATHJAX_DIR = `mathjax/${MATHJAX_VERSION}`;
 
 /**
- * The two trees copied under it: the single combined TeX→SVG bundle, and the SVG font's
- * dynamically loaded character ranges.
+ * The three trees copied under it: the combined TeX→CHTML bundle, the font's
+ * dynamically loaded character ranges, and the woff2 faces those ranges are metrics for.
  *
  * The ranges are the surprise in MathJax 4 (see §9.1 and the note in TODO item 2): the
- * bundle carries the common glyphs, and a formula reaching outside them — `\mathbb{R}`,
- * `\mathcal{H}` — asks for one more file, which by default comes from jsdelivr. Serving
- * the whole set ourselves is what keeps "no CDN, ever" true. They are lazily fetched and
- * never precached, so the weight is in `dist/` and almost never on the wire.
+ * bundle carries the common characters, and a formula reaching outside them —
+ * `\mathbb{R}`, `\mathcal{H}` — asks for one more file, which by default comes from
+ * jsdelivr. Serving the whole set ourselves is what keeps "no CDN, ever" true. All three
+ * trees are lazily fetched and never precached, so the weight is in `dist/` and almost
+ * none of it on the wire: a reader who opens every shipped example fetches eleven of
+ * these files and 414 KB (§14).
+ *
+ * Under the SVG output this was two trees and 11.8 MB, because an SVG range carries
+ * glyph outlines where a CHTML range carries metrics and lets a woff2 face do the
+ * drawing. §9.1 has the comparison that moved it.
  *
  * `to` is a URL path — always `/`, never the platform separator — because it is matched
  * against a request before it is turned into a filename.
  */
 const MATHJAX_ASSETS: readonly { readonly from: string; readonly to: string }[] = [
-  { from: require.resolve('mathjax/tex-svg.js'), to: 'tex-svg.js' },
+  { from: require.resolve('mathjax/tex-chtml.js'), to: 'tex-chtml.js' },
   {
     from: join(
       dirname(require.resolve('@mathjax/mathjax-newcm-font/package.json')),
-      'svg',
+      'chtml',
       'dynamic',
     ),
-    to: 'mathjax-newcm-font/svg/dynamic',
+    to: 'mathjax-newcm-font/chtml/dynamic',
+  },
+  {
+    from: join(
+      dirname(require.resolve('@mathjax/mathjax-newcm-font/package.json')),
+      'chtml',
+      'woff2',
+    ),
+    to: 'mathjax-newcm-font/chtml/woff2',
   },
 ];
 
@@ -75,8 +89,8 @@ function mathjaxAsset(url: string): string | null {
  *
  * Rollup is deliberately not involved. The bundle is a script that configures itself
  * from `window.MathJax` and installs globals; `src/mathjax.ts` injects it with a
- * `<script>` tag when the user first asks for MathJax, which is what keeps 1.8 MB out of
- * the app's own bundle and off every other visitor's first paint.
+ * `<script>` tag when the user first asks for MathJax, which is what keeps a megabyte
+ * out of the app's own bundle and off every other visitor's first paint.
  */
 function mathjax(): Plugin {
   return {
@@ -86,7 +100,10 @@ function mathjax(): Plugin {
       server.middlewares.use((req, res, next) => {
         const file = mathjaxAsset((req.url ?? '').split('?')[0] ?? '');
         if (!file) return next();
-        res.setHeader('content-type', 'text/javascript; charset=utf-8');
+        res.setHeader(
+          'content-type',
+          file.endsWith('.woff2') ? 'font/woff2' : 'text/javascript; charset=utf-8',
+        );
         createReadStream(file)
           .on('error', next)
           .pipe(res);
@@ -193,21 +210,34 @@ export default defineConfig({
           'fonts/Commissioner-Variable-*.woff2',
         ],
         // MathJax is `.js` and would otherwise be swept into the precache by the
-        // pattern above — 1.8 MB of typesetter plus 9.6 MB of font ranges, on the
-        // install path of every visitor, most of whom never turn the mode on. It is a
-        // runtime asset instead, held by the `techxt-mathjax` route below (§9.1).
+        // pattern above — a megabyte of typesetter plus half a megabyte of metric
+        // ranges, on the install path of every visitor, most of whom never turn the mode
+        // on. It is a runtime asset instead, held by the `techxt-mathjax` route below
+        // (§9.1). The `woff2` faces beside them are not matched by the pattern at all,
+        // but they are under `mathjax/` and so covered here too, which is what should
+        // happen: they belong to the same asset and the same route.
         globIgnores: ['**/node_modules/**/*', 'mathjax/**'],
-        // The wasm module is ~1.07 MiB today (it was ~890 KB before M9 linked techy-xp
-        // in). Set the cap explicitly so future growth fails the build loudly instead of
-        // silently dropping the engine from the precache.
+        // The wasm module is ~950 KiB today (it was ~890 KB before M9 linked techy-xp in
+        // and 1.18 MiB before the size pass took `opt-level = "s"`). Set the cap
+        // explicitly so future growth fails the build loudly instead of silently
+        // dropping the engine from the precache.
         maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         navigateFallback: `${BASE}index.html`,
         runtimeCaching: [
           {
-            // The display face in use. Same-origin, like everything else here.
+            // The display face in use. Same-origin, like everything else here, and
+            // matched on the `fonts/` directory `assetFileNames` above puts the display
+            // faces in rather than on the `.woff2` extension: since the typesetter
+            // became CHTML its own faces are woff2 too, and an eight-entry cache shared
+            // with a hundred-odd MathJax faces would evict the display face on sight.
+            // The two are different assets with different lifetimes; they get different
+            // routes. Same serialization rule as the MathJax matcher below — nothing in
+            // this module is in scope where this runs.
             urlPattern: ({ url }: { url: URL }) =>
-              url.origin === self.location.origin && url.pathname.endsWith('.woff2'),
+              url.origin === self.location.origin &&
+              url.pathname.endsWith('.woff2') &&
+              url.pathname.includes('/fonts/'),
             handler: 'CacheFirst',
             options: {
               cacheName: 'techxt-fonts',
@@ -216,11 +246,13 @@ export default defineConfig({
             },
           },
           {
-            // The typesetter and the font ranges it asks for, on first use of the
-            // MathJax math mode (§9.1). Same shape as the font route above, and for
-            // the same reason: once it has been fetched the mode works offline.
-            // 48 entries is the bundle plus all 40 ranges, with room to spare; the
-            // version-stamped path is what makes a year-long cache safe.
+            // The typesetter, the metric ranges and the woff2 faces it asks for, on
+            // first use of the MathJax math mode (§9.1). Same shape as the font route
+            // above, and for the same reason: once it has been fetched the mode works
+            // offline. 160 entries is the bundle plus all 40 ranges plus all 105 faces
+            // with room to spare — a cap that could evict would produce exactly the
+            // offline hole this route exists to close, and the whole set is only about
+            // 3.2 MB. The version-stamped path is what makes a year-long cache safe.
             //
             // **This function is serialized into `sw.js` by its source**, so nothing
             // in this module is in scope where it runs: a `${BASE}` here compiled to a
@@ -237,7 +269,7 @@ export default defineConfig({
             handler: 'CacheFirst',
             options: {
               cacheName: 'techxt-mathjax',
-              expiration: { maxEntries: 48, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              expiration: { maxEntries: 160, maxAgeSeconds: 60 * 60 * 24 * 365 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

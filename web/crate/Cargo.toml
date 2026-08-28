@@ -32,11 +32,16 @@ broken_intra_doc_links = "deny"
 private_intra_doc_links = "warn"
 bare_urls = "warn"
 
-# web/PLAN.md §4.7. `opt-level = 3` is the deliberate choice: conversion speed is what a
-# person feels while typing, and the module is not a heavy page. "s" and "z" are the
-# measured alternatives held in reserve (PLAN §14) if the size budget of §11 ever bites.
+# web/PLAN.md §4.7. `opt-level = "s"` is the choice, taken at the size pass on the
+# browser measurement the plan had been deferring against since W1: it costs about a
+# fifth of the conversion *CPU* on a document of 45 KB or more and nothing at all on the
+# few-kilobyte documents almost everyone writes, and because conversion runs in a Worker
+# behind a 120 ms debounce that CPU is never in the way of a keystroke. What it buys is
+# paid by every visitor instead of by the rare large document: 270 KB less to download
+# and compile, and a module that starts and answers its *first* conversion measurably
+# faster. `"z"` remains the measured alternative in reserve (PLAN §14).
 [profile.release]
-opt-level = 3
+opt-level = "s"
 lto = true
 codegen-units = 1
 panic = "abort"
@@ -46,5 +51,10 @@ strip = true
 # predates the bulk-memory operations current rustc emits by default, and without them
 # `wasm-opt` fails validation and the build breaks (PLAN §4.7, Appendix B). If a future
 # wasm-pack ships a newer binaryen they become harmless.
+#
+# `-Os` moves with `opt-level` above, as §4.7 requires. On this module the pairing is a
+# matter of intent rather than of bytes: measured at the size pass, binaryen's own flag
+# is worth 6 KB raw and 200 B gzipped either way, and nothing at all in speed — rustc's
+# `opt-level` is the whole of both effects.
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-O3", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext"]
+wasm-opt = ["-Os", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext"]

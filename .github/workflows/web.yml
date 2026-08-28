@@ -41,37 +41,63 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # §4.7 and §14: the finished binding is 939 KB raw / 333 KB gzipped — larger than
-  # the 890/296 the plan measured from a bare `fn convert(&str) -> String` probe,
-  # because the real surface carries the serde derives and techy's
-  # `Diagnostic::render()`, which the panel's `rendered` field needs. The budget is
-  # roughly 20 % over the measured figure, so a dependency mistake shows up as a
-  # failed build rather than a slow page.
+  # **The four values below are the only authoritative copy of the size ceilings.** The
+  # plan (§4.7, §9.1, §11, §14) describes the policy and records measurements but
+  # deliberately restates none of the numbers, so a budget change is a one-file edit and
+  # cannot go stale in prose.
   #
-  # **The two values below are the only authoritative copy of the size ceiling.** The
-  # plan (§4.7, §11, §14) describes the policy and records measurements but deliberately
-  # restates neither number, so a budget change is a one-file edit and cannot go stale
-  # in prose.
+  # ## The wasm module
   #
-  # The gzip ceiling started at the figure §4.7 names as the point to drop to
-  # `opt-level = "s"`, so CI fails exactly when the plan says the size/speed trade
-  # should be revisited — not before. It did that: M9 took the module to 1 120 513 B
-  # raw / 398 525 B gzipped (§14), leaving 29 KB and **1.4 KB** of headroom, and M10
-  # (the render side made generic over `LatexlikeLang`) then spent the gzip headroom
-  # without a re-measure and tripped the wire at 401 841 B.
+  # Set at the size pass (TODO item 6) against a module built `opt-level = "s"` +
+  # `wasm-opt -Os`: **971 601 B raw / 370 323 B gzipped**. That profile is itself the
+  # outcome of the pass. The wire had by then fired twice — the gzip line at M10, and
+  # the raw line as items 1-5 landed (1 241 264 B against a 1 150 000 B ceiling) — and
+  # the answer to the first firing was recorded as a deferral pending a browser-side
+  # speed comparison. §14 now has that comparison, so the second firing gets the
+  # decision rather than a third raise. `"s"` costs about a fifth of the conversion CPU
+  # on a 45 KB document and nothing measurable on the few-kilobyte documents people
+  # actually write; behind a Worker and a 120 ms debounce it never touches a keystroke.
+  # So the trade was taken, and these ceilings are *lower* than the ones they replace
+  # even though the module has grown three features since they were set.
   #
-  # **The owner's call, 2026-08-28: raise the gzip ceiling for now** rather than take
-  # §4.7's first response (`opt-level = "s"`, measured at 344 828 B gzipped — 56 KB
-  # back, at a speed cost still unmeasured). A deferral, not a reversal: `"s"` is still
-  # the answer, and what it waits on is the browser-side speed comparison §14's profile
-  # table has wanted since W1. The answer to a *second* firing is that measurement, not
-  # another raise.
+  # The headroom is about 13 % on each, and it is sized from two things rather than a
+  # round percentage:
   #
-  # The **raw** ceiling is deliberately left where it was: the same build sits 19 608 B
-  # (1.7 %) under it, proportionally tighter than the gzip line now is, so raw is the
-  # likelier of the two to fire next.
-  WASM_MAX_BYTES: 1150000
-  WASM_MAX_GZIP_BYTES: 450000
+  #   - **The toolchain moves the number by more than a feature does.** The same commit
+  #     measured 1 199 689 B on a container's rustc 1.94 and 1 120 513 B on a newer
+  #     stable (§14) — a 6.6 % spread that a budget must absorb, or CI turns red when a
+  #     runner image updates and tells us nothing about the code.
+  #   - **One substantial binding feature.** The completion surface cost 33 933 B raw /
+  #     15 627 B gzipped; the curated ranking 4 290 B / 1 628 B. What is left after the
+  #     toolchain spread is roughly one more of those, which is the point: the wire
+  #     should fire when a feature adds real weight, so the trade is looked at again,
+  #     and not before.
+  #
+  # §4.7 still owns the policy, and its first response to an overrun is now `"z"` —
+  # `"s"` having been spent here.
+  WASM_MAX_BYTES: 1100000
+  WASM_MAX_GZIP_BYTES: 415000
+  # ## MathJax
+  #
+  # The typesetter is a lazily fetched asset, not part of the bundle (§9.1), so nothing
+  # above covers it and a mistake there is invisible to every other gate in this file.
+  # Two numbers, because they fail in different ways:
+  #
+  #   - `MATHJAX_MAX_BYTES` is the whole `dist/mathjax/` tree — the bundle, the metric
+  #     ranges and the woff2 faces. It is what a `git push` costs and what an installed
+  #     copy may eventually hold. Measured at **3 171 162 B**. Its real job is to catch a
+  #     switch back to the SVG output, whose font ranges carry path data instead of
+  #     metrics and weigh 11 817 943 B — nearly four times this ceiling, so the mistake
+  #     cannot land quietly.
+  #   - `MATHJAX_MAX_GZIP_BYTES` is `tex-chtml.js` alone, gzipped: **280 899 B**, and the
+  #     one download every user of the mode actually pays for. The tree can grow a font
+  #     without anyone noticing; this number growing means the page got slower.
+  #
+  # 13 % of headroom on both, matching the wasm lines. There is no toolchain spread here
+  # — these files are copied verbatim from the npm package — so the margin is entirely
+  # room for a MathJax version bump, and a bump that spends it deserves a look.
+  MATHJAX_MAX_BYTES: 3600000
+  MATHJAX_MAX_GZIP_BYTES: 320000
 
 jobs:
   web:
@@ -135,7 +161,7 @@ jobs:
         run: npm run wasm
 
       # §11 step 3. A module that outgrows this is not necessarily wrong, but it is a
-      # decision, and §4.7 names `opt-level = "s"` as the first thing to try.
+      # decision, and §4.7 names what to try first — `"z"` now, `"s"` having been taken.
       - name: Assert the wasm size budget
         working-directory: web
         run: |
@@ -164,6 +190,27 @@ jobs:
       - name: Build the app
         working-directory: web
         run: npx vite build
+
+      # §9.1. The typesetter is copied into `dist/` rather than bundled, so it is
+      # invisible to Rollup's own reporting and to every other gate here. This is the
+      # only thing standing between a MathJax upgrade — or an output-format change — and
+      # eleven megabytes landing in the repository unremarked.
+      - name: Assert the MathJax asset budget
+        working-directory: web
+        run: |
+          tree=$(du -sb dist/mathjax | cut -f1)
+          gz=$(gzip -9 -c dist/mathjax/*/tex-chtml.js | wc -c)
+          echo "mathjax: ${tree} B in dist/, bundle ${gz} B gzipped" | tee -a "$GITHUB_STEP_SUMMARY"
+          fail=0
+          if [ "$tree" -gt "$MATHJAX_MAX_BYTES" ]; then
+            echo "::error::the MathJax tree is ${tree} B, over the ${MATHJAX_MAX_BYTES} B budget (web/PLAN.md §9.1)"
+            fail=1
+          fi
+          if [ "$gz" -gt "$MATHJAX_MAX_GZIP_BYTES" ]; then
+            echo "::error::tex-chtml.js is ${gz} B gzipped, over the ${MATHJAX_MAX_GZIP_BYTES} B budget (web/PLAN.md §9.1)"
+            fail=1
+          fi
+          exit $fail
 
       # §8.5. The default face is a hard gate — the out-of-the-box rendering of
       # techxt's own output is not allowed to regress. The other four warn into the
