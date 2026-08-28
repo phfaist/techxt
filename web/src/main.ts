@@ -30,6 +30,7 @@ import {
   loadState,
   resolveOptions,
   sanitizeOptions,
+  softWraps,
   withDefaults,
 } from './state';
 import type { AppOptions, ExampleDoc } from './types';
@@ -375,6 +376,9 @@ async function start(): Promise<void> {
     onOptionsChange(next: AppOptions) {
       state.opts = withDefaults(sanitizeOptions(next));
       persistence.options(state.opts);
+      // The display half of `wrap: 'soft'` (§6.3): the library is told nothing about
+      // it — `resolveOptions` drops it — so the pane has to be told directly.
+      panes.setSoftWrap(softWraps(state.opts));
       requestConversion('immediate');
     },
     onFontChange(font, size) {
@@ -526,6 +530,7 @@ async function start(): Promise<void> {
   registerFileHandler();
 
   panes.setDocument(state.doc);
+  panes.setSoftWrap(softWraps(state.opts));
   measuredColumns = panes.columns();
   // The font is applied without being awaited: the first conversion should not wait
   // for a face to arrive, and the pane re-measures when it does (§6.5).

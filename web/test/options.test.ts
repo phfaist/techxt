@@ -5,7 +5,14 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_OPTIONS, MIN_FIT_COLUMNS, columnsFor, formatToday, resolveOptions } from '../src/state';
+import {
+  DEFAULT_OPTIONS,
+  MIN_FIT_COLUMNS,
+  columnsFor,
+  formatToday,
+  resolveOptions,
+  softWraps,
+} from '../src/state';
 import { APP_ONLY_KEYS } from '../src/types';
 import type { AppOptions } from '../src/types';
 
@@ -53,6 +60,28 @@ describe('resolveOptions: wrapping', () => {
 
   it('never asks for fewer columns than the pane arithmetic allows', () => {
     expect(resolveOptions({ wrap: 'fit' }, 3, NOON).wrapWidth).toBe(MIN_FIT_COLUMNS);
+  });
+
+  it('sends the library exactly the same thing for soft-wrapped as for Off', () => {
+    // The whole point of the mode: the *text* is Wrap: Off's text, and only the pane
+    // it is shown in differs (§6.3).
+    expect(resolveOptions({ wrap: 'soft' }, 88, NOON)).toEqual(
+      resolveOptions({ wrap: 'off' }, 88, NOON),
+    );
+    expect('wrapWidth' in resolveOptions({ wrap: 'soft' }, 88, NOON)).toBe(false);
+  });
+});
+
+describe('softWraps', () => {
+  it('is the one wrap setting the output pane folds for', () => {
+    expect(softWraps({ wrap: 'soft' })).toBe(true);
+    expect(softWraps({ wrap: 'off' })).toBe(false);
+    expect(softWraps({ wrap: 'fit' })).toBe(false);
+    expect(softWraps({ wrap: 72 })).toBe(false);
+  });
+
+  it('reads an absent wrap as the app default, exactly as resolveOptions does', () => {
+    expect(softWraps({})).toBe(false);
   });
 });
 

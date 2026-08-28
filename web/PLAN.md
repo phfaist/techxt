@@ -428,7 +428,7 @@ unless it proves cheap.
 
 | Control | Maps to | Default |
 |---|---|---|
-| Wrap: Fit / Off / 40 / 60 / 72 / 80 / custom | `wrap_width(Option<usize>)` | **Fit** (see below) |
+| Wrap: Fit / Off / Off, soft-wrapped / 40 / 60 / 72 / 80 / custom | `wrap_width(Option<usize>)` | **Fit** (see below) |
 | Math: Fancy / Plain / Source | `math_mode` | Fancy |
 | Display font: JuliaMono / Fira Math / Latin Modern / STIX Two / Libertinus / System | CSS only | JuliaMono |
 
@@ -437,6 +437,16 @@ the resulting column count (§6.5). The library default is `None` (no wrapping),
 is right for a CLI writing to a file and wrong for a pane on a phone, where unwrapped
 output means horizontal scrolling. The distinction is visible in the UI: *Off* is the
 library default, *Fit* is the app being helpful.
+
+*Off, soft-wrapped* is the third answer, for the reader who wants the library's own
+line breaks — none — without the sideways scrolling that comes with them. It sends the
+library exactly what *Off* sends (nothing: `wrap_width` stays `None`) and differs only
+in the CSS the output pane is shown in, which folds the long lines to the container's
+width (§6.3). Because the fold is display only, Copy and Download hand over the same
+text *Off* would, byte for byte — which is the property that makes offering it safe.
+It is a value of `wrap` rather than a separate toggle so that it stays one question
+with one answer: *where do the line breaks come from?* — the pane, the library, a
+column count — with the two library-default answers next to each other in the list.
 
 **"More options"** — a `<details>` disclosure, three fieldsets:
 
@@ -546,6 +556,15 @@ matter this is microseconds compared to conversion).
 wrapping by the browser would misrepresent the output — with *Wrap: Off* the correct
 behaviour is a horizontal scrollbar. `textContent` assignment only (no `innerHTML`).
 
+The one exception is *Wrap: Off, soft-wrapped* (§5), and it is an exception only
+because the user asked for it by name: the pane adds `white-space: pre-wrap` plus
+`overflow-wrap: break-word` (the second so a line with no space in it — a long URL, a
+`\verb` run — is folded too rather than left to overflow). This is not the browser
+second-guessing the library; it is the reader saying they would rather read down the
+pane than scroll across it. Nothing else changes: `Panes.setSoftWrap` only toggles a
+class, the `<pre>`'s `textContent` still holds the library's long lines, and Copy and
+Download read `Panes.getOutput()` rather than anything the DOM has folded.
+
 Copy uses `navigator.clipboard.writeText` with a `<textarea>`+`execCommand` fallback
 for older iOS; Download builds a `Blob` and a temporary object URL, named after the
 first `\title`/`\section` if one exists, else `converted.txt`.
@@ -559,7 +578,9 @@ interface AppState { v: 1; doc: string; opts: AppOptions; ui: UiState }
 
 // AppOptions is Partial<Options> plus the two app-level settings of §5, which are not
 // library options and must not be sent to the binding as if they were:
-//   wrap: 'fit' | 'off' | number        →  wrapWidth, once the pane has been measured
+//   wrap: 'fit' | 'off' | 'soft' | number  →  wrapWidth, once the pane has been
+//       measured. 'soft' resolves exactly as 'off' does; its display half is read
+//       back out by `softWraps(opts)` and applied to the pane, not to the payload.
 //   todayMode: 'browser' | 'library' | 'custom' (+ todayCustom)  →  today
 // `resolveOptions(opts, columns)` in state.ts is the single place that translation
 // happens, so the worker never sees an app-level value.

@@ -112,9 +112,9 @@ function oneOf(allowed: readonly string[]): Validator {
 const bool: Validator = (value) => (typeof value === 'boolean' ? value : undefined);
 const str: Validator = (value) => (typeof value === 'string' ? value : undefined);
 
-/** `'fit'`, `'off'`, or a column count somebody typed into the custom field. */
+/** `'fit'`, `'off'`, `'soft'`, or a column count somebody typed into the custom field. */
 const wrapMode: Validator = (value) => {
-  if (value === 'fit' || value === 'off') return value;
+  if (value === 'fit' || value === 'off' || value === 'soft') return value;
   if (typeof value === 'number' && Number.isFinite(value) && value >= 1) {
     return Math.min(10_000, Math.floor(value));
   }
@@ -260,7 +260,10 @@ export function resolveOptions(
   const wrap: WrapMode = opts.wrap ?? DEFAULT_OPTIONS.wrap ?? 'fit';
   if (wrap === 'fit') payload['wrapWidth'] = Math.max(MIN_FIT_COLUMNS, Math.floor(columns));
   else if (typeof wrap === 'number') payload['wrapWidth'] = wrap;
-  // 'off' omits `wrapWidth` entirely — the library's own default is no wrapping.
+  // 'off' and 'soft' both omit `wrapWidth` entirely — the library's own default is no
+  // wrapping, and 'soft' differs from 'off' only in the pane the answer is shown in,
+  // which is not something the library can be told about. `softWraps` below is where
+  // that half of the setting is read back out.
 
   const todayMode = opts.todayMode ?? DEFAULT_OPTIONS.todayMode ?? 'browser';
   if (todayMode === 'browser') payload['today'] = formatToday(now);
@@ -270,6 +273,17 @@ export function resolveOptions(
   // 'library' omits `today`, which is what leaves `\today` rendering as `<today>`.
 
   return payload as OptionsPayload;
+}
+
+/**
+ * Whether the output pane should fold long lines to its own width rather than scroll
+ * sideways (§6.3) — the display half of `wrap: 'soft'`, and the only part of a wrap
+ * setting `resolveOptions` deliberately drops.
+ *
+ * Absent reads as the app default, exactly as it does there.
+ */
+export function softWraps(opts: AppOptions): boolean {
+  return (opts.wrap ?? DEFAULT_OPTIONS.wrap) === 'soft';
 }
 
 /* --------------------------------------------------------------------- the clock */

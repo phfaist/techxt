@@ -82,6 +82,11 @@ export interface Panes {
   setDiagnostics(diagnostics: readonly Diagnostic[]): void;
   /** The current fit-to-pane column count for the output pane (§6.5). */
   columns(): number;
+  /**
+   * Fold the output's long lines to the pane's own width instead of scrolling
+   * sideways — CSS only, and never a change to the text `getOutput` returns (§6.3).
+   */
+  setSoftWrap(enabled: boolean): void;
   /** Apply a display font; resolves when the face has loaded (or failed to). */
   setFont(font: FontId, size: number): Promise<void>;
   setSplit(split: number): void;

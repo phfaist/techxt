@@ -138,6 +138,12 @@ describe('sanitizeOptions', () => {
     ).toEqual({});
   });
 
+  it('keeps the soft-wrapped variant of Off, so a link and a reload reproduce it', () => {
+    expect(sanitizeOptions({ wrap: 'soft' }).wrap).toBe('soft');
+    // …and still refuses anything that only looks like one of ours.
+    expect(sanitizeOptions({ wrap: 'softly' }).wrap).toBeUndefined();
+  });
+
   it('accepts a custom column count and normalises it', () => {
     expect(sanitizeOptions({ wrap: 63.7 }).wrap).toBe(63);
     expect(sanitizeOptions({ wrap: 0 }).wrap).toBeUndefined();
@@ -163,6 +169,7 @@ describe('pruneOptions', () => {
       wrap: 'off',
       keepComments: false,
     });
+    expect(pruneOptions({ wrap: 'soft' })).toEqual({ wrap: 'soft' });
   });
 
   it('is the inverse of withDefaults', () => {

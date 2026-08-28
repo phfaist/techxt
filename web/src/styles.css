@@ -898,9 +898,9 @@ select.control {
 }
 
 /*
- * Never `pre-wrap`: the library decided the line breaks, and a second, invisible
- * wrapping by the browser would misrepresent the output. With Wrap: Off the correct
- * behaviour is a horizontal scrollbar (§6.3).
+ * Never `pre-wrap` by default: the library decided the line breaks, and a second,
+ * invisible wrapping by the browser would misrepresent the output. With Wrap: Off the
+ * correct behaviour is a horizontal scrollbar (§6.3).
  *
  * This is the one place the display font applies (§8.1).
  */
@@ -912,6 +912,24 @@ select.control {
   font-family: var(--pane-font, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: var(--pane-size, 15px);
   transition: opacity 140ms ease;
+}
+
+/*
+ * Wrap: *Off, soft-wrapped* — the one case where the browser is allowed to fold the
+ * lines, because the user asked it to. The rule above stands for every other setting:
+ * this is not the browser second-guessing the library, it is the reader saying they
+ * would rather read down the pane than scroll across it.
+ *
+ * The fold is display only. `textContent` still holds the library's long lines, and
+ * Copy and Download hand over `getOutput()` rather than anything the DOM has folded,
+ * so what leaves the app is byte-for-byte what Wrap: Off would produce.
+ *
+ * `break-word` is what keeps the promise for the line that has no space in it at all
+ * — a long URL, a `\verb` run — which `pre-wrap` alone would let overflow.
+ */
+.pane-output.is-soft-wrapped {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 /* A hard parse failure dims the last good answer rather than throwing it away. */
@@ -1885,8 +1903,8 @@ select.control {
  * Below 700 px the bar's labels go visually hidden: a phone has room for the controls
  * or for their names, not both, and `<label for>` still names them for a screen
  * reader. Each control carries the same words as a `title` (see ui/controls.ts), and
- * the option text of the three primary controls is §5's own vocabulary — Fit / Off,
- * Fancy / Plain / Source — which reads on its own.
+ * the option text of the three primary controls is §5's own vocabulary — Fit / Off /
+ * Off, soft-wrapped, Fancy / Plain / Source — which reads on its own.
  */
 @media (max-width: 700px) {
   .bar > .field > .field-label {

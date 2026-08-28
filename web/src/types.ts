@@ -13,10 +13,16 @@ import type { FontId } from './fonts';
 import type { OptionsPayload } from './worker/protocol';
 
 /**
- * `'fit'` measures the pane (§6.5), `'off'` is the library's own default (no
- * wrapping), and a number is an explicit column count.
+ * `'fit'` measures the pane (§6.5), `'off'` and `'soft'` are both the library's own
+ * default (no wrapping at all) and differ only in what the *pane* does with the long
+ * lines that result — `'off'` scrolls sideways, `'soft'` folds them to the pane's
+ * width for display only (§6.3) — and a number is an explicit column count.
+ *
+ * `'soft'` is the one wrap value that never reaches the library: it is a property of
+ * the HTML the answer is shown in, not of the answer. Copy and Download hand over the
+ * text the library produced, so what leaves the app is identical under `'off'`.
  */
-export type WrapMode = 'fit' | 'off' | number;
+export type WrapMode = 'fit' | 'off' | 'soft' | number;
 
 /** The column presets the primary bar offers besides *Fit* and *Off*. */
 export const WRAP_PRESETS: readonly number[] = [40, 60, 72, 80, 100, 120];
