@@ -59,29 +59,9 @@ test` cannot see it; `.github/workflows/web.yml` runs its `fmt`/`clippy`/`test` 
 enforces the size budgets. `techy` and `techy-xp` are git dependencies — a first build
 needs network.
 
-**All of the above was verified end to end in a fresh container on 2026-08-28**:
-`npm ci`, `npm run build` (wasm included), `npm test` (85 passing), `npm run
-typecheck`, `cd rust && cargo test` (all green) and `cd web/crate && cargo test`.
-
-Two container gotchas worth knowing before you lose an hour to them:
-
-- **`wasm-opt` cannot download itself.** `wasm-pack` fetches binaryen 117 from GitHub
-  releases with its own HTTP client, which does not use the sandbox's proxy, and the
-  build dies at the last step with `failed to download from …binaryen…`. `curl` gets
-  the same URL fine, so seed wasm-pack's cache by hand and it never asks again:
-  ```sh
-  curl -sSL -o binaryen.tar.gz \
-    https://github.com/WebAssembly/binaryen/releases/download/version_117/binaryen-version_117-x86_64-linux.tar.gz
-  mkdir -p ~/.cache/.wasm-pack/wasm-opt-1ceaaea8b7b5f7e0
-  tar xzf binaryen.tar.gz -C ~/.cache/.wasm-pack/wasm-opt-1ceaaea8b7b5f7e0 --strip-components=1
-  ```
-  The directory name matches the `.wasm-opt-*.lock` file wasm-pack leaves in
-  `~/.cache/.wasm-pack/`; check it if this stops working. Do **not** "fix" this by
-  setting `wasm-opt = false` in the committed `Cargo.toml`.
-- **A container's rustc is not CI's.** This container is on 1.94.1 and produces a
-  1 199 689 B module — 49 689 B *over* `WASM_MAX_BYTES`. CI, on a newer stable, is
-  green on `main`. So a local size overrun is not by itself a broken build; check the
-  workflow's own runs before believing a budget has been tripped.
+All of this was verified end to end in a fresh container on 2026-08-28. **Setting the
+toolchain up from nothing has two traps in it — see *Instructions for implementer
+agents* at the bottom of this file before you start.**
 
 ## Verified facts these items rest on
 
@@ -113,8 +93,11 @@ Measured, not assumed. Re-measure rather than trust these if the pins move.
    | `tex-chtml.js` | 997 445 B | 280 899 B | some of 105 woff2 files, 1.8 MB total |
    | `tex-svg-nofont.js` | 873 900 B | 254 793 B | font package separately |
 
-   For comparison the wasm module today is 1 120 513 B raw / ~400 000 B gzipped.
-5. **`opt-level = "s"` buys 264 KB raw / 68 KB gzipped** — the measurement in item 2.
+   For comparison the wasm module today is 1 199 689 B raw / 421 748 B gzipped as
+   built on the 2026-08-28 container, and `web/PLAN.md` §14 records 1 120 513 B /
+   398 525 B from a newer stable at M9 — the toolchain moves the number by tens of
+   kilobytes, which is worth remembering before reading anything into a size.
+5. **`opt-level = "s"` buys 264 KB raw / 68 KB gzipped** — the table in item 6.
 6. **techxt ships ~1 100 macros** (956 in the generated `symbols_extra` long tail plus
    ~150 curated), and `Category` currently exposes **no** way to read them back.
 
@@ -262,36 +245,19 @@ second conversion.
 - [ ] A new size budget line in `.github/workflows/web.yml` beside `WASM_MAX_BYTES`,
       with the same "these two values are the only authoritative copy" discipline.
 
-## Paying for the growth: `opt-level = "s"`
+## Size: not this item's problem
 
-The app roughly doubles. `web/PLAN.md` §4.7 has named `opt-level = "s"` as the first
-response since W1, and §14 has wanted the browser-side speed comparison for as long.
+Bundling MathJax roughly doubles the app, and `web/PLAN.md` §4.7 has named
+`opt-level = "s"` as the first response since W1. **Do not act on that here.** Size
+budgets, optimisation flags and the browser-side speed measurement are one pass at the
+end of the whole plan — item 6 — because tuning them item by item means tuning them
+several times against a target that keeps moving. Ignore `WASM_MAX_BYTES` and
+`WASM_MAX_GZIP_BYTES` while implementing; a red size step is expected and is item 6's
+to clear.
 
-**The size half is already measured**, on this container's toolchain, both ends built
-the same way (`opt-level` in `[profile.release]` moved together with `wasm-opt`'s
-`-O3`/`-Os`):
-
-| build | raw | gzipped |
-|---|---|---|
-| `opt-level = 3`, `wasm-opt -O3` (today) | 1 199 689 B | 421 748 B |
-| `opt-level = "s"`, `wasm-opt -Os` | 935 590 B | 353 885 B |
-
-264 KB off the raw figure (22 %) and 68 KB off the gzip one (16 %) — enough to absorb
-MathJax's arrival with room left over, and it brings raw back under budget on this
-toolchain too. The gzip number matches §4.7's earlier 344 828 B closely enough to
-trust. **The speed half is the part still missing, and it is the whole reason the last
-budget raise was a deferral.**
-
-- [ ] Flip `[profile.release] opt-level` to `"s"` in `web/crate/Cargo.toml`, and
-      `wasm-opt`'s `-O3` to `-Os` in the same file's
-      `[package.metadata.wasm-pack.profile.release]`.
-- [ ] Measure conversion time **in a real browser**, before and after, on the §14
-      documents. This is the measurement §14's profile table has wanted since W1 and
-      the one the ceiling raise was explicitly deferred against. If `"s"` costs real
-      typing latency, say so and take a different trade — do not flip it silently.
-- [ ] Record both in §14, and lower `WASM_MAX_GZIP_BYTES` to fit the new figure
-      rather than leaving the raised ceiling in place. Note in §4.7 that the deferred
-      trade was taken and why.
+What this item *does* owe item 6: pick the MathJax build deliberately (SVG, per above),
+keep it lazily fetched rather than in the main bundle, and write down what it actually
+costs in `dist/` so item 6 has a number to work with.
 
 ## Display and behaviour
 
@@ -364,20 +330,41 @@ button) and simpler to explain.
 - [ ] Call `navigator.storage.persist()` the first time an entry is written, so the
       browser stops treating the library as evictable. An installed PWA usually gets
       this for free; asking costs nothing.
-- [ ] **Retention.** An automatic log grows without bound, so it needs a rule, and the
-      rule must be visible in the UI rather than a surprise:
-      - **Starred entries are never pruned. Ever, by anything, automatically.**
-      - Unstarred entries: keep the most recent 200, and drop unstarred entries older
-        than 90 days. Both numbers belong in one exported constant with a comment.
-      - Pruning happens on a schedule the user can see coming — show the count in the
-        library header ("142 entries · 8 starred").
-- [ ] **Quota.** Use `navigator.storage.estimate()` to show usage, and warn at 80 % of
-      quota with a message that names Export as the remedy. Never silently drop an
-      entry to make room. If a write genuinely fails, say so loudly, in a toast with an
-      **Export library** action — losing the user's data quietly is the one outcome
-      this feature must not have.
-- [ ] Cap a single entry's `source` at the same 512 KB `MAX_STORED_DOC` uses, and say
-      so when an entry is too large to log rather than logging it truncated.
+
+### Retention: the app never quietly drops the user's data
+
+**This is the rule the rest of the storage design serves, and it is not negotiable.**
+
+- **Nothing is ever deleted for tidiness.** Not because an entry is old, not because
+  it is "expired", not because there are a lot of them. An entry that bothers nobody
+  stays. There is no scheduled prune, no age cutoff, no silent cap — the user deletes
+  what they want gone, and *only* the user.
+- **Starred entries are never removed by any automatic mechanism, under any
+  circumstance.** Full stop.
+- **If space genuinely runs out**, and only then, the app may propose removing the
+  oldest unstarred entries — as a *proposal*, never as an action:
+  1. Say plainly what is happening: storage for this site is full, the library cannot
+     grow, here is how much it is using.
+  2. Offer **Export library** first and prominently, so nothing has to be lost at all.
+  3. Only after the user has had that chance, and has explicitly agreed in that same
+     dialog, remove the entries they agreed to — showing exactly which ones, with a
+     count and the date range.
+  4. If the user declines, stop logging new entries and say so in the status line.
+     A library that has stopped growing is a nuisance; a library that ate the user's
+     work is a betrayal. Take the nuisance.
+- **Warn early enough that this dialog is rare.** `navigator.storage.estimate()` at,
+  say, 80 % of quota earns one unobtrusive note in the library header naming Export
+  as the remedy — not a modal, not repeated every session.
+- **A failed write is loud.** If IndexedDB refuses a write, say so in a toast with an
+  **Export library** action rather than dropping the entry and moving on.
+- Show the user where they stand without being asked: a count and the storage figure
+  in the library header ("142 entries · 8 starred · 3.1 MB").
+
+### The rest of the storage story
+
+- [ ] Cap a single entry's `source` at the same 512 KB `MAX_STORED_DOC` uses, and tell
+      the user an entry was too large to log — never log it truncated, and never let
+      one huge paste be the reason something else gets dropped.
 - [ ] **Private browsing.** IndexedDB may be absent, or present and ephemeral. Do not
       change the app's behaviour: offer the library as usual, and if it is easy to
       detect (`navigator.storage.estimate()`, a failed `persist()`), show a small
@@ -603,17 +590,163 @@ offered, and the row is usable by thumb on a 390 px screen.
 
 ---
 
+# 6. The size and optimisation pass — *last*, after everything else lands
+
+Everything about module size, optimisation flags and the CI budgets is deferred to
+here, on purpose. Earlier items add weight (MathJax above all) and none of them should
+be spending effort on a ceiling that the next item is going to move anyway.
+
+**The size half is already measured**, on a 2026-08-28 container toolchain, both ends
+built the same way (`opt-level` in `[profile.release]` moved together with `wasm-opt`'s
+`-O3`/`-Os` in `[package.metadata.wasm-pack.profile.release]`):
+
+| build | raw | gzipped |
+|---|---|---|
+| `opt-level = 3`, `wasm-opt -O3` (today) | 1 199 689 B | 421 748 B |
+| `opt-level = "s"`, `wasm-opt -Os` | 935 590 B | 353 885 B |
+
+264 KB off raw (22 %) and 68 KB off gzip (16 %) — enough to absorb MathJax's arrival
+with room left over. The gzip figure matches §4.7's earlier 344 828 B closely enough to
+trust. **The speed half is what is still missing, and it is the whole reason the last
+budget raise was recorded as a deferral rather than a decision.**
+
+- [ ] Re-measure both builds, since by then the module carries L1 and L2.
+- [ ] Measure conversion time **in a real browser**, before and after, on the §14
+      documents. This is the measurement §14's profile table has wanted since W1. If
+      `"s"` costs real typing latency, say so and take a different trade — do not flip
+      it silently because the number looked good.
+- [ ] Decide and apply: `opt-level` and the `wasm-opt` flag together.
+- [ ] Set `WASM_MAX_BYTES` and `WASM_MAX_GZIP_BYTES` to the new reality, keeping the
+      existing discipline that those two values in `.github/workflows/web.yml` are the
+      *only* authoritative copy of the ceiling and the plan restates neither.
+- [ ] Add the MathJax bundle's own budget line beside them, under the same rule.
+- [ ] Record the measurements in §14 and note in §4.7 that the deferred trade was
+      taken, and why.
+
+---
+
 # Order of work
 
 1. **Item 1** — independent, small, unblocks nothing but costs nothing.
 2. **L1 + item 2** — the library change lands first with its own tests, then the
-   binding, then the app. `opt-level = "s"` and its measurement belong to this item.
+   binding, then the app. Nothing about size or optimisation flags belongs here; that
+   is item 6.
 3. **Items 3 and 4 together** — they are one feature; the export format is easier to
    get right while the entry model is still being written.
 4. **L2 + item 5** — the largest, and the one most likely to want its scope trimmed
    after the survey.
+5. **Item 6 last**, once nothing else is going to move the number.
 
 Every item edits `web/PLAN.md`; L1 and L2 also edit the root `PLAN.md`. vitest covers
 pure logic only, so the library store, the import/export codec, the region→element
 mapping and the completion matcher should all be written as pure functions that a test
 can reach without a DOM.
+
+---
+
+# Instructions for implementer agents
+
+You are picking up one item from this file, probably with no memory of the discussion
+that produced it. This section is the practical half: how to get a working toolchain,
+what to run, and what *not* to spend effort on.
+
+## Setting up the build from nothing
+
+A fresh container normally has Node 22 and a Rust toolchain already. Check first, then
+add what is missing:
+
+```sh
+node --version && npm --version && cargo --version   # expect node 22, cargo 1.9x
+rustup target add wasm32-unknown-unknown             # needed, usually not preinstalled
+command -v wasm-pack || cargo install wasm-pack --locked   # ~2 min to build
+```
+
+Then, **before the first `npm run wasm`**, work around the one thing that reliably
+breaks (below). After that:
+
+```sh
+cd web
+npm ci                # ~10 s
+npm run build         # wasm-pack, tsc --noEmit, vite build
+npm test              # vitest — 85 tests at the time of writing
+```
+
+### Trap 1: `wasm-opt` cannot download itself
+
+`wasm-pack` fetches binaryen 117 from GitHub releases using its own HTTP client, which
+does not go through the sandbox's proxy. The build gets all the way to the last step
+and dies with:
+
+```
+Error: failed to download from https://github.com/WebAssembly/binaryen/releases/download/version_117/binaryen-version_117-x86_64-linux.tar.gz
+To disable `wasm-opt`, add `wasm-opt = false` to your package metadata in your `Cargo.toml`.
+```
+
+`curl` fetches that exact URL fine, so seed wasm-pack's cache by hand and it never
+asks again:
+
+```sh
+curl -sSL -o /tmp/binaryen.tar.gz \
+  https://github.com/WebAssembly/binaryen/releases/download/version_117/binaryen-version_117-x86_64-linux.tar.gz
+mkdir -p ~/.cache/.wasm-pack/wasm-opt-1ceaaea8b7b5f7e0
+tar xzf /tmp/binaryen.tar.gz -C ~/.cache/.wasm-pack/wasm-opt-1ceaaea8b7b5f7e0 --strip-components=1
+~/.cache/.wasm-pack/wasm-opt-1ceaaea8b7b5f7e0/bin/wasm-opt --version   # → version 117
+```
+
+The directory name has to match the `.wasm-opt-*.lock` file wasm-pack leaves in
+`~/.cache/.wasm-pack/` — list that directory if the hash above stops working, and if
+the binaryen version in the error message ever changes, change it in the URL too.
+
+**Do not "fix" this by setting `wasm-opt = false` in `web/crate/Cargo.toml`.** That
+file's flags exist for a documented reason (`web/PLAN.md` §4.7 and Appendix B) and the
+disabled build is not the one that ships.
+
+### Trap 2: a container's rustc is not CI's
+
+The container measured above ran rustc 1.94.1 and produced a **1 199 689 B** module —
+about 50 KB over `WASM_MAX_BYTES` — while CI, on a newer stable, was green on `main`
+at the same commit. A local size overrun therefore proves nothing on its own. Check
+the workflow's own runs before concluding a budget has been tripped, and see the next
+heading before concluding you should do anything about it.
+
+## Ignore the wasm size budgets while implementing
+
+**`WASM_MAX_BYTES`, `WASM_MAX_GZIP_BYTES`, `opt-level` and the `wasm-opt` flags are
+out of scope for items 1–5.** A red size step during this work is expected and is not
+yours to fix. Do not raise a ceiling, do not flip an optimisation flag, do not trim a
+feature to fit a number.
+
+Sizing, optimisation and the browser-side speed measurement are **item 6**, one pass
+after the whole plan has landed, precisely so they are done once against a settled
+target instead of five times against a moving one.
+
+What you *should* do is leave item 6 something to work with: note in your commit
+message what your change cost in `dist/` if it is material (a new dependency, a
+bundled library), and prefer a lazily fetched asset to one in the main bundle where
+the choice exists.
+
+## Working rules
+
+- **`web/PLAN.md` is normative and stays that way.** Every item here changes it —
+  items 2 and 5 reverse stated non-goals outright. Update the plan *in the same commit*
+  as the code, in the plan's own voice: what was decided and why, not a changelog.
+  L1 and L2 also update the root `PLAN.md`. A plan that silently disagrees with the
+  code is worse than no plan.
+- **Keep the invariants in *Context every item needs* above.** In particular: app-level
+  options never reach the binding, a read of stored or shared data never throws, the
+  output pane never gets `innerHTML`, and nothing the user copies or downloads is ever
+  something the app added for display.
+- **Tests.** vitest runs in `node` with no DOM, so anything worth testing has to be a
+  pure function: the library store's policy, the import/export codec, the region →
+  element mapping, the completion matcher. Write them that way from the start rather
+  than extracting them afterwards. Rust changes get tests in
+  `rust/techxt/tests/` (L1, L2) and `web/crate/tests/` (the binding).
+- **Run the full set before pushing**: `npm run typecheck`, `npm test`, `npm run
+  build`, and for a Rust change `cd rust && cargo test` plus `cd web/crate && cargo fmt
+  --all --check && cargo clippy --all-targets -- -D warnings && cargo test`. CI runs
+  exactly these; `missing_docs` is denied in `web/crate` too.
+- **The repository's prose has a voice** — the plan and the commit messages explain
+  *why*, in full sentences, and assume a reader who was not in the room. Match it.
+- **When something here turns out to be wrong**, say so in the commit message and fix
+  this file in the same breath. This is a design record, not a contract; it is only
+  useful while it is true.
