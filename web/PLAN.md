@@ -199,6 +199,13 @@ interface ConversionResult {
   diagnostics: Diagnostic[];
   suppressed: number;       // Diagnostics::suppressed() — "and N more"
   truncated: boolean;       // suppressed > 0
+  regions: MathRegion[];    // where the formulas are — see below
+}
+
+interface MathRegion {
+  start: number;            // UTF-16 code units into `text`, not into the input
+  end: number;
+  display: boolean;         // \[…\], equation, align — rather than $…$
 }
 
 interface Diagnostic {
@@ -227,6 +234,29 @@ macro call.
 Diagnostics are emitted in `Diagnostics::sorted_by_position()` order so the panel
 matches reading order. `Diagnostics::DEFAULT_LIMIT` is 1000; beyond that techy counts
 rather than stores, which is what `suppressed`/`truncated` report.
+
+**`regions`: where the formulas are.** A conversion's text is text, and there is no way
+to read it back and find the mathematics: a document writing `\$5` produces a `$` that
+is indistinguishable from the `$` of a formula. So `Conversion.regions` reports the runs
+of the output that are preformatted rather than converted, and the binding turns that
+into this flat list — the offsets mapped from bytes to UTF-16 code units by the same
+single pass §4.4 describes, over the *output* this time rather than over the input.
+
+Two things about it are deliberate. It is **filtered**: techxt tags four kinds of
+preformatted run, and only `MathSource` — a formula re-emitted as its own post-expansion
+LaTeX — is something a typesetter can be handed. `MathRendered` is techxt's own aligned
+Unicode, kept preformatted because its columns are fragile; feeding it back to a TeX
+engine would ask the engine to read techxt's answer as a question. `KeptSource` and
+`Verbatim` are not mathematics. The app therefore never meets a provenance. And it is
+**unconditional**: there is no option that turns it on, it costs an empty `Vec` on a
+document without formulas, and a caller with no use for it ignores the field.
+
+Three properties the layout engine guarantees and the code wrapping these ranges in
+elements will meet: a display formula's range **excludes** the newline that ends its
+last line; a construct that renders to nothing reports nothing; and a range may contain
+a line break, so it is not guaranteed to sit within one line of the output. `mathMode:
+'plain'` reports no regions at all — it flattens formulas into ordinary text — which is
+an empty list rather than a failure.
 
 ### 4.4 Byte offsets are not JS offsets
 
@@ -429,6 +459,15 @@ Native `cargo test` in `web/crate` (the mapping and offset code is ordinary Rust
   with neither stays `null` with `approx: false`.
 - The `OurSource` unit tests keep testing the comparison itself, but their premise is
   now the opposite of what it was: the reject path is what an ordinary document takes.
+
+**Added with the math regions** (`crate/tests/regions.rs`): one document converted twice
+produces all four provenances — source-mode inline and display, a `\verb`, an unknown
+macro kept as source under one pass, and the same display formula *rendered* under the
+other — and the filter keeps exactly the source-mode formulas both times. The `\$`
+document is there too, since it is the whole argument for reporting regions at all. Every
+assertion slices the output in UTF-16 code units, the way the DOM will, and one document
+puts an emoji and an astral-plane character before the formula so that the byte offset
+and the UTF-16 offset genuinely disagree.
 
 Plus one `wasm-bindgen-test` smoke test that `Session::convert` round-trips through
 `JsValue` under `wasm-pack test --headless --firefox`, run locally rather than in CI
@@ -1150,10 +1189,10 @@ chrome rather than content:
   precache cap; the cap is set explicitly anyway, so future growth fails the build
   loudly instead of silently skipping the engine.
 - **Offline**: the app — shell, engine, worker — is precached, so a cold offline start
-  works. The one runtime request the page ever makes is same-origin, for the display
-  font in use (§8.3), and it happens once. Nothing third-party is contacted at any
-  point: no CDN, no analytics, no error reporting, and no document leaves the device.
-  This is stated in About and is worth keeping true.
+  works. The runtime requests the page makes are same-origin and few: the display font
+  in use (§8.3), and, if the user asks for MathJax, the typesetter (§9.1). Nothing
+  third-party is contacted at any point: no CDN, no analytics, no error reporting, and
+  no document leaves the device. This is stated in About and is worth keeping true.
 - **Updates**: `autoUpdate` plus a toast ("A new version is ready — Reload"). The
   document is already in localStorage, so a reload never loses work.
 - **Stretch (W8), both shipped**: a GET `share_target` (`?text=`) so Android's share
@@ -1162,6 +1201,57 @@ chrome rather than content:
   neither ignores both manifest fields, and the code paths are only reached when the
   browser calls them. A GET target rather than POST, so no service-worker request
   handler is involved and the app simply reads `?text=` on load.
+
+### 9.1 MathJax is an asset, not part of the bundle
+
+The *Math: MathJax* mode typesets the formulas in the output pane. The typesetter is
+MathJax 4's combined TeX→SVG build, and everything about how it reaches the browser is
+decided by two facts: it is very large, and it must never be fetched from somebody
+else's server.
+
+**Bundled, never a CDN.** A `<script src="https://cdn.jsdelivr.net/…">` would break both
+the offline story above and the privacy claim in About, and it would do so silently. So
+the `techxt:mathjax` plugin in `vite.config.ts` copies MathJax into `dist/` and
+`src/mathjax.ts` points every MathJax path at our own origin. This takes more than
+copying one file, because **MathJax 4 fetches from a CDN in two places if left alone**:
+`loader.paths.fonts` defaults to jsdelivr, and the speech-rule engine pulls its locale
+tables from there the first time it is asked to describe a formula. Both are shut off —
+the paths redirected, the speech, braille, enrichment, explorer and menu layers disabled
+— in the configuration `src/mathjax.ts` installs before the script runs.
+
+**SVG output, and the font ranges nobody expects.** SVG rather than CHTML: CHTML is
+smaller as a bundle but pulls 105 woff2 faces, 1.8 MB, that an offline-first app would
+have to precache. SVG carries its glyphs as path data. It is *not*, however, the single
+self-contained file it looks like: the `mathjax-newcm` SVG font is split into 40
+character-range modules, of which the bundle carries the common ones and the rest are
+loaded on demand. A formula reaching outside them asks for one more file — `\mathbb{R}`
+wants `double-struck`, `\mathcal{H}` wants `calligraphic` — and the app's own examples
+reach both. So the whole range set is served from our origin as well. It is 9.6 MB in
+`dist/` and almost none of it on the wire: the shipped examples between them pull 82 KB
+of it, and a document that stays inside the bundled ranges pulls none.
+
+**Lazily fetched, then held.** `src/mathjax.ts` injects the script the first time
+`loadMathJax()` is called, which is the first time the user selects the mode; the other
+visitors — the great majority — never pay for it. The service worker holds the bundle
+and every range it asks for in a `CacheFirst` route, `techxt-mathjax`, exactly like the
+one that holds the display faces: once fetched, the mode works with the network off and
+after a reload. Nothing MathJax is *pre*cached — `globIgnores` keeps `mathjax/**` out of
+the precache manifest — because putting 1.8 MB on the install path of every visitor to
+serve the few who want it is the trade the runtime route exists to avoid. An installed
+copy that wants the mode ready before it is asked for should call `loadMathJax()` in the
+background on first run, which is idempotent and does exactly this once.
+
+**The version is the cache key.** These files are copied verbatim rather than passed
+through Rollup, so they carry no content hash. They are served from
+`mathjax/<version>/…` instead — an upgrade changes the directory, so a year-long cache
+entry can never outlive the engine that understands it. The version is read from the
+installed package, in one place, in `vite.config.ts`, and reaches `src/mathjax.ts`
+through a `define`.
+
+**What it costs.** `dist/` grows from 4.1 MB to 15.9 MB (excluding source maps):
+1 849 625 B for `tex-svg.js` (616 713 B gzipped) and 9 968 318 B for the 40 font ranges.
+The app's own bundle does not move — MathJax is not imported by it — and the precache
+manifest does not move either. Item 6 of the TODO owns what to do about the number.
 
 ## 10. Build and tooling
 

@@ -1,5 +1,5 @@
-//! The result DTO: diagnostics, spans, and the byte-to-UTF-16 offset mapping
-//! (web/PLAN.md §4.3, §4.4, §4.5).
+//! The result DTO: diagnostics, spans, math regions, and the byte-to-UTF-16 offset
+//! mapping (web/PLAN.md §4.3, §4.4, §4.5).
 //!
 //! [`convert_native`] is the whole of the binding's work: it converts a document and
 //! shapes the answer into the `ConversionResult` of `web/src/worker/protocol.ts`. It
@@ -31,12 +31,26 @@
 //! call rather than the message's own place. [`invocation`] is the whole of that
 //! search. Only when nothing in the chain lands in the buffer does the span stay
 //! `null`, with the message and `rendered` text intact but nothing to click (§4.5).
+//!
+//! # Why only some of the regions survive
+//!
+//! A [`Conversion`](techxt::convert::Conversion) reports every run of its output that is
+//! preformatted content rather than converted text, each tagged with a
+//! [`VerbatimProvenance`]. Only one of those tags names bytes a TeX engine can be handed
+//! — `MathSource`, a formula re-emitted as its own post-expansion LaTeX — so
+//! [`math_regions`] keeps that one and drops the rest. `MathRendered` is the opposite
+//! case and the reason the filter has to exist: those bytes are a formula techxt already
+//! converted to aligned Unicode, and handing them to a typesetter would ask it to read
+//! its own output back as source. `KeptSource` and `Verbatim` are not mathematics at all.
+//!
+//! The app therefore never meets a provenance: it receives a flat list of
+//! `{ start, end, display }` and wraps each range in an element (§4.3, §6.3).
 
 use std::sync::Arc;
 
 use serde::Serialize;
 
-use techxt::convert::{Converter, Severity, Source, SourceSpan};
+use techxt::convert::{Converter, OutputRegion, Severity, Source, SourceSpan, VerbatimProvenance};
 
 /// The result of one conversion, in the shape `protocol.ts` declares.
 ///
@@ -63,6 +77,35 @@ pub struct ConversionResultDto {
     pub suppressed: u32,
     /// Whether anything was suppressed, i.e. `suppressed > 0`.
     pub truncated: bool,
+    /// The runs of [`text`](Self::text) that are a formula's own LaTeX, in output
+    /// order — see [`MathRegionDto`] and the module documentation for what is filtered
+    /// out and why.
+    ///
+    /// Reported unconditionally: there is no option that turns it on, and a conversion
+    /// with no source-mode mathematics in it simply reports an empty list. The app
+    /// ignores the field unless the user asked for MathJax.
+    pub regions: Vec<MathRegionDto>,
+}
+
+/// One run of the converted text that is a formula's own LaTeX source (§4.3).
+///
+/// The offsets are **UTF-16 code units** into
+/// [`ConversionResultDto::text`](ConversionResultDto::text), mapped by the same
+/// [`OffsetMap`] a diagnostic's span goes through (§4.4) — over the *output* rather than
+/// over the document the user typed, since that is what the range indexes.
+///
+/// Three properties the library measured, which the code wrapping these ranges in
+/// elements will meet: a display formula's range **excludes** the newline that ends its
+/// last line, a construct that renders to nothing reports nothing at all, and a range is
+/// not guaranteed to sit within one line of the output.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct MathRegionDto {
+    /// Start offset, in UTF-16 code units.
+    pub start: u32,
+    /// End offset, exclusive, in UTF-16 code units.
+    pub end: u32,
+    /// Display math (`\[…\]`, `equation`, `align`) rather than inline (`$…$`).
+    pub display: bool,
 }
 
 /// One diagnostic, in the shape `protocol.ts` declares.
@@ -168,6 +211,7 @@ pub fn convert_native(converter: &Converter, latex: &str) -> ConversionResultDto
             let suppressed = conversion.diagnostics.suppressed();
             ConversionResultDto {
                 ok: true,
+                regions: math_regions(&conversion.text, &conversion.regions),
                 text: conversion.text,
                 ms: 0.0,
                 diagnostics: raw.into_iter().map(|raw| raw.resolve(&map)).collect(),
@@ -196,9 +240,48 @@ pub fn convert_native(converter: &Converter, latex: &str) -> ConversionResultDto
                 diagnostics: vec![raw.resolve(&map)],
                 suppressed: 0,
                 truncated: false,
+                // There is no text, so there is nothing for a region to point at.
+                regions: Vec::new(),
             }
         }
     }
+}
+
+/// The `MathSource` regions of `regions`, as UTF-16 ranges into `text` (§4.3).
+///
+/// Everything else the library reports is dropped here, which is the whole of the
+/// filter the module documentation argues for: `MathRendered` is techxt's own converted
+/// Unicode and a typesetter would make nonsense of it, and `KeptSource` and `Verbatim`
+/// are not mathematics.
+///
+/// The offsets go through the same [`OffsetMap`] as a diagnostic's — one pass over the
+/// output for every offset the whole table needs — rather than through a second mapper
+/// written for the purpose (§4.4). A document with no source-mode formulas in it does
+/// not walk its output at all.
+fn math_regions(text: &str, regions: &[OutputRegion]) -> Vec<MathRegionDto> {
+    let mut kept: Vec<(usize, usize, bool)> = Vec::new();
+    let mut wanted: Vec<usize> = Vec::new();
+    for region in regions {
+        // `VerbatimProvenance` is `#[non_exhaustive]`, and this is the shape that
+        // keeps a variant added later out of the app rather than letting it in
+        // unexamined.
+        if let VerbatimProvenance::MathSource { display } = region.kind {
+            kept.push((region.start, region.end, display));
+            wanted.push(region.start);
+            wanted.push(region.end);
+        }
+    }
+    if kept.is_empty() {
+        return Vec::new();
+    }
+    let map = OffsetMap::build(text, wanted);
+    kept.into_iter()
+        .map(|(start, end, display)| MathRegionDto {
+            start: as_u32(map.position(start).utf16),
+            end: as_u32(map.position(end).utf16),
+            display,
+        })
+        .collect()
 }
 
 /// A diagnostic whose spans are still byte offsets, waiting for the one pass over the

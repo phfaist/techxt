@@ -259,6 +259,33 @@ second conversion.
 
 ## The binding and the protocol
 
+> **Done** — 2026-08-28, `9fb55cf`. `ConversionResultDto.regions` is a
+> `Vec<MathRegionDto>`, filtered to `MathSource` in `diag::math_regions` and mapped to
+> UTF-16 through the *same* `OffsetMap` a diagnostic's span goes through — a second
+> instance of it, built over the output rather than the input, which is where these
+> offsets index. `protocol.ts` gains `MathRegion` and `ConversionResult.regions`.
+> `web/PLAN.md` §4.3 and §4.8 updated. Tests in `web/crate/tests/regions.rs`.
+>
+> **The filter is tested against the library, not only against itself.** One document
+> converted twice produces all four provenances — source-mode inline and display, a
+> `\verb`, an unknown macro kept as source, and the *same* display formula rendered
+> under Fancy — and `regions.rs` asserts what `techxt` itself reported before asserting
+> what came through the filter. A test that looked only at the filtered list would pass
+> just as happily on a document that never produced the other three tags.
+>
+> **Two boxes below are not ticked, deliberately.** The DOM-wrapping one is the app
+> half's: the three properties are now written down in `protocol.ts`, in `diag.rs` and
+> in PLAN §4.3, and the newline-exclusion one is pinned by a test, but the code that
+> meets them does not exist yet. The CI budget box under *Shipping MathJax* is
+> `.github/workflows/web.yml`, which this change did not touch.
+>
+> **`protocol.ts` also grew item 5's completion types** — `Completion`, the `complete`
+> request and the `completions` answer — written here ahead of the handler that answers
+> them, because this file is the one place the Rust side and the app agree on a message
+> and both ends have to be written against the same shape. `ToWorker` is now a union,
+> which is why `convert.worker.ts` narrows before dispatching; it ignores a `complete`
+> message rather than answering one, since `Session::complete` does not exist yet.
+
 **L1 landed, and it changed one thing here — read its `> **Done**` note above before
 starting.** `Conversion.regions` is a `Vec<OutputRegion>` whose `kind` is a
 `VerbatimProvenance` with **four** variants, not the single `Math { display }` this
@@ -271,30 +298,82 @@ section was written against:
 | `KeptSource` | a construct's source under a `KeepSource` policy | no |
 | `Verbatim` | a `verbatim` body, `\verb` | no |
 
-- [ ] `web/crate/src/diag.rs`: map regions into the result DTO, **filtering to
+- [x] `web/crate/src/diag.rs`: map regions into the result DTO, **filtering to
       `MathSource`** — handing MathJax a `MathRendered` region feeds it techxt's own
       converted Unicode and it will produce nonsense. Convert byte offsets to
       **UTF-16 code units** with the machinery §4.4 already uses for diagnostic spans;
       do not write a second one.
-- [ ] `src/worker/protocol.ts`: `ConversionResult` gains
+- [x] `src/worker/protocol.ts`: `ConversionResult` gains
       `regions: MathRegion[]` (`{ start, end, display }`) — already flat and already
       filtered, so the app never meets a provenance it has to reason about.
-- [ ] The binding reports regions unconditionally; the app ignores them unless it is
+- [x] The binding reports regions unconditionally; the app ignores them unless it is
       in MathJax mode. There is no option to turn them on.
 - [ ] Three properties L1 measured that the DOM-wrapping code will meet:
       a block region's range **excludes** the newline that ends its last line; a
       construct that renders to nothing reports nothing; and an inline region can
       contain a newline (a `KeepSource` macro keeps its post-newline), so a region is
       not guaranteed to sit within one line of the output.
-- [ ] `MathMode::Plain` reports no math regions at all — it flattens formulas into
+- [x] `MathMode::Plain` reports no math regions at all — it flattens formulas into
       ordinary text. Nothing to do about it, but do not treat an empty region list as
       a bug when testing across modes.
 
 ## Shipping MathJax
 
-- [ ] **Bundle it. No CDN, ever** — it would break both the offline promise and the
+> **Done** — 2026-08-28, `9fb55cf`, except the two boxes named below. MathJax 4.1.3's
+> `tex-svg.js` is copied into `dist/mathjax/<version>/` by a `techxt:mathjax` plugin in
+> `vite.config.ts` (which also serves it from `node_modules` in `vite dev`, so the mode
+> is usable without a build); `src/mathjax.ts` injects it with a `<script>` tag on first
+> use and exposes four functions — `loadMathJax`, `mathJaxLoaded`, `typeset`,
+> `resetMathJax` — so that the app half never names a MathJax option. A `techxt-mathjax`
+> `CacheFirst` route sits beside `techxt-fonts`, and `globIgnores` keeps `mathjax/**` out
+> of the precache. `web/PLAN.md` §9 gains **§9.1**, which is where the whole asset story
+> now lives.
+>
+> **Verified fact 4 is wrong in its last column, and it matters.** `tex-svg.js` does
+> *not* have zero runtime font fetches. MathJax 4's `mathjax-newcm` SVG font is split
+> into **40 character-range modules**; the bundle carries the common glyphs and the rest
+> load on demand from `loader.paths.fonts`, which defaults to
+> `https://cdn.jsdelivr.net/npm/@mathjax`. This is not a corner case: `\mathbb{R}` pulls
+> `double-struck` and `\mathcal{H}` pulls `calligraphic`, and the app's own *Mathematics*
+> and *Macros of your own* examples reach both. Left alone, selecting MathJax mode on the
+> shipped examples would have made two third-party requests. So the whole range set is
+> served from our own origin too — `@mathjax/mathjax-newcm-font` is now a direct
+> dependency, pinned to the same version — and `loader.paths` is redirected at load. The
+> *second* CDN call MathJax 4 makes was found the same way: the speech-rule engine
+> fetches its locale tables from jsdelivr, so `enableSpeech`, `enableBraille`,
+> `enableEnrichment`, `enableExplorer` and `enableMenu` are all off. Correcting this here
+> rather than up in the facts list, so the diff stays in one place; fold the real column
+> in when this file is folded into the plan.
+>
+> **What it costs in `dist/`**, for item 6: **+11 817 943 B**, from 4 108 399 B to
+> 15 926 619 B excluding source maps. That is 1 849 625 B of `tex-svg.js` (616 713 B
+> gzipped, matching the measurement above) and 9 968 318 B of font ranges. Almost none of
+> it is on the wire — the ranges are fetched one at a time and only when a formula needs
+> one; all six shipped examples together pull 81 703 B of them. The app's own bundle is
+> unchanged at 92 595 B and the precache manifest is unchanged at 21 entries / 1 581 KiB,
+> which is the point of not bundling it. **Item 6 should weigh trimming the range set
+> before trimming the bundle**, and the argument against was the reason all 40 shipped:
+> the seven that are recognisably *mathematical* alphabets — `double-struck`,
+> `calligraphic`, `script`, `fraktur`, `variants`, `marrows`, `mshapes` — come to 331 112
+> B, and the remaining 9.6 MB is Cyrillic, Greek in text variants, Hebrew, Arabic,
+> Devanagari, Cherokee, braille, phonetics and the extended Latin, sans and mono
+> alphabets. Those are exactly what a `\text{…}` in a multilingual document needs, and
+> the *Unicode passthrough* example is precisely about multilingual documents. Curating
+> the set by guesswork buys a few megabytes of `dist/` and pays for it with a wrong glyph
+> in somebody's formula, which is not a trade to make without measuring first. A range
+> that is missing does not break the page: MathJax logs a warning and falls back.
+>
+> **Two boxes stay unticked.** *Lazy on the web, complete when installed*: the lazy half
+> is done and the route is in place, but "on first selection of the MathJax mode" and
+> "fetch it once on first run in the background" are app-side wiring, and so is the
+> question of folding *keep all fonts offline* into one *keep everything offline*
+> setting. `loadMathJax()` is idempotent and safe to call speculatively, which is the
+> hook that half needs. *A new size budget line in the workflow* is
+> `.github/workflows/web.yml`, which this change did not touch.
+
+- [x] **Bundle it. No CDN, ever** — it would break both the offline promise and the
       privacy claim in About.
-- [ ] **Take the SVG output, `tex-svg`** (615 KB gzipped, one file, zero runtime font
+- [x] **Take the SVG output, `tex-svg`** (615 KB gzipped, one file, zero runtime font
       fetches) rather than CHTML (281 KB gzipped but 105 woff2 files, 1.8 MB, that an
       offline-first app would have to precache anyway). One asset is the whole offline
       story. Revisit with a custom `@mathjax/src` build — we know exactly which TeX
@@ -306,7 +385,7 @@ section was written against:
       fetch it once on first run in the background and keep it. Consider extending the
       existing *keep all fonts offline* checkbox into one "keep everything offline"
       setting rather than adding a second one.
-- [ ] Configure the TeX input with the package set the primitives need — `base`,
+- [x] Configure the TeX input with the package set the primitives need — `base`,
       `ams`, and whatever the shipped examples exercise — and **turn off MathJax's own
       `$…$` scanning**: it is handed one element per region and typesets exactly that.
 - [ ] A new size budget line in `.github/workflows/web.yml` beside `WASM_MAX_BYTES`,
