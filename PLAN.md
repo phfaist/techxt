@@ -383,6 +383,87 @@ proptest invariants (§14): no line exceeds `wrap_width` unless it contains one
 oversized word or verbatim; no trailing whitespace on any line; never two consecutive
 blank lines; `Verbatim` payloads appear byte-identical; deterministic output.
 
+### 7.1 Output regions
+
+Some runs of the output are not converted text at all: they are content copied through
+byte for byte — a `verbatim` body, a construct kept as source under a `KeepSource`
+policy, a formula re-emitted as LaTeX in `MathMode::Source`. The renderer knows which;
+the flow carries the fact across the layout boundary rather than dropping it there, and
+layout reports it as a side table beside the text, exactly as diagnostics already are:
+
+```rust
+// techxt::flow — amends §6: the two verbatim items become struct variants that
+// carry the tag. They are already *the* atomic items (layout copies them byte for
+// byte and never re-wraps them), so the tag rides a thing that is already a
+// well-defined region.
+FlowItem::Verbatim { text: Box<str>, provenance: VerbatimProvenance }
+FlowItem::InlineVerbatim { text: Box<str>, provenance: VerbatimProvenance }
+
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum VerbatimProvenance {
+    Verbatim,                              // a verbatim construct's body
+    KeptSource,                            // a construct kept rather than converted
+    MathSource   { display: bool },        // a formula re-emitted as its own LaTeX
+    MathRendered { display: bool },        // techxt's own aligned math output
+}
+
+// techxt::layout — amends §7's API list, which is otherwise unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct OutputRegion { pub start: usize, pub end: usize, pub kind: VerbatimProvenance }
+
+pub fn render_with_regions(flow: &Flow, opts: &LayoutOptions)
+    -> (String, Vec<OutputRegion>);
+pub fn render_to_with_regions(flow: &Flow, opts: &LayoutOptions,
+                              out: &mut dyn core::fmt::Write)
+    -> Result<Vec<OutputRegion>, core::fmt::Error>;
+
+// techxt::convert — amends §11.1's `Conversion`, and re-exports both types.
+pub struct Conversion { pub text: String, pub diagnostics: …, pub regions: Vec<OutputRegion> }
+```
+
+**Why the library wants this.** It is the one fact about the output that cannot be
+recovered from the string afterwards. `\$` converts to a `$` that no amount of scanning
+distinguishes from the `$` of a source-mode formula, so anything rendering into
+something richer than a terminal — a GUI styling verbatim in monospace, an HTML
+backend, a `--json` mode, a math typesetter handed the source-mode formulae — has to be
+told where the copied-through runs are rather than guess. It is a *side table*: the text
+is byte-for-byte what it was, there is no marker character to choose, strip or collide
+with, and a consumer with no use for the regions ignores a field.
+
+**How the offsets are produced.** The sink is wrapped in a byte counter (`Sink`), so
+every write knows the position it lands at, and the regions are recorded by the same
+single pass that writes the text — there is no second traversal that could drift out of
+step. Two cases:
+
+- A `Verbatim` block is written line by line at a known point. The range opens before
+  the first line's prefix and closes after the last line's content, so it **includes**
+  every continuation indent layout inserted inside the block: a display formula in an
+  `itemize` reports `"    \[ E = mc^2 \]"`, indent and all, because those bytes are in
+  the output and a range naming the payload alone would name a string that is not there.
+  It excludes the newline terminating the last line, which separates the block from what
+  follows.
+- An `InlineVerbatim` accumulates into the engine's shared word buffer alongside adjacent
+  `Text` items and is flushed at a position wrapping decides. Its range is recorded
+  *within the word* as it accumulates and rebased onto the output in `emit_word`, once
+  the word's base offset — line prefix included — is known.
+
+An item that renders to nothing contributes no region. Regions come in output order and
+never overlap, and every one of them is non-empty.
+
+**What the tags distinguish** is bytes that are *source* (`MathSource`, `KeptSource`,
+`Verbatim`) from bytes techxt *rendered* and then had to keep preformatted because their
+own alignment is meaningful (`MathRendered`: a display formula's aligned lines, an inline
+matrix's padded columns). Only the first kind can be handed back to a TeX engine, which
+is the distinction a consumer must not have to guess at. Note the asymmetry `MathRendered`
+inherits from §9.5: a *rendered inline* formula is ordinary words and glue that wrapping
+may split, so only the fragments carrying their own spacing appear, and there is no such
+thing as a region over a whole fancy-mode inline formula.
+
+Tests: `techxt/tests/output_regions.rs` — every assertion slices the conversion's own
+text with the region it reported, across a sweep of wrap widths, inside flat and nested
+lists, over all three math modes, and on the `\$` sentence that motivates the feature.
+
 ---
 
 ## 8. Render state
