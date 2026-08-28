@@ -1466,7 +1466,7 @@ Star on an already-sealed entry just toggles the flag — no second seal.
 
 ## Left open — answered
 
-> **Answered and implemented** — 2026-08-28, `HEAD`. The owner's answer removes the
+> **Answered and implemented** — 2026-08-28, `548b7e0`. The owner's answer removes the
 > question rather than picking a side of it: *everything in the library is sealed except
 > the very last one* — meaning the entry the session is writing into. Seal-ness is
 > therefore **derived**, and the `sealed` field the argument-against was about — in the
