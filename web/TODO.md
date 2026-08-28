@@ -636,15 +636,15 @@ and the door stays open.
 
 ## Completion
 
-> **The binding half is done** — 2026-08-28. `Session::complete(latex, prefix, limit)`
-> answers with the `Completion` array `protocol.ts` declares, merged from both sources
-> and ranked in Rust. `web/crate/src/complete.rs` is the whole of it, with
-> `tests/completion.rs` natively and `tests/wasm_completion.rs` for the wire spelling;
-> `web/PLAN.md` §4.1 grows a fourth export and a new §4.9 records the design. It cost
-> **33 933 B raw / 15 627 B gzipped** in the module, measured on this container against
-> the same build without it — mostly L2's machinery, which until something called
-> `symbols()` was dropped by the linker. What is left of this item is the app: the
-> protocol messages, the chip row, and the highlighting above.
+> **The binding half is done** — 2026-08-28, `406d717`. `Session::complete(latex,
+> prefix, limit)` answers with the `Completion` array `protocol.ts` declares, merged
+> from both sources and ranked in Rust. `web/crate/src/complete.rs` is the whole of it,
+> with `tests/completion.rs` natively and `tests/wasm_completion.rs` for the wire
+> spelling; `web/PLAN.md` §4.1 grows a fourth export and a new §4.9 records the design.
+> It cost **33 933 B raw / 15 627 B gzipped** in the module, measured on this container
+> against the same build without it — mostly L2's machinery, which until something
+> called `symbols()` was dropped by the linker. What is left of this item is the app:
+> the protocol messages, the chip row, and the highlighting above.
 >
 > **"Microseconds either way" is right for a document and wrong for the first call.**
 > Driving the release module from Node: the first `complete` costs 7.4 ms, because that
