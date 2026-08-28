@@ -314,7 +314,6 @@ export function initLibraryPane(init: LibraryPaneInit): LibraryPane {
     if (!entry) return;
 
     detailTitle.textContent = entry.title;
-    detailTitle.hidden = !renameInput.hidden ? false : detailTitle.hidden;
     detailDates.textContent = `Updated ${when(entry.updatedAt)} · first converted ${when(entry.createdAt)}`;
     detailOptions.textContent = describeOptions(entry.options);
     detailPreview.textContent = entry.preview === '' ? '(no preview was stored)' : entry.preview;
@@ -322,7 +321,20 @@ export function initLibraryPane(init: LibraryPaneInit): LibraryPane {
     starButton.title = entry.starred ? 'Remove the star' : 'Keep this one';
   }
 
+  /** Whether the title is being edited right now; see {@link endRename}. */
+  let renaming = false;
+
+  /**
+   * Finish a rename, committing it or abandoning it.
+   *
+   * The flag is not bookkeeping: hiding a focused input fires `blur`, and the blur
+   * handler is the one that commits — so an Escape that merely hid the field would
+   * commit the very edit it was abandoning. Whoever gets here first ends the rename;
+   * the second call has nothing left to do.
+   */
   function endRename(commit: boolean): void {
+    if (!renaming) return;
+    renaming = false;
     const entry = selected();
     renameInput.hidden = true;
     detailTitle.hidden = false;
@@ -342,6 +354,7 @@ export function initLibraryPane(init: LibraryPaneInit): LibraryPane {
   renameButton.addEventListener('click', () => {
     const entry = selected();
     if (!entry) return;
+    renaming = true;
     renameInput.value = entry.title;
     renameInput.hidden = false;
     detailTitle.hidden = true;
@@ -357,6 +370,7 @@ export function initLibraryPane(init: LibraryPaneInit): LibraryPane {
       event.preventDefault();
       event.stopPropagation();
       endRename(false);
+      renameButton.focus();
     }
   });
   renameInput.addEventListener('blur', () => endRename(true));
