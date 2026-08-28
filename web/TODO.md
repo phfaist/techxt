@@ -1251,7 +1251,7 @@ and the release checklist's item 5 can say so with a number.
 
 # 8. The library, after using it: sealing an entry, and reading one
 
-> **Done** — 2026-08-28. Sealing is one primitive in `src/library.ts`
+> **Done** — 2026-08-28, `077f772`. Sealing is one primitive in `src/library.ts`
 > (`seal`, and `noteEdit` for the per-event rule and the lazy unseal); `src/main.ts`
 > puts the three verbs over it, `src/ui/panes.ts` grows **New** beside `Load ▾`, a
 > plain **Save** and an icon-only **★** in the output header, and the entry chip that
