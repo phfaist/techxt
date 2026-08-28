@@ -166,6 +166,23 @@ export const TEX_INPUT: {
     ket: ['{\\vert {#1} \\rangle}', 1],
     braket: ['{\\langle {#1} \\vert {#2} \\rangle}', 2],
     ketbra: ['{\\vert {#1} \\rangle\\langle {#2} \\vert}', 2],
+    // `\\abs` and `\\norm`, the other two delimiter pairs an author writes as one macro
+    // over their content. They arrived in `defs::mathcore` the day the owner answered
+    // item 9's second finding, and the gate turned red naming them the same afternoon —
+    // which is what it is for. Only `physics` has them, and `physics` was measured and
+    // rejected above, so they are definitions like the four before them, each the bar
+    // techxt's own rule renders: the ASCII `|` that `\\lvert` and `\\rvert` are, and the
+    // `‖` U+2016 that `\\lVert` and `\\rVert` are.
+    //
+    // **The starred spelling is a known gap.** techxt accepts `physics`'s `\\abs*{x}` and
+    // `\\norm*{v}` for auto-sizing, and `configmacros` has no way to express an optional
+    // star — a macro here takes brace arguments and nothing else — so a document that
+    // writes one gets `|∗|𝑥` in this mode against Fancy's `|𝑥|`. Fixing it means either
+    // `physics`, which changes five names it was never asked about, or a JavaScript
+    // macro of our own, which is a MathJax extension and a larger thing than the case
+    // deserves. Plain `\\abs{x}` is the spelling almost every document uses.
+    abs: ['{\\lvert {#1} \\rvert}', 1],
+    norm: ['{\\lVert {#1} \\rVert}', 1],
     // The Greek capitals that look like Latin letters. LaTeX itself defines none of
     // them — there is no `\Alpha`, because a capital alpha is an `A` — but techxt does,
     // rendering each as the Greek character, and a formula that writes one gets it.
