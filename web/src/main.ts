@@ -24,6 +24,7 @@ import type { FontId } from './fonts';
 import {
   PRUNE_PROPOSAL_SIZE,
   createLibrary,
+  describeSession,
   makePreview,
   pruneProposal,
   quotaPressure,
@@ -455,10 +456,15 @@ async function start(): Promise<void> {
     ui: state.ui,
     examples: EXAMPLES,
     onInput(text, cause) {
+      const before = state.doc;
       state.doc = text;
       persistence.document(text);
       // A paste is a decision, not a keystroke, so it does not wait (§6.2).
       requestConversion(cause === 'paste' ? 'immediate' : 'debounced');
+      // The library is told about the *edit*, not just about the conversion it
+      // provokes: a select-all-and-paste has replaced the document whether or not the
+      // new one converts (§6.10).
+      noteEdit(before, text);
     },
     onColumnsChange(columns) {
       measuredColumns = columns;
@@ -488,8 +494,19 @@ async function start(): Promise<void> {
     onLoadExample(example) {
       loadExample(example);
     },
+    onNew() {
+      void newDocument();
+    },
+    onSave() {
+      void saveVersion();
+    },
     onStar() {
       void toggleStar();
+    },
+    onShowEntry() {
+      const id = library?.session.entryId ?? null;
+      sheets.open('library');
+      if (id !== null) libraryPane.select(id);
     },
     onConvertNow() {
       requestConversion('immediate');
@@ -646,7 +663,7 @@ async function start(): Promise<void> {
     const backend = await openLibraryBackend();
     if (!backend) {
       // Honest and inert, the way `browserStorage()` is for localStorage (§6.10).
-      panes.setStarred(null);
+      panes.setEntryState(null);
       libraryPane.setUnavailable(
         'This browser will not let the page keep a library here. Everything else works as usual.',
       );
@@ -657,7 +674,11 @@ async function start(): Promise<void> {
       backend,
       persist: requestPersistence,
       onWrite(entry, created) {
-        if (entry.id === library?.currentId) panes.setStarred(entry.starred);
+        // The header names this entry, so it follows the title the document grows.
+        if (entry.id === library?.session.entryId) {
+          shownEntry = entry;
+          syncEntry();
+        }
         if (!created) return;
         void refreshLibrary();
         // Once, ever: the library only helps if people know it is there (§6.10).
@@ -682,23 +703,40 @@ async function start(): Promise<void> {
           action: { label: 'Export library', onSelect: () => void exportLibrary() },
         });
       },
-      onSession(currentId) {
-        writeCurrentEntryId(storage, currentId);
+      onSession(session) {
+        // Only an *open* entry is worth continuing after a reload. A sealed one is not
+        // being written to, and is found again below by what it holds rather than by
+        // an id that would invite the next keystroke straight back into it (§6.10).
+        writeCurrentEntryId(storage, session.sealed ? null : session.entryId);
+        syncEntry();
       },
       onChange() {
         void refreshLibrary();
       },
     });
 
-    panes.setStarred(false);
+    syncEntry();
     // A reload is not a new document: if the editing session was writing into an
     // entry and the pane came back with that same session's text in it, the log
     // continues there rather than growing a second copy (§6.10).
     const previous = readCurrentEntryId(storage);
-    if (loaded.source === 'storage' && previous !== null && (await library.get(previous))) {
-      library.adopt(previous);
+    const resumed =
+      loaded.source === 'storage' && previous !== null ? await library.get(previous) : null;
+    if (resumed) {
+      library.adopt(resumed.id);
     } else {
       writeCurrentEntryId(storage, null);
+      // A reload after Save has no id to resume — a sealed entry keeps none — but it
+      // does have the document, and a document already in the log *verbatim* does not
+      // deserve a second copy of it. Coming back to it sealed is also the conservative
+      // half of the guess: the worst it costs is one extra entry when editing resumes,
+      // where adopting it outright would let the next keystroke overwrite the version
+      // the user asked to keep.
+      const kept =
+        loaded.source === 'storage' && state.doc.trim() !== ''
+          ? ((await library.list()).find((entry) => entry.source === state.doc) ?? null)
+          : null;
+      if (kept) library.adoptSealed(kept);
     }
     // Anything converted while the database was opening still belongs in the log.
     recordCurrent();
@@ -719,9 +757,83 @@ async function start(): Promise<void> {
     if (!library) return;
     const entries = await library.list();
     libraryPane.setEntries(entries, statsOf(entries));
-    const current = library.currentId;
-    panes.setStarred(entries.some((entry) => entry.id === current && entry.starred));
+    const current = library.session.entryId;
+    shownEntry = entries.find((entry) => entry.id === current) ?? null;
+    syncEntry();
     libraryPane.setNotice(await storageNotice());
+  }
+
+  /**
+   * The entry the header is naming, so that naming it costs no read. It is whatever
+   * the session points at; `null` means the next conversion will make one.
+   */
+  let shownEntry: LibraryEntry | null = null;
+
+  /**
+   * Say, in the input pane's header, which entry the keystrokes are going into
+   * (§6.10).
+   *
+   * This is the whole answer to item 8's first complaint. The library was silent about
+   * the current entry, so nothing on screen contradicted the assumption that a paste
+   * over a document starts a fresh one — and no heuristic underneath can fix a silence.
+   */
+  function syncEntry(): void {
+    if (!library?.available) {
+      panes.setEntryState(null);
+      return;
+    }
+    const session = library.session;
+    if (shownEntry !== null && shownEntry.id !== session.entryId) shownEntry = null;
+    const words = describeSession(session, shownEntry?.title ?? null);
+    panes.setEntryState({
+      id: session.entryId,
+      label: words.label,
+      hint: words.hint,
+      sealed: session.sealed,
+      starred: shownEntry?.starred === true,
+    });
+    // An entry the header does not know yet — one just adopted, or just sealed. The
+    // pane is already correct about the *state*; this fills in the name.
+    if (session.entryId === null || shownEntry !== null) return;
+    const wanted = session.entryId;
+    void library.get(wanted).then((entry) => {
+      if (!entry || library?.session.entryId !== wanted) return;
+      shownEntry = entry;
+      syncEntry();
+    });
+  }
+
+  /**
+   * What one input event did to the session, said out loud (§6.10).
+   *
+   * The automatic fork is the safety net under New, Save and ★, and it is the one that
+   * can be wrong — so it is also the one that comes with an Undo. Getting it wrong then
+   * costs a click; not having it at all costs the document.
+   */
+  function noteEdit(before: string, after: string): void {
+    const outcome = library?.noteEdit(before, after) ?? { kind: 'none' as const };
+    if (outcome.kind === 'none') return;
+    syncEntry();
+    if (outcome.kind !== 'forked') return;
+    const from = outcome.from;
+    void (async () => {
+      const left = await library?.get(from);
+      toast.show({
+        message: left
+          ? `That replaced the document, so this is a new entry. “${left.title}” is still in your library.`
+          : 'That replaced the document, so this is a new entry.',
+        timeoutMs: 8000,
+        action: {
+          label: 'Undo',
+          onSelect: () => {
+            void (async () => {
+              await library?.mergeBack(from);
+              await refreshLibrary();
+            })();
+          },
+        },
+      });
+    })();
   }
 
   /**
@@ -805,7 +917,8 @@ async function start(): Promise<void> {
   function openEntry(entry: LibraryEntry): void {
     const previousDoc = state.doc;
     const previousOpts = { ...state.opts };
-    const previousId = library?.currentId ?? null;
+    const previousSession = library?.session ?? { entryId: null, sealed: false };
+    const previousEntry = shownEntry;
 
     library?.adopt(entry.id);
     applyOptions(withDefaults(entry.options));
@@ -820,11 +933,18 @@ async function start(): Promise<void> {
         onSelect: () => {
           // The settings that were replaced belong to an entry that is itself in the
           // log, so this is a convenience rather than a rescue — but it is the app's
-          // idiom, and a replaced document deserves one level of undo (§6.7).
-          if (previousId !== null) library?.adopt(previousId);
-          else library?.beginNewEntry();
+          // idiom, and a replaced document deserves one level of undo (§6.7). The
+          // session comes back as it was, sealed included: a version the user had
+          // kept must not start absorbing edits because they looked at another entry.
+          if (previousSession.sealed && previousEntry !== null) {
+            library?.adoptSealed(previousEntry);
+          } else if (previousSession.entryId !== null && !previousSession.sealed) {
+            library?.adopt(previousSession.entryId);
+          } else {
+            library?.beginNewEntry();
+          }
           applyOptions(previousOpts);
-          setDocument(previousDoc, previousId === null);
+          setDocument(previousDoc, false);
           void refreshLibrary();
         },
       },
@@ -934,14 +1054,75 @@ async function start(): Promise<void> {
     void refreshLibrary();
   }
 
-  /** ⭐ Save, from the output pane: star this session's entry, creating one if needed. */
+  /* --------------------------------------------- New, Save and ★: three verbs */
+
+  /**
+   * The three buttons differ only in what happens after the seal (§6.10): **New**
+   * clears the input, **Save** leaves the document on screen, and **★** stars it as
+   * well. Sealing itself is one primitive in `library.ts`, and none of them creates
+   * the next entry — the first edit does.
+   */
+  function currentPreview(): string {
+    return makePreview(panes.getOutput() || lastGoodOutput);
+  }
+
+  /** **New**: keep what is there, and start with an empty document. */
+  async function newDocument(): Promise<void> {
+    if (state.doc === '') {
+      toast.show({ message: 'The document is already empty.' });
+      return;
+    }
+    const previous = state.doc;
+    const kept = (await library?.seal(previous, state.opts, currentPreview())) ?? null;
+    setDocument('');
+    await refreshLibrary();
+    toast.show({
+      // Without a library there is nothing to have kept, and a toast that says there
+      // is would be the app lying about the one thing this item is about.
+      message: kept ? `Kept “${kept.title}” in your library. This is a new document.` : 'A new document.',
+      action: {
+        label: 'Undo',
+        onSelect: () => {
+          // The app's single-level undo, as Load ▾ offers it (§6.7): the document
+          // comes back, and so does the entry it was being written into.
+          if (kept) library?.adopt(kept.id);
+          setDocument(previous, false);
+          void refreshLibrary();
+        },
+      },
+    });
+  }
+
+  /**
+   * **Save**: seal this version and leave it on screen.
+   *
+   * The name is slightly a lie and the tooltip carries the truth, because everything
+   * is already saved: what the button really does is stop *this* version changing.
+   */
+  async function saveVersion(): Promise<void> {
+    if (!library) return;
+    const entry = await library.seal(state.doc, state.opts, currentPreview());
+    await refreshLibrary();
+    if (!entry) {
+      toast.show({
+        message:
+          state.doc.trim() === ''
+            ? 'There is nothing to keep yet.'
+            : 'That document could not be added to your library.',
+        tone: state.doc.trim() === '' ? 'status' : 'alert',
+      });
+      return;
+    }
+    toast.show({
+      message: `Kept “${entry.title}” — further edits start a new entry.`,
+      action: { label: 'Open library', onSelect: () => sheets.open('library') },
+    });
+  }
+
+  /** **★**: seal it and star it — or, on an entry already sealed, just the star. */
   async function toggleStar(): Promise<void> {
     if (!library) return;
-    const result = await library.starCurrent(
-      state.doc,
-      state.opts,
-      makePreview(panes.getOutput() || lastGoodOutput),
-    );
+    const result = await library.starCurrent(state.doc, state.opts, currentPreview());
     if (!result) {
       toast.show({
         message:
@@ -952,11 +1133,10 @@ async function start(): Promise<void> {
       });
       return;
     }
-    panes.setStarred(result.starred);
     await refreshLibrary();
     toast.show({
       message: result.starred
-        ? `Starred “${result.entry.title}” — it stays in your library.`
+        ? `Starred “${result.entry.title}” — it is kept, and nothing automatic will ever remove it.`
         : `Removed the star from “${result.entry.title}”.`,
       action: { label: 'Open library', onSelect: () => sheets.open('library') },
     });

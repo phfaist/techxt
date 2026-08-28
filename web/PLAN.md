@@ -1052,10 +1052,30 @@ themselves are not tab stops, since Tab is already walking them.
 Every document that goes through the app is kept, on the device, in a library the user
 can search, star, rename, delete, export and re-import. **Saving is automatic**: this
 is a log of what was converted, the way a browser keeps history, not a folder the user
-files things into. The button beside Copy and Download is therefore not *Save* but
-**⭐ Save**, meaning *star this* — starring marks an entry worth keeping and the pane
-can filter to starred entries. Nothing is lost because somebody forgot to press a
-button, and there is one less concept to explain.
+files things into. Nothing is lost because somebody forgot to press a button, and
+there is one less concept to explain.
+
+What the user does still control is *where one document ends and the next begins*, and
+that is what the three buttons are for. **Sealing** an entry means it stops absorbing
+edits: the entry is left holding the document as it stands, and the next change to the
+text starts a new one. One primitive, three verbs over it, each placed by the moment it
+is reached for rather than by what it acts on:
+
+| button | where | does |
+|---|---|---|
+| **New** | source pane header, beside `Load ▾` | seal the current entry, clear the input |
+| **Save** | output pane header, after Copy and Download | seal it, keep it on screen |
+| **★** | output pane header, icon-only toggle | seal it *and* star it |
+
+New is reached for when the user is about to type something new and is looking at the
+source; Save and ★ when they are happy with a *result* and are looking at the output.
+★ is a glyph rather than a fourth word because that header already carries four
+controls plus ⇅ Focus on a phone, and starring an entry that is already sealed is only
+the flag — never a second seal.
+
+**Save is slightly a lie and the tooltip carries the truth**: *"Keep this version —
+further edits start a new entry."* Everything is already saved; what the button does is
+stop this version changing.
 
 **An entry** holds `id`, `createdAt`, `updatedAt`, `title`, `source`, `options` (the
 full `AppOptions` in force, pruned as everywhere else), `starred`, and a small
@@ -1072,6 +1092,45 @@ library, an import that replaced everything — and after a 30-minute idle gap. 
 *reload* is none of those: the id of the current entry is kept in `localStorage`
 (`techxt.library.current.v1`) and adopted on load when the document came from storage,
 so coming back to a tab continues the entry instead of logging a second copy of it.
+
+**The next entry is always created lazily**, by the first `record` whose source differs
+from what the sealed entry holds — never at the moment of sealing. Otherwise pressing
+Save and walking away would leave an empty entry in the log, and an option change on a
+kept version would quietly duplicate it.
+
+**A sealed session keeps no id in `localStorage`**, because it is not writing anywhere.
+Coming back after a reload it is found by what it holds instead: a document that is
+already in the log *verbatim* is adopted sealed rather than logged a second time. That
+is also the conservative half of the guess — the worst it can cost is one extra entry
+when editing resumes, where adopting it outright would let the next keystroke overwrite
+the version the user asked to keep.
+
+**The per-event fork rule** is the safety net under all three verbs, and the reason
+item 8 exists: a select-all-and-paste is not a Load, not a share link and not an
+import, so nothing above catches it and the current entry would be overwritten with a
+document that has nothing to do with it. So while a draft is unsealed, **one input
+event that removes more than 30 % of the document starts a new entry**. The measurement
+is per *event* — the span between the longest common prefix and suffix of the text
+before and after — never cumulative against the stored source: ordinary typing changes
+one character, appending or pasting at the end removes nothing, and a cumulative rule
+would drift, since a session that rewrites a section at a time crosses any threshold
+while genuinely being one document. Under an absolute floor of 24 characters removed
+nothing forks at all, so a two-character scratch buffer does not fork on a backspace.
+
+**Bias toward forking.** A wrong fork costs one extra entry in a log that is filterable
+and only ever pruned deliberately; a wrong non-fork loses the user's work. That
+asymmetry is the whole argument for a low threshold and against cleverness — and it is
+why the fork announces itself in a toast whose **Undo** folds the new draft back into
+the previous entry and removes the entry the fork made. Never a starred one: starring is
+the user saying this one matters, and nothing automatic may override it.
+
+**The current entry is visible**, in the header of the pane whose keystrokes go into
+it. A chip beside the source pane's title names the entry being written to — ● while it
+is taking the edits, ✓ once it has been sealed — and clicking it opens that entry in
+the library. The real complaint behind item 8 was silence, and no heuristic underneath
+fixes a silence: the app has to say which entry it is writing to, say when one is
+sealed or forked, and offer a way back. New's toast offers the same single-level undo
+`Load ▾` does, restoring the document and unsealing its entry.
 
 **The title** is the document's own: the first `\title` or `\section`, else the first
 non-empty line, else the date (`src/title.ts`, shared with Download's file name). It
@@ -1090,8 +1149,10 @@ before the first write, so the browser stops treating the library as evictable.
 
 A browser that will not give us a database — a locked-down profile, some private
 windows — gets the same treatment `browserStorage()` gives a refused `localStorage`: an
-honest inert pane that says so, the ⭐ button hidden rather than dead, and everything
-else working exactly as usual.
+honest inert pane that says so, Save, ★ and the entry chip hidden rather than dead, and
+everything else working exactly as usual. New stays, because clearing the document with
+one level of undo is worth having on its own, and its toast then claims nothing about a
+library that is not there.
 
 #### Retention: the app never quietly drops the user's data
 
@@ -1143,6 +1204,14 @@ open, star, rename, delete, copy and download its source. Filters are all/starre
 a text search over title and source, sorted by most recently updated. Delete offers an
 Undo in the toast; **Clear library** demands a typed confirmation and names the count
 and the starred count in it.
+
+**The detail reads the entry**, which is the other half of keeping one: the whole
+`source` in its own scrolling region, and under it the stored `preview` — the rendered
+output as it was — in a second one. Nothing new is stored for this, since an entry has
+always kept the document in full; the preview stays what it is, a few lines for the
+card, allowed to be stale and never the thing the user acts on. The actions sit above
+both regions rather than below them, so Open and Delete are still at the top of the
+detail on a phone where the source alone is a screenful.
 
 Opening an entry restores its document *and* its options. That is not destructive — the
 settings being replaced belong to the current entry, which is itself in the log and one
@@ -1867,6 +1936,10 @@ library's model, retention policy and import/export codec against an in-memory b
    export, then import the file back under each of the three answers; open an entry
    and see its options come back with it; the pane one-handed on a 390 px screen; and
    a profile with IndexedDB blocked, where the app must be whole and the pane honest.
+   **Type a document, then select all and paste a different one over it**, and find
+   the first still in the library — with New, Save and ★ each sealing exactly once,
+   Save leaving no empty entry behind, and the entry chip naming what is being written
+   to throughout.
 9. *Math: MathJax* (§5, §9.1): the formulas typeset while the rest of the pane stays
    readable; Copy still hands over the source, `$…$` and all; a wide display formula
    scrolls in its own box rather than dragging the pane; and — the one that has failed

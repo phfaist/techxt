@@ -2256,12 +2256,48 @@ select.control {
 }
 
 /*
+ * What each of the two reading regions below is, in three words. Without them the
+ * source and the rendered preview are two grey blocks of text with no way to tell
+ * which is which.
+ */
+.library-caption {
+  margin: 0.9rem 0 0.3rem !important;
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--fg-faint) !important;
+}
+
+/*
+ * The entry's document, in full, scrolling on its own (§6.10). An entry keeps the whole
+ * source, so reading one costs nothing new to store — and a card preview is not a
+ * document. It is capped rather than allowed to grow: the actions above it and the
+ * rendered preview below it both have to stay reachable without a search.
+ */
+.library-source {
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  tab-size: 2;
+  max-height: min(26rem, 42dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/*
  * The stored preview, in the pane's own face. It is a few lines of an old rendering
  * and may be out of date, which is why it is never the thing the user acts on: Open
  * re-converts from the source.
  */
 .library-preview {
-  margin: 0.7rem 0 1rem;
+  margin: 0 0 1rem;
   padding: 0.8rem 0.9rem;
   border-radius: var(--r-sm);
   background: var(--bg-inset);
@@ -2278,6 +2314,7 @@ select.control {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+  margin-top: 0.6rem;
 }
 
 .library-delete {
@@ -2321,15 +2358,91 @@ select.control {
   }
 }
 
-/* --- ⭐ Save, in the output pane */
+/* --- ★, in the output pane */
 
 .pane-star.is-starred {
   color: var(--accent);
 }
 
 .pane-star-glyph {
-  font-size: 0.95em;
+  font-size: 1.05em;
   line-height: 1;
+}
+
+/*
+ * Sealed already: Save has nothing left to do to this version. It stays where it is,
+ * dimmed, rather than vanishing — a control that moves house between clicks is worse
+ * than one that says it is finished.
+ */
+.pane-tools .btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pane-tools .btn:disabled:hover {
+  background: transparent;
+  color: var(--fg-muted);
+}
+
+/*
+ * The current entry, in the header of the pane whose keystrokes go into it (§6.10).
+ *
+ * It is the answer to the complaint that the library was *silent*: the entry being
+ * written to is named where the writing happens, and clicking the name opens it. It
+ * gives up its own width first — the buttons beside it are what the header is for —
+ * so on a narrow pane it truncates rather than pushing anything off the end.
+ */
+.pane-entry {
+  flex: 0 1 auto;
+  min-width: 0;
+  /* A share of the header rather than a fixed width: it must never be the reason the
+     buttons beside it wrap onto a second row, and the width that costs is the pane's,
+     not a phone's. */
+  max-width: min(34%, 18rem);
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--fg-faint);
+}
+
+.pane-entry:disabled {
+  cursor: default;
+}
+
+/*
+ * The chip is what gives way, never the buttons: `.pane-tools` wraps when it is
+ * squeezed, and a header two rows tall is exactly what naming the entry must not cost
+ * on a phone. Only the source pane's tools are pinned like this — the output pane's
+ * five controls keep the wrap as their own safety valve on a very narrow screen.
+ */
+.pane-in .pane-tools {
+  flex-shrink: 0;
+}
+
+.pane-entry-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane-entry-glyph {
+  flex: none;
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+/* Taking the edits — the dot is live, and the colour says so. */
+.pane-entry[data-state="open"] .pane-entry-glyph {
+  color: var(--accent);
+}
+
+/* Sealed: kept as it is, and the next edit starts a new entry. */
+.pane-entry[data-state="sealed"] {
+  color: var(--fg-muted);
+}
+
+.pane-entry[data-state="sealed"] .pane-entry-glyph {
+  color: var(--accent);
 }
 
 /* ------------------------------------------- the library's question dialogs */

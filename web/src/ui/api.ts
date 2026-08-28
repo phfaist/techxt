@@ -63,6 +63,24 @@ export interface CompletionQuery {
   limit: number;
 }
 
+/**
+ * What the document on screen is to the library, in the words the pane shows (§6.10).
+ *
+ * The strings are computed by `main.ts` from `describeSession`, because this module
+ * knows what a button is and nothing about what an entry is.
+ */
+export interface EntryState {
+  /** The entry the document belongs to, or `null` before it has been logged. */
+  id: string | null;
+  /** The chip's own text — the entry's title, or "New entry". */
+  label: string;
+  /** The whole sentence, as the chip's `title` and its accessible name. */
+  hint: string;
+  /** Whether the entry is sealed: further edits start a new one. */
+  sealed: boolean;
+  starred: boolean;
+}
+
 /** What the pane region reports upwards. */
 export interface PanesInit {
   mount: HTMLElement;
@@ -78,8 +96,20 @@ export interface PanesInit {
   onCopy(): void;
   onDownload(): void;
   onLoadExample(example: ExampleDoc): void;
-  /** ⭐ Save, beside Copy and Download: star this document's library entry (§6.10). */
+  /**
+   * **New**, beside `Load ▾`: seal the current library entry and clear the input, so
+   * that what is typed next is a document of its own (§6.10).
+   */
+  onNew(): void;
+  /**
+   * **Save**, in the output pane: seal the current entry and leave it on screen. The
+   * log is automatic, so this does not save — it stops *this* version being edited.
+   */
+  onSave(): void;
+  /** **★**, beside Save: seal the entry and star it, or just toggle the star (§6.10). */
   onStar(): void;
+  /** The header's entry chip was activated: show that entry in the library. */
+  onShowEntry(): void;
   /** Ctrl/Cmd+Enter — convert now, skipping the debounce. */
   onConvertNow(): void;
   /** A gutter marker was clicked: reveal that diagnostic in the panel. */
@@ -142,10 +172,11 @@ export interface Panes {
   /** Show or clear the "loading font…" state in the output pane header. */
   setFontLoading(loading: boolean): void;
   /**
-   * Whether this document's library entry is starred, for the ⭐ Save button. `null`
-   * where there is no library to star into at all, which hides the button.
+   * Where the document stands in the library, for the header's entry chip and the
+   * Save and ★ buttons. `null` where there is no library at all, which hides all
+   * three rather than leaving them dead (§6.10).
    */
-  setStarred(starred: boolean | null): void;
+  setEntryState(state: EntryState | null): void;
   /** A hard parse failure dims the (stale) output rather than blanking it. */
   setStale(stale: boolean): void;
 }

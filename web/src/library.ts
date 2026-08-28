@@ -73,6 +73,73 @@ export const RECORD_DELAY_MS = 2000;
 /** The fraction of the quota past which the library header says so, once. */
 export const QUOTA_WARN_RATIO = 0.8;
 
+/* ------------------------------------------------- the per-event fork rule */
+
+/**
+ * How much of the document one input event may remove before it is read as a
+ * *replacement* rather than an edit, and the draft forks into a new entry (§6.10).
+ *
+ * Low on purpose. A wrong fork costs one extra entry in a log that is filterable and
+ * is only ever pruned deliberately; a wrong non-fork overwrites the document the user
+ * had. That asymmetry is the whole argument, and it argues against cleverness as much
+ * as it argues for a low number.
+ */
+export const FORK_REMOVED_RATIO = 0.3;
+
+/**
+ * The absolute floor under {@link FORK_REMOVED_RATIO}: an event that removes fewer
+ * characters than this never forks, whatever share of the buffer they were.
+ *
+ * Without it a two-character document forks on a backspace, which is a new entry per
+ * keystroke on a buffer nobody would miss. Above it the ratio decides alone — a
+ * select-all over any real document removes hundreds of characters, so the floor is
+ * never what stands between a replacement and its fork.
+ */
+export const FORK_MIN_REMOVED = 24;
+
+/**
+ * How much of `before` one edit took out, in characters.
+ *
+ * The measurement is the span between the longest common prefix and the longest
+ * common suffix: for the single contiguous replacement that every `input` event on a
+ * textarea is, that span *is* what was selected. Typing changes one character;
+ * appending or pasting at the end shares the whole of `before` as its prefix and
+ * removes nothing; a select-all-and-paste shares almost nothing and removes the lot.
+ *
+ * For the rarer event that changes two separate places at once — a browser's own undo
+ * of a multi-part edit — the span covers both, which overstates the removal. That
+ * errs toward forking, which is the direction this rule is supposed to err in.
+ */
+export function removedByEdit(before: string, after: string): number {
+  const shorter = Math.min(before.length, after.length);
+  let head = 0;
+  while (head < shorter && before.charCodeAt(head) === after.charCodeAt(head)) head += 1;
+  let tail = 0;
+  while (
+    tail < shorter - head &&
+    before.charCodeAt(before.length - 1 - tail) === after.charCodeAt(after.length - 1 - tail)
+  ) {
+    tail += 1;
+  }
+  return before.length - head - tail;
+}
+
+/**
+ * Whether one input event replaced the document rather than edited it — the safety
+ * net under the explicit verbs (§6.10).
+ *
+ * It is deliberately per *event*: the comparison is against the text as it was an
+ * instant ago, never cumulatively against what the entry holds. A cumulative rule
+ * drifts, because a long session that rewrites a section at a time crosses any
+ * threshold while genuinely being one document.
+ */
+export function forksEntry(before: string, after: string): boolean {
+  if (before.trim() === '') return false;
+  const removed = removedByEdit(before, after);
+  if (removed < FORK_MIN_REMOVED) return false;
+  return removed > before.length * FORK_REMOVED_RATIO;
+}
+
 /* ------------------------------------------------------------ deriving a name */
 
 /**
@@ -427,6 +494,69 @@ function failureOf(error: unknown): WriteFailure {
   return { kind: quota ? 'quota' : 'error', message };
 }
 
+/* ------------------------------------------------------- sealing an entry */
+
+/**
+ * Where the document on screen stands in the log (§6.10).
+ *
+ * *Sealing* is the one primitive under New, Save and ★: a sealed entry stops absorbing
+ * edits, and the next change to the document starts a new one. It is a fact about the
+ * editing session rather than about the entry — the entry itself is unchanged, and
+ * opening it later from the pane writes into it again.
+ */
+export interface SessionState {
+  /** The entry the document belongs to, or `null` before it has been logged. */
+  entryId: string | null;
+  /** Whether that entry is sealed: the next change to the document starts a new one. */
+  sealed: boolean;
+}
+
+/**
+ * What one input event did to the session (§6.10).
+ *
+ * `from` is always an entry the document has just *left*, and is what the app offers
+ * to go back to: for a fork, {@link Library.mergeBack} folds the new draft into it;
+ * for a seal that has just ended, it is simply what the chip stops naming.
+ */
+export type EditOutcome =
+  | { kind: 'none' }
+  | { kind: 'unsealed'; from: string }
+  | { kind: 'forked'; from: string };
+
+/** What the input pane's header says about {@link SessionState}, in words (§6.10). */
+export interface SessionLabel {
+  /** The short form, beside the pane's title. */
+  label: string;
+  /** The whole sentence, as a `title` and as the accessible name. */
+  hint: string;
+}
+
+/**
+ * The current entry, in words.
+ *
+ * The real complaint item 8 answers is *silence* — an entry was being overwritten and
+ * nothing on screen said so — and no heuristic fixes that. This is the sentence that
+ * does, so it is a pure function and is asserted rather than eyeballed.
+ */
+export function describeSession(state: SessionState, title: string | null): SessionLabel {
+  if (state.entryId === null || title === null) {
+    return {
+      label: 'New entry',
+      hint: 'What you convert next starts a new entry in your library.',
+    };
+  }
+  if (state.sealed) {
+    return {
+      label: title,
+      hint: `“${title}” is kept as it is. Editing the document starts a new entry.`,
+    };
+  }
+  return {
+    label: title,
+    hint: `Saving into “${title}” in your library. Editing the document updates it.`,
+  };
+}
+
 /* --------------------------------------------------------------- the library */
 
 export interface LibraryInit {
@@ -446,11 +576,13 @@ export interface LibraryInit {
   /** An entry was written. `created` is false for the in-place update of one. */
   onWrite?(entry: LibraryEntry, created: boolean): void;
   /**
-   * The entry this editing session writes into changed — including to `null`. The app
-   * keeps it so that a reload continues the session rather than starting a second
-   * entry for the same document (§6.10).
+   * Where the document stands in the log changed: a new entry, a seal, an opened
+   * entry, an idle gap. The app puts it in the input pane's header, so that the entry
+   * being written to is visible rather than guessed at, and keeps the unsealed half of
+   * it in `localStorage` so a reload continues the session rather than starting a
+   * second entry for the same document (§6.10).
    */
-  onSession?(currentId: string | null): void;
+  onSession?(state: SessionState): void;
   /** A write failed and the entry was not stored. The app says so, loudly (§6.10). */
   onWriteFailure?(failure: WriteFailure): void;
   /** The document crossed {@link MAX_ENTRY_SOURCE}, and back. */
@@ -464,17 +596,56 @@ export interface Library {
   readonly available: boolean;
   /** Whether the user asked the app to stop logging (a declined prune, §6.10). */
   readonly paused: boolean;
-  /** The entry this editing session is writing into, if it has one yet. */
+  /** The entry this editing session is writing into, if it has one and it is open. */
   readonly currentId: string | null;
+  /** Where the document on screen stands: which entry, and whether it is sealed. */
+  readonly session: SessionState;
   /** Note the document as it stands; the write is debounced and may create an entry. */
   record(source: string, options: AppOptions, preview: string): void;
   /** Write anything pending now — for `pagehide`. */
   flush(): Promise<void>;
   /** The document was replaced wholesale: the next `record` starts a new entry. */
   beginNewEntry(): void;
+  /**
+   * One input event happened, from `before` to `after`. Answers what it did to the
+   * session, so the app can say so and offer to undo it.
+   *
+   * This is where a seal ends and where {@link forksEntry} applies, rather than at the
+   * conversion that follows: both are facts about an *edit*, and a document that fails
+   * to convert is being replaced just as surely as one that succeeds.
+   */
+  noteEdit(before: string, after: string): EditOutcome;
   /** Keep logging into an existing entry — what opening one from the pane does. */
   adopt(id: string): void;
-  /** Star this session's entry, creating it first if there is not one yet. */
+  /**
+   * Come back to an entry that is already sealed: the document on screen is its
+   * source, so nothing is written until that source changes — and the change starts a
+   * new entry rather than editing what was kept.
+   */
+  adoptSealed(entry: LibraryEntry): void;
+  /**
+   * Stop this entry absorbing edits, and hand it back: what New, Save and ★ all do
+   * first (§6.10).
+   *
+   * Whatever is pending is written into it now, so the entry holds the document as it
+   * was when the button was pressed. The *next* entry is not created here — it is
+   * created lazily, by the first {@link record} whose source differs, so that pressing
+   * Save and walking away cannot leave an empty entry in the log.
+   */
+  seal(source: string, options: AppOptions, preview: string): Promise<LibraryEntry | null>;
+  /**
+   * Undo an automatic fork: the draft that was started belongs to `id` after all.
+   *
+   * What the draft has written is folded back into `id`, and the entry the fork made —
+   * that one only, and never a starred one — is removed. A wrong guess by
+   * {@link forksEntry} therefore costs a click rather than the user's work.
+   */
+  mergeBack(id: string): Promise<boolean>;
+  /**
+   * Star the entry the document belongs to, sealing it first if it is still open.
+   *
+   * On an already-sealed entry this is only the flag: ★ does not seal a second time.
+   */
   starCurrent(
     source: string,
     options: AppOptions,
@@ -518,7 +689,15 @@ interface Pending {
  * keystrokes. It is created on the first conversion of a non-empty document and
  * updated from then on; it ends when the document is replaced wholesale
  * ({@link Library.beginNewEntry}), when another entry is opened
- * ({@link Library.adopt}), or when nothing has happened for {@link IDLE_GAP_MS}.
+ * ({@link Library.adopt}), when the user seals it ({@link Library.seal}), when one
+ * input event replaces the document ({@link forksEntry}), or when nothing has happened
+ * for {@link IDLE_GAP_MS}.
+ *
+ * A *sealed* entry is the one state that is neither open nor gone: the document it
+ * holds is still on screen, nothing is written to it, and the first {@link record}
+ * whose source differs starts the next entry. That laziness is the point — an entry
+ * created eagerly at the moment of sealing would be an empty one for anybody who
+ * pressed Save and walked away.
  *
  * A pending write carries the entry it was made for and the session it belongs to, so
  * that ending a session is synchronous and still cannot misfile the keystrokes that
@@ -536,6 +715,12 @@ export function createLibrary(init: LibraryInit): Library {
   let handle: number | null = null;
   let pending: Pending | null = null;
   let currentId: string | null = null;
+  /**
+   * The entry the user sealed, while its document is still the one on screen: its id,
+   * and the source it holds. The source is what makes the next entry lazy — a `record`
+   * of the same text is not an edit, so it writes nothing at all.
+   */
+  let sealed: { id: string; source: string } | null = null;
   let session = 0;
   let lastRecordAt = 0;
   let oversize = false;
@@ -553,11 +738,50 @@ export function createLibrary(init: LibraryInit): Library {
     return next;
   }
 
-  /** The one place `currentId` moves, so nothing can change it without saying so. */
+  /** What was last reported, so that a state that has not moved says nothing. */
+  let told: SessionState = { entryId: null, sealed: false };
+
+  function sessionState(): SessionState {
+    return { entryId: currentId ?? sealed?.id ?? null, sealed: sealed !== null };
+  }
+
+  /**
+   * Say where the document stands, if it has moved.
+   *
+   * Every change to `currentId` or `sealed` goes through here, so nothing can move the
+   * session without the header being told — which is the whole of item 8's first
+   * complaint.
+   */
+  function announce(): void {
+    const state = sessionState();
+    if (state.entryId === told.entryId && state.sealed === told.sealed) return;
+    told = state;
+    init.onSession?.(state);
+  }
+
+  /**
+   * Write into this entry from now on, or into none.
+   *
+   * An open entry and a sealed one are exclusive states, so adopting one ends the
+   * other: only {@link Library.seal} and {@link Library.adoptSealed} move the session
+   * the other way.
+   */
   function setCurrent(id: string | null): void {
-    if (currentId === id) return;
     currentId = id;
-    init.onSession?.(id);
+    if (id !== null) sealed = null;
+    announce();
+  }
+
+  /**
+   * These entries are gone: if the session was pointing at one of them, it is now
+   * pointing at nothing rather than at an id that finds no entry.
+   */
+  function forget(ids: readonly string[]): void {
+    if (sealed !== null && ids.includes(sealed.id)) {
+      sealed = null;
+      announce();
+    }
+    if (currentId !== null && ids.includes(currentId)) setCurrent(null);
   }
 
   function cancelTimer(): void {
@@ -678,6 +902,55 @@ export function createLibrary(init: LibraryInit): Library {
     return updated;
   }
 
+  /**
+   * The document that was on screen is gone: whatever is pending is written into the
+   * entry it belonged to, and the session is left holding nothing at all.
+   */
+  function endSession(): void {
+    cancelTimer();
+    // Whatever is pending belongs to the document being replaced: it is written into
+    // that entry rather than dropped, which is what `target` is for.
+    const snapshot = take();
+    session += 1;
+    sealed = null;
+    setCurrent(null);
+    lastRecordAt = 0;
+    void serialise(() => commit(snapshot));
+  }
+
+  /**
+   * Seal whatever is open and hand the entry back — the primitive under all three
+   * verbs.
+   *
+   * The document as it stands is written first, so the entry holds what was on screen
+   * when the button was pressed rather than what the last conversion happened to
+   * catch. Nothing is created for what comes next: `record` does that, and only once
+   * the text has actually changed.
+   */
+  function sealDraft(
+    source: string,
+    options: AppOptions,
+    preview: string,
+  ): Promise<LibraryEntry | null> {
+    cancelTimer();
+    if (source.trim() !== '' && source.length <= MAX_ENTRY_SOURCE && !paused) {
+      pending = { source, options, preview, at: now(), target: currentId, session };
+    }
+    const snapshot = take();
+    return serialise(async () => {
+      await commit(snapshot);
+      if (currentId === null) return null;
+      const entry = await read(currentId);
+      if (!entry) return null;
+      currentId = null;
+      sealed = { id: entry.id, source: entry.source };
+      lastRecordAt = 0;
+      session += 1;
+      announce();
+      return entry;
+    });
+  }
+
   return {
     get available() {
       return backend !== null;
@@ -688,12 +961,24 @@ export function createLibrary(init: LibraryInit): Library {
     get currentId() {
       return currentId;
     },
+    get session() {
+      return sessionState();
+    },
 
     record(source, options, preview) {
       if (!backend || paused) return;
       // An empty document is not a document: the log starts at the first conversion
       // of something (§6.10).
       if (source.trim() === '') return;
+      if (sealed !== null) {
+        // The kept version, still on screen: there is nothing to write, and writing
+        // anyway would be the in-place update the seal exists to stop.
+        if (source === sealed.source) return;
+        // And the first edit after it is where the next entry begins — here, rather
+        // than at the moment of sealing, so that Save cannot leave an empty one.
+        sealed = null;
+        announce();
+      }
       if (source.length > MAX_ENTRY_SOURCE) {
         // Never logged truncated, and never at the expense of anything else.
         if (!oversize) {
@@ -724,15 +1009,25 @@ export function createLibrary(init: LibraryInit): Library {
       await serialise(() => commit(snapshot));
     },
 
-    beginNewEntry() {
-      cancelTimer();
-      // Whatever is pending belongs to the document being replaced: it is written
-      // into that entry rather than dropped, which is what `target` is for.
-      const snapshot = take();
-      session += 1;
-      setCurrent(null);
-      lastRecordAt = 0;
-      void serialise(() => commit(snapshot));
+    beginNewEntry: endSession,
+
+    noteEdit(before, after) {
+      if (!backend || paused) return { kind: 'none' };
+      if (sealed !== null) {
+        // Back to the text that was kept — an undo, or a typo and its correction —
+        // so the seal stands.
+        if (after === sealed.source) return { kind: 'none' };
+        const from = sealed.id;
+        sealed = null;
+        announce();
+        return { kind: 'unsealed', from };
+      }
+      if (currentId === null || !forksEntry(before, after)) return { kind: 'none' };
+      const from = currentId;
+      // Exactly what Load ▾ does, and for the same reason: the document that was
+      // there has been replaced, and what was pending belongs to it.
+      endSession();
+      return { kind: 'forked', from };
     },
 
     adopt(id) {
@@ -744,22 +1039,79 @@ export function createLibrary(init: LibraryInit): Library {
       void serialise(() => commit(snapshot));
     },
 
-    async starCurrent(source, options, preview) {
-      if (!backend) return null;
-      // Pressing the star on a document that has not been logged yet has to produce
-      // something visible, so its entry is written now rather than in two seconds.
-      if (pending === null && currentId === null && source.trim() !== '') {
-        if (source.length > MAX_ENTRY_SOURCE) return null;
-        pending = { source, options, preview, at: now(), target: null, session };
-      }
+    adoptSealed(entry) {
       cancelTimer();
       const snapshot = take();
+      session += 1;
+      currentId = null;
+      sealed = { id: entry.id, source: entry.source };
+      lastRecordAt = 0;
+      announce();
+      void serialise(() => commit(snapshot));
+    },
+
+    seal(source, options, preview) {
+      if (!backend) return Promise.resolve(null);
+      // Already sealed: the entry is what it is, and Save on it is a no-op rather
+      // than a second seal of the same text.
+      if (sealed !== null) return read(sealed.id);
+      return sealDraft(source, options, preview);
+    },
+
+    mergeBack(id) {
       return serialise(async () => {
-        await commit(snapshot);
-        if (currentId === null) return null;
-        const updated = await patch(currentId, (entry) => ({ ...entry, starred: !entry.starred }));
-        return updated ? { entry: updated, starred: updated.starred } : null;
+        if (!backend) return false;
+        // What the fork created, if the two seconds since it happened were up.
+        const stray = currentId;
+        cancelTimer();
+        let snapshot = take();
+        if (snapshot === null && stray !== null && stray !== id) {
+          // The draft is already an entry of its own: its text is what has to be
+          // folded back, and the entry itself is what has to go.
+          const written = await read(stray);
+          if (written) {
+            snapshot = {
+              source: written.source,
+              options: written.options,
+              preview: written.preview,
+              at: written.updatedAt,
+              target: null,
+              session,
+            };
+          }
+        }
+        session += 1;
+        sealed = null;
+        setCurrent(id);
+        lastRecordAt = now();
+        if (snapshot) await commit({ ...snapshot, target: id, session });
+        if (stray !== null && stray !== id) {
+          const written = await read(stray);
+          // Never a starred entry, whatever else is true: starring is the user saying
+          // this one matters, and no automatic mechanism may override it (§6.10).
+          if (written && !written.starred) {
+            try {
+              await backend.remove([stray]);
+            } catch (error) {
+              init.onWriteFailure?.(failureOf(error));
+            }
+          }
+        }
+        init.onChange?.();
+        return true;
       });
+    },
+
+    async starCurrent(source, options, preview) {
+      if (!backend) return null;
+      // ★ seals as well as stars — but only once: on an entry that is already sealed
+      // it is the flag and nothing else (§6.10).
+      const entry = sealed !== null ? await read(sealed.id) : await sealDraft(source, options, preview);
+      if (!entry) return null;
+      const updated = await serialise(() =>
+        patch(entry.id, (existing) => ({ ...existing, starred: !existing.starred })),
+      );
+      return updated ? { entry: updated, starred: updated.starred } : null;
     },
 
     star(id, starred) {
@@ -783,7 +1135,7 @@ export function createLibrary(init: LibraryInit): Library {
           init.onWriteFailure?.(failureOf(error));
           return null;
         }
-        if (currentId === id) setCurrent(null);
+        forget([id]);
         init.onChange?.();
         return existing;
       });
@@ -806,7 +1158,7 @@ export function createLibrary(init: LibraryInit): Library {
           init.onWriteFailure?.(failureOf(error));
           return false;
         }
-        if (currentId !== null && ids.includes(currentId)) setCurrent(null);
+        forget(ids);
         init.onChange?.();
         return true;
       });
@@ -821,6 +1173,7 @@ export function createLibrary(init: LibraryInit): Library {
           init.onWriteFailure?.(failureOf(error));
           return false;
         }
+        sealed = null;
         setCurrent(null);
         init.onChange?.();
         return true;
@@ -840,7 +1193,7 @@ export function createLibrary(init: LibraryInit): Library {
           init.onWriteFailure?.(failureOf(error));
           return false;
         }
-        if (currentId !== null && remove.includes(currentId)) setCurrent(null);
+        forget(remove);
         init.onChange?.();
         return true;
       });

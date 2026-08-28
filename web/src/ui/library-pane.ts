@@ -197,12 +197,28 @@ export function initLibraryPane(init: LibraryPaneInit): LibraryPane {
 
   const detailDates = el('p', 'library-detail-dates');
   const detailOptions = el('p', 'library-detail-options');
+
+  /**
+   * The entry's document, in full and in its own scrolling region (§6.10).
+   *
+   * An entry that cannot be read is a filing cabinet with the drawers welded shut, and
+   * nothing new has to be stored for it: an entry has always kept the whole `source`.
+   * The stored `preview` below is the *rendered* output and stays what it is — a few
+   * lines for the card, allowed to be stale, and never the document.
+   */
+  const sourceCaption = el('p', 'library-caption', 'The LaTeX source');
+  const detailSource = el('pre', 'library-source');
+  detailSource.tabIndex = 0;
+  detailSource.setAttribute('aria-label', 'The LaTeX source of this entry');
+
+  const previewCaption = el('p', 'library-caption', 'The converted text, as it was');
   const detailPreview = el('pre', 'library-preview');
   detailPreview.tabIndex = 0;
   detailPreview.setAttribute('aria-label', 'The first lines of the converted text');
 
   const openButton = button('btn btn-accent', 'Open');
   const starButton = button('btn', '☆ Star');
+  starButton.title = 'Keep this one — starred entries are never removed automatically';
   const renameButton = button('btn', 'Rename');
   const copyButton = button('btn', 'Copy source');
   const downloadButton = button('btn', 'Download source');
@@ -219,7 +235,19 @@ export function initLibraryPane(init: LibraryPaneInit): LibraryPane {
   );
 
   const detailBody = el('div', 'library-detail-body');
-  detailBody.append(detailTitle, renameInput, detailDates, detailOptions, detailPreview, detailActions);
+  // The actions come before the two reading regions rather than after them: on a phone
+  // the source alone is a screenful, and Open would otherwise be a scroll away.
+  detailBody.append(
+    detailTitle,
+    renameInput,
+    detailDates,
+    detailOptions,
+    detailActions,
+    sourceCaption,
+    detailSource,
+    previewCaption,
+    detailPreview,
+  );
 
   const detailEmpty = el('p', 'library-empty', 'Select an entry to see it.');
 
@@ -303,7 +331,7 @@ export function initLibraryPane(init: LibraryPaneInit): LibraryPane {
     if (entries.length === 0) {
       return 'Nothing here yet. Every document you convert is logged automatically.';
     }
-    if (starredOnly && query.trim() === '') return 'No starred entries. ⭐ Save marks one.';
+    if (starredOnly && query.trim() === '') return 'No starred entries. The ★ button marks one.';
     return 'Nothing matches that search.';
   }
 
@@ -316,7 +344,12 @@ export function initLibraryPane(init: LibraryPaneInit): LibraryPane {
     detailTitle.textContent = entry.title;
     detailDates.textContent = `Updated ${when(entry.updatedAt)} · first converted ${when(entry.createdAt)}`;
     detailOptions.textContent = describeOptions(entry.options);
+    detailSource.textContent = entry.source;
+    // Back to the top: the region is reused for every entry, and a new document
+    // scrolled to where the last one was read is a small lie about what it is.
+    detailSource.scrollTop = 0;
     detailPreview.textContent = entry.preview === '' ? '(no preview was stored)' : entry.preview;
+    detailPreview.scrollTop = 0;
     starButton.textContent = entry.starred ? '★ Starred' : '☆ Star';
     starButton.title = entry.starred ? 'Remove the star' : 'Keep this one';
   }
