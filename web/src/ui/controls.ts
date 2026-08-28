@@ -88,14 +88,14 @@ export function initControls(init: ControlsInit): Controls {
 
   const wrapChoices: Choice[] = [
     { value: 'fit', label: 'Fit the pane' },
-    { value: 'off', label: 'Off (default)' },
-    { value: 'soft', label: 'Off, soft-wrapped' },
+    { value: 'off', label: 'Off' },
+    { value: 'soft', label: 'Soft (default)' },
     ...WRAP_PRESETS.map((n) => ({ value: String(n), label: `${n} columns` })),
     { value: 'custom', label: 'Custom…' },
   ];
   const wrapSelect = select('opt-wrap', wrapChoices);
   const wrapField = field('opt-wrap', 'Wrap', wrapSelect, {
-    hint: 'Fit measures the pane and wraps the text to it. Both Off settings leave the text unwrapped: Off scrolls sideways, soft-wrapped folds long lines to the pane, on screen only.',
+    hint: 'Fit measures the pane and wraps the text to it. Off and Soft both leave the text unwrapped: Off scrolls sideways, Soft folds long lines to the pane, on screen only.',
     className: 'field-wrap',
     bar: true,
   });
@@ -328,10 +328,10 @@ export function initControls(init: ControlsInit): Controls {
 
   function writeWrap(wrap: WrapMode | undefined): void {
     // Absent means the *app's* default, not the library's: `DEFAULT_OPTIONS` in
-    // state.ts is `{ wrap: 'fit', todayMode: 'browser' }`, and `resolveOptions` reads
+    // state.ts is `{ wrap: 'soft', todayMode: 'browser' }`, and `resolveOptions` reads
     // an absent key the same way (§5). Both are emitted explicitly below, so this
     // only decides what an empty option object looks like.
-    const value: WrapMode = wrap ?? 'fit';
+    const value: WrapMode = wrap ?? 'soft';
     if (value === 'fit' || value === 'off' || value === 'soft') {
       wrapSelect.value = value;
     } else {

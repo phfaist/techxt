@@ -119,20 +119,25 @@ tests in `rust/techxt/tests/`.
 
 # 1. Wrap defaults to soft-wrap
 
+> **Done** — 2026-08-28. Soft is the default; the select reads Fit the pane / Off /
+> Soft (default); PLAN §5 and §6.3 updated. The hint sentence was reworded rather than
+> kept verbatim: it named "both Off settings", which stopped being what the list says
+> once the third entry became **Soft**. It still explains all three answers.
+
 **The smallest item. Do it first; it is unblocked and touches nothing else.**
 
 `wrap` already has the value `'soft'` internally — it is only the *default* and the
 *label* that change.
 
-- [ ] `DEFAULT_OPTIONS.wrap` in `src/state.ts` becomes `'soft'`.
-- [ ] `src/ui/controls.ts` (~line 90): the wrap select reads `Fit the pane` /
+- [x] `DEFAULT_OPTIONS.wrap` in `src/state.ts` becomes `'soft'`.
+- [x] `src/ui/controls.ts` (~line 90): the wrap select reads `Fit the pane` /
       `Off` / `Soft (default)`. Today it says `Off (default)` and
       `Off, soft-wrapped`; the "(default)" marker moves and the third entry is renamed
       to just **Soft**. Keep the hint sentence, which is where the full explanation of
       the three answers lives.
-- [ ] `web/PLAN.md` §5 and §6.3: the option table's default column, and the prose that
+- [x] `web/PLAN.md` §5 and §6.3: the option table's default column, and the prose that
       calls *Fit* "the app being helpful".
-- [ ] Update `test/state.test.ts` / `test/options.test.ts` wherever they assert the
+- [x] Update `test/state.test.ts` / `test/options.test.ts` wherever they assert the
       default or rely on `pruneOptions` dropping `wrap`.
 
 **Decided: no backwards compatibility.** A share link or a stored setting that omits

@@ -26,13 +26,15 @@ import type { OptionsPayload } from './worker/protocol';
 /**
  * The app's starting options.
  *
- * `wrap: 'fit'` and `todayMode: 'browser'` are the two places the app overrides a
- * library default on purpose (§5): unwrapped output is right for a CLI writing to a
- * file and wrong for a pane on a phone, and a browser has a clock where the `no_std`
- * library has only `<today>`. Every other key is absent, which *is* the library's
- * default.
+ * `wrap: 'soft'` and `todayMode: 'browser'` are the two places the app answers a
+ * question the library leaves open (§5). *Soft* keeps the library's own line breaks —
+ * none — and folds the long lines to the pane for display, so a first-time reader gets
+ * the library's text without the sideways scrolling that comes with it, and Copy and
+ * Download still hand over exactly what the library produced. A browser has a clock
+ * where the `no_std` library has only `<today>`. Every other key is absent, which *is*
+ * the library's default.
  */
-export const DEFAULT_OPTIONS: AppOptions = { wrap: 'fit', todayMode: 'browser' };
+export const DEFAULT_OPTIONS: AppOptions = { wrap: 'soft', todayMode: 'browser' };
 
 /** The presentation defaults. None of these changes a character of the output. */
 export const DEFAULT_UI: UiState = {
@@ -255,9 +257,9 @@ export function resolveOptions(
   }
 
   // Absent means the app default, not the library's: `wrap` and `todayMode` are
-  // pruned when they equal it, so a link that omits them still means Fit and the
+  // pruned when they equal it, so a link that omits them still means Soft and the
   // browser's date.
-  const wrap: WrapMode = opts.wrap ?? DEFAULT_OPTIONS.wrap ?? 'fit';
+  const wrap: WrapMode = opts.wrap ?? DEFAULT_OPTIONS.wrap ?? 'soft';
   if (wrap === 'fit') payload['wrapWidth'] = Math.max(MIN_FIT_COLUMNS, Math.floor(columns));
   else if (typeof wrap === 'number') payload['wrapWidth'] = wrap;
   // 'off' and 'soft' both omit `wrapWidth` entirely — the library's own default is no

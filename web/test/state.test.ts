@@ -87,15 +87,15 @@ beforeEach(() => {
 /* ------------------------------------------------------------------- defaults */
 
 describe('defaults', () => {
-  it('overrides exactly two library defaults, and says which', () => {
-    expect(DEFAULT_OPTIONS).toEqual({ wrap: 'fit', todayMode: 'browser' });
+  it('answers exactly two questions for the user, and says which', () => {
+    expect(DEFAULT_OPTIONS).toEqual({ wrap: 'soft', todayMode: 'browser' });
   });
 
   it('starts from an empty document and the ui defaults', () => {
     expect(defaultState()).toEqual({
       v: 1,
       doc: '',
-      opts: { wrap: 'fit', todayMode: 'browser' },
+      opts: { wrap: 'soft', todayMode: 'browser' },
       ui: {
         font: DEFAULT_FONT,
         size: DEFAULT_SIZE,
@@ -138,8 +138,8 @@ describe('sanitizeOptions', () => {
     ).toEqual({});
   });
 
-  it('keeps the soft-wrapped variant of Off, so a link and a reload reproduce it', () => {
-    expect(sanitizeOptions({ wrap: 'soft' }).wrap).toBe('soft');
+  it('keeps Off, so a link that turns the folding off reproduces it', () => {
+    expect(sanitizeOptions({ wrap: 'off' }).wrap).toBe('off');
     // …and still refuses anything that only looks like one of ours.
     expect(sanitizeOptions({ wrap: 'softly' }).wrap).toBeUndefined();
   });
@@ -159,7 +159,7 @@ describe('sanitizeOptions', () => {
 
 describe('pruneOptions', () => {
   it('drops the values that are the app default anyway', () => {
-    expect(pruneOptions({ wrap: 'fit', todayMode: 'browser', mathMode: 'plain' })).toEqual({
+    expect(pruneOptions({ wrap: 'soft', todayMode: 'browser', mathMode: 'plain' })).toEqual({
       mathMode: 'plain',
     });
   });
@@ -169,12 +169,12 @@ describe('pruneOptions', () => {
       wrap: 'off',
       keepComments: false,
     });
-    expect(pruneOptions({ wrap: 'soft' })).toEqual({ wrap: 'soft' });
+    expect(pruneOptions({ wrap: 'fit' })).toEqual({ wrap: 'fit' });
   });
 
   it('is the inverse of withDefaults', () => {
     const opts = withDefaults({ mathMode: 'source' });
-    expect(opts).toEqual({ wrap: 'fit', todayMode: 'browser', mathMode: 'source' });
+    expect(opts).toEqual({ wrap: 'soft', todayMode: 'browser', mathMode: 'source' });
     expect(withDefaults(pruneOptions(opts))).toEqual(opts);
   });
 });
@@ -224,7 +224,7 @@ describe('persistence', () => {
   it('writes the three keys of §6.4 and prunes the options on the way', () => {
     const persistence = createPersistence({ storage, clock });
     persistence.document('\\section{hi}');
-    persistence.options({ wrap: 'fit', todayMode: 'browser', mathMode: 'plain' });
+    persistence.options({ wrap: 'soft', todayMode: 'browser', mathMode: 'plain' });
     persistence.ui({ ...DEFAULT_UI, font: 'stix' });
     persistence.flush();
 
@@ -311,7 +311,7 @@ describe('loadState', () => {
 
     const loaded = await loadState({ storage, fragment: '' });
     expect(loaded.state.doc).toBe('\\emph{stored}');
-    expect(loaded.state.opts).toEqual({ wrap: 'fit', todayMode: 'browser', mathMode: 'plain' });
+    expect(loaded.state.opts).toEqual({ wrap: 'soft', todayMode: 'browser', mathMode: 'plain' });
     expect(loaded.state.ui.font).toBe('stix');
     expect(loaded.state.ui.size).toBe(17);
     expect(loaded.source).toBe('storage');
@@ -338,7 +338,7 @@ describe('loadState', () => {
     const loaded = await loadState({ storage, fragment });
     expect(loaded.state.doc).toBe('the shared one');
     expect(loaded.state.opts).toEqual({
-      wrap: 'fit',
+      wrap: 'soft',
       todayMode: 'browser',
       headingStyle: 'plain',
     });

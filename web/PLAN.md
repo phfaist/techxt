@@ -428,25 +428,38 @@ unless it proves cheap.
 
 | Control | Maps to | Default |
 |---|---|---|
-| Wrap: Fit / Off / Off, soft-wrapped / 40 / 60 / 72 / 80 / custom | `wrap_width(Option<usize>)` | **Fit** (see below) |
+| Wrap: Fit / Off / Soft / 40 / 60 / 72 / 80 / custom | `wrap_width(Option<usize>)` | **Soft** (see below) |
 | Math: Fancy / Plain / Source | `math_mode` | Fancy |
 | Display font: JuliaMono / Fira Math / Latin Modern / STIX Two / Libertinus / System | CSS only | JuliaMono |
 
-*Fit* is an app-level value, not a library one: it measures the output pane and sends
-the resulting column count (§6.5). The library default is `None` (no wrapping), which
-is right for a CLI writing to a file and wrong for a pane on a phone, where unwrapped
-output means horizontal scrolling. The distinction is visible in the UI: *Off* is the
-library default, *Fit* is the app being helpful.
+*Soft* is the app's default, and it is the library's own answer shown kindly: it sends
+the library exactly what *Off* sends (nothing: `wrap_width` stays `None`) and differs
+only in the CSS the output pane is shown in, which folds the long lines to the
+container's width (§6.3). Because the fold is display only, Copy and Download hand over
+the same text *Off* would, byte for byte — so the app's default no longer rewrites the
+text the user came for. That is why it, rather than *Fit*, is where a fresh profile
+starts: the app's opinion is confined to the pane, and the bytes that leave are the
+library's.
 
-*Off, soft-wrapped* is the third answer, for the reader who wants the library's own
-line breaks — none — without the sideways scrolling that comes with them. It sends the
-library exactly what *Off* sends (nothing: `wrap_width` stays `None`) and differs only
-in the CSS the output pane is shown in, which folds the long lines to the container's
-width (§6.3). Because the fold is display only, Copy and Download hand over the same
-text *Off* would, byte for byte — which is the property that makes offering it safe.
-It is a value of `wrap` rather than a separate toggle so that it stays one question
-with one answer: *where do the line breaks come from?* — the pane, the library, a
-column count — with the two library-default answers next to each other in the list.
+*Fit* is an app-level value, not a library one: it measures the output pane and sends
+the resulting column count (§6.5), which is a real change to the output — hard line
+breaks at a width nobody asked for by name. It is the right answer for someone
+producing text to paste into a fixed-width medium, and it stays one keystroke away, but
+it is a decision the user should make rather than inherit.
+
+The three answers are values of `wrap` rather than a toggle beside it so that it stays
+one question with one answer: *where do the line breaks come from?* — the pane, the
+library, a column count — with the two library-default answers next to each other in
+the list.
+
+**No backwards compatibility was kept for the change of default.** A share link or a
+stored setting that omits `wrap` now means *Soft* where it used to mean *Fit*, and no
+migration writes an explicit `wrap: 'fit'` into older state. This is deliberate: absent
+means "the app's default" everywhere else in this file (§6.4), and freezing one key's
+old meaning for the benefit of links already in the wild would cost that rule more than
+it is worth. The visible consequence is that Copy and Download over an old link now
+hand over unwrapped long lines — which is what *Soft* is, and what the reader's own
+text viewer is equipped to fold.
 
 **"More options"** — a `<details>` disclosure, three fieldsets:
 
@@ -556,14 +569,15 @@ matter this is microseconds compared to conversion).
 wrapping by the browser would misrepresent the output — with *Wrap: Off* the correct
 behaviour is a horizontal scrollbar. `textContent` assignment only (no `innerHTML`).
 
-The one exception is *Wrap: Off, soft-wrapped* (§5), and it is an exception only
-because the user asked for it by name: the pane adds `white-space: pre-wrap` plus
+The one exception is *Wrap: Soft* (§5) — which, being the default, is the state the
+pane is usually in: it adds `white-space: pre-wrap` plus
 `overflow-wrap: break-word` (the second so a line with no space in it — a long URL, a
 `\verb` run — is folded too rather than left to overflow). This is not the browser
-second-guessing the library; it is the reader saying they would rather read down the
-pane than scroll across it. Nothing else changes: `Panes.setSoftWrap` only toggles a
-class, the `<pre>`'s `textContent` still holds the library's long lines, and Copy and
-Download read `Panes.getOutput()` rather than anything the DOM has folded.
+second-guessing the library; it is the pane admitting it is narrower than a page, and
+folding rather than hiding what does not fit. Nothing else changes: `Panes.setSoftWrap`
+only toggles a class, the `<pre>`'s `textContent` still holds the library's long lines,
+and Copy and Download read `Panes.getOutput()` rather than anything the DOM has
+folded.
 
 Copy uses `navigator.clipboard.writeText` with a `<textarea>`+`execCommand` fallback
 for older iOS; Download builds a `Blob` and a temporary object URL, named after the

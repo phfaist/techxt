@@ -53,16 +53,18 @@ describe('resolveOptions: wrapping', () => {
     expect(resolveOptions({ wrap: 72 }, 88, NOON).wrapWidth).toBe(72);
   });
 
-  it('treats an absent wrap as the app default, which is Fit', () => {
-    expect(DEFAULT_OPTIONS.wrap).toBe('fit');
-    expect(resolveOptions({}, 64, NOON).wrapWidth).toBe(64);
+  it('treats an absent wrap as the app default, which is Soft', () => {
+    expect(DEFAULT_OPTIONS.wrap).toBe('soft');
+    // And Soft asks the library for nothing, so the app's own default no longer
+    // changes a byte of the converted text (§5).
+    expect('wrapWidth' in resolveOptions({}, 64, NOON)).toBe(false);
   });
 
   it('never asks for fewer columns than the pane arithmetic allows', () => {
     expect(resolveOptions({ wrap: 'fit' }, 3, NOON).wrapWidth).toBe(MIN_FIT_COLUMNS);
   });
 
-  it('sends the library exactly the same thing for soft-wrapped as for Off', () => {
+  it('sends the library exactly the same thing for Soft as for Off', () => {
     // The whole point of the mode: the *text* is Wrap: Off's text, and only the pane
     // it is shown in differs (§6.3).
     expect(resolveOptions({ wrap: 'soft' }, 88, NOON)).toEqual(
@@ -81,7 +83,7 @@ describe('softWraps', () => {
   });
 
   it('reads an absent wrap as the app default, exactly as resolveOptions does', () => {
-    expect(softWraps({})).toBe(false);
+    expect(softWraps({})).toBe(true);
   });
 });
 

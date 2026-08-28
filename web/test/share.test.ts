@@ -72,8 +72,8 @@ describe('encodeShare / decodeShare', () => {
     const fragment = await encodeShare({
       v: 1,
       doc: 'hi',
-      // `wrap: 'fit'` and `todayMode: 'browser'` are the app's own defaults.
-      opts: { wrap: 'fit', todayMode: 'browser', mathMode: 'plain' },
+      // `wrap: 'soft'` and `todayMode: 'browser'` are the app's own defaults.
+      opts: { wrap: 'soft', todayMode: 'browser', mathMode: 'plain' },
     });
     const decoded = await decodeShare(fragment);
     expect(decoded?.opts).toEqual({ mathMode: 'plain' });

@@ -22,6 +22,7 @@ import { DEFAULT_EXAMPLE, EXAMPLES } from './examples';
 import { applyFont, preloadAllFonts } from './fonts';
 import type { FontId } from './fonts';
 import {
+  DEFAULT_OPTIONS,
   SHARE_LENGTH_LIMIT,
   browserStorage,
   createPersistence,
@@ -330,7 +331,7 @@ async function start(): Promise<void> {
       // Only *Fit* cares, only a real change is worth a conversion, and nothing at
       // all before the first conversion has been issued (§6.5).
       if (lastColumns < 0 || columns === lastColumns) return;
-      if ((state.opts.wrap ?? 'fit') !== 'fit') return;
+      if ((state.opts.wrap ?? DEFAULT_OPTIONS.wrap) !== 'fit') return;
       requestConversion('immediate');
     },
     onSplitChange(split) {

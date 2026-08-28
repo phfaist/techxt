@@ -7,8 +7,8 @@
  * - The output is `white-space: pre` and is written with `textContent`. The library
  *   decided the line breaks; a second, invisible wrapping by the browser would
  *   misrepresent the output, so *Wrap: Off* scrolls horizontally instead (§6.3).
- *   *Wrap: Off, soft-wrapped* is the one exception, and an explicit one: the user
- *   asked for the folding, so {@link Panes.setSoftWrap} turns it on in CSS. The text
+ *   *Wrap: Soft* is the one exception, and an explicit one: it is the answer the app
+ *   starts on, so {@link Panes.setSoftWrap} turns the folding on in CSS. The text
  *   itself is untouched either way — `getOutput` is what Copy and Download hand over.
  * - The fit-to-pane measurement (§6.5) is what makes *Wrap: Fit* mean anything: the
  *   pane's width in pixels becomes a column count the library can wrap to.
