@@ -827,16 +827,42 @@ select.control {
   border-radius: var(--r);
 }
 
-/* The source is code: the platform's monospace, at a size of its own (§8.1). */
+/*
+ * The source is code: the platform's monospace, at a size of its own (§8.1).
+ *
+ * Both layers of the editor wear this class, and it is where the overlay's one
+ * invariant is settled: **every character in the mirror sits underneath the same
+ * character in the textarea, at every width, with and without a scrollbar, in both
+ * wrapping states** (§6.12). Anything that can move a glyph — the wrapping mode, the
+ * font, the padding, the content width — has to be one declaration read by both, and
+ * the two properties below are the ones that are *not* had for free by sharing a class.
+ *
+ * `scrollbar-gutter: stable` is the load-bearing one. A classic scrollbar takes its
+ * width out of the **content** box, so a textarea tall enough to need one wraps at a
+ * narrower column than a mirror that has hidden its own — and since the two layers
+ * share a border box, nothing about their geometry says so. Every wrapped line then
+ * drifts a little further out of step down the document. Reserving the gutter on both,
+ * always, makes the wrap column a fact about the pane's width and nothing else: the
+ * same number on both layers, and one that does not change the moment a document grows
+ * past a screenful. Where the platform draws overlay scrollbars the gutter is zero on
+ * both, which agrees just as well.
+ *
+ * `font-variation-settings` is the other: a `<textarea>` does not inherit it, because
+ * the UA stylesheet's `font` shorthand resets it, while the mirror is a plain `<div>`
+ * that inherits the interface face's axes from the page. Harmless while the pane is
+ * monospace, and a metric mismatch waiting to happen if it ever is not.
+ */
 .pane-input {
   display: block;
   width: 100%;
   resize: none;
   overflow: auto;
+  scrollbar-gutter: stable;
   white-space: pre-wrap;
   overflow-wrap: break-word;
   font-family: var(--mono);
   font-size: var(--code-size);
+  font-variation-settings: normal;
 }
 
 /*
@@ -909,15 +935,21 @@ select.control {
   inset: 0;
 }
 
+/*
+ * The mirror keeps a real scrollbar and paints it in nothing.
+ *
+ * Hiding it outright (`scrollbar-width: none`) takes the gutter away with it — the
+ * gutter `scrollbar-gutter: stable` reserves is the scrollbar's own width, and a
+ * scrollbar of no width reserves nothing — which puts the mirror's wrap column a
+ * scrollbar wider than the textarea's and is exactly the drift above. So the width
+ * stays and only the ink goes. There is nothing to see either way: this sits behind a
+ * textarea whose own scrollbar is drawn over the same strip.
+ */
 .pane-input-backdrop {
   overflow: auto;
   color: transparent;
   pointer-events: none;
-  scrollbar-width: none;
-}
-
-.pane-input-backdrop::-webkit-scrollbar {
-  display: none;
+  scrollbar-color: transparent transparent;
 }
 
 /*

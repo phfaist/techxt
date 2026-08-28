@@ -1449,6 +1449,9 @@ function buildMirror(area: HTMLTextAreaElement): HTMLDivElement {
     'font-style',
     'font-variant',
     'font-feature-settings',
+    // Copied for the same reason `styles.css` sets it on `.pane-input`: a `<textarea>`
+    // does not inherit it, and a `<div>` dropped into the page does.
+    'font-variation-settings',
     'letter-spacing',
     'word-spacing',
     'line-height',
@@ -1467,9 +1470,17 @@ function buildMirror(area: HTMLTextAreaElement): HTMLDivElement {
   ];
   for (const prop of copy) mirror.style.setProperty(prop, style.getPropertyValue(prop));
   mirror.style.setProperty('box-sizing', 'content-box');
-  // The resolved `width` of an element is its content box, which is what the mirror
-  // needs once its own padding and border are set from the same source.
-  mirror.style.setProperty('width', style.getPropertyValue('width'));
+  // The content width, measured rather than declared. Neither obvious way of asking
+  // gives it: the *resolved* `width` is the used value of the `width` property, which
+  // under this app's `box-sizing: border-box` is the border box, and it says nothing
+  // about the scrollbar; `clientWidth` is the padding box, already less whatever a
+  // classic scrollbar or a reserved gutter has taken out of it. So it is `clientWidth`
+  // minus the padding — which is also why this needs no opinion about
+  // `scrollbar-gutter` (§6.12) beyond letting the textarea answer for itself.
+  const padding =
+    parseFloat(style.getPropertyValue('padding-left') || '0') +
+    parseFloat(style.getPropertyValue('padding-right') || '0');
+  mirror.style.setProperty('width', `${Math.max(0, area.clientWidth - padding)}px`);
   mirror.style.setProperty('height', 'auto');
   mirror.style.setProperty('position', 'absolute');
   mirror.style.setProperty('top', '0');

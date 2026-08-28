@@ -833,6 +833,38 @@ library export."* while the library stayed exactly as it was.
 > text rebuilt into the mirror every time. Highlighting adds 0.6 ms to that. Nobody had
 > measured it because the conversion, the thing everyone expected to be slow, has a worker
 > and a debounce in front of it while the keystroke does not. It is now **item 7** below.
+>
+> **Regression, and the fix — 2026-08-28.** Reported from a real paper: the highlighting
+> came away from the code wherever a line wrapped, and the pane could not be edited. Both
+> were one geometry mistake with two faces. The two layers share a *border* box
+> (`position: absolute; inset: 0`) and wrap at their *content* box, and the mirror carried
+> `scrollbar-width: none` while the textarea showed a real scrollbar — so on any document
+> tall enough to scroll, the textarea wrapped **15 px narrower** than the mirror. Measured
+> in Chromium on a 27 KB LaTeX paper of the reported shape: content widths 650 px against
+> 665 px, wrapped heights 11 514 px against 11 254 px. That produced the drift *and* the
+> "cannot edit": clicking a glyph put the caret **333 to 688 characters** away from it,
+> growing with depth, so what you typed appeared somewhere else entirely; and the mirror,
+> being shorter, clamped 260 px before the textarea's own scroll bottom, so the end of the
+> document could not be brought on screen at all. No exception was thrown, no keystroke
+> was swallowed, the console stayed clean and `is-composing` never latched — every one of
+> those was reproduced and ruled out before the geometry was believed. The fix is
+> `scrollbar-gutter: stable` on the rule *both* layers read, plus a mirror that keeps a
+> real scrollbar painted in nothing rather than removing one, since removing it takes the
+> reserved gutter with it. Afterwards: widths and heights equal, click-to-caret exact,
+> a mirror-against-textarea pixel diff down from 5–8.6 % of the pane to 0.24–0.55 %
+> (residual sub-pixel antialiasing at span boundaries, no glyph displaced).
+>
+> A second, older bug came out of checking that the gutter markers still landed on their
+> spans: they did not, and had not since W4. The throwaway mirror `ui/panes.ts` measures
+> caret offsets in took its width from the resolved `width`, which under this app's
+> `box-sizing: border-box` is the *border* box and knows nothing about a scrollbar — so it
+> was 43.8 px too wide, and markers sat **107 to 687 px** above their own underline while
+> the diagnostics' jump-to-source scrolled a span 944 px outside a 615 px pane. It now
+> takes `clientWidth` minus the padding. Markers are within 0.8–8.0 px of a 21.7 px row
+> (the residue is sub-pixel line-box rounding between a `<textarea>` and a `<div>`), and
+> the jump lands its span 293 px into the pane. `web/test/editor-mirror.test.ts` guards
+> the stylesheet's shape — the pixels need a browser, and PLAN §6.12 now states the
+> invariant they are held against.
 
 **This reverses `web/PLAN.md` §1 and §16**, which currently name syntax highlighting
 and a code editor component as non-goals ("a textarea is honest and fast, and

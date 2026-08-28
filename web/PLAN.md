@@ -1288,12 +1288,39 @@ window, and an overlay that hid it would eat the input method — so `compositio
 puts the real text back on screen and `compositionend` takes the colours up again, which
 costs a colourless second and nothing else. *Scroll synchronisation*: the mirror's
 `scrollTop` and `scrollLeft` are set from the textarea's on every scroll, as they were for
-the gutter. *Font metrics*: the mirror carries the textarea's own classes rather than a
-copy of its style, so there is one declaration and not two. *Mobile autocorrect*: the
+the gutter. *Metrics*: the mirror carries the textarea's own classes rather than a copy
+of its style, so there is one declaration and not two — see below for why that is
+necessary and was not sufficient. *Mobile autocorrect*: the
 textarea has turned off `autocapitalize`, `autocorrect`, `autocomplete` and `spellcheck`
 since W2 (§6.6), which is the same reason it always did. *Selection*: a textarea's
 selection paints over the mirror, so `::selection` is given a translucent background and
 the colours read through it.
+
+**The wrap column, and the invariant everything here answers to.** Sharing a class is not
+by itself enough, and the bug this shipped with is the proof: the two layers share a
+*border* box — both are `position: absolute; inset: 0` — while the column a line wraps at
+is decided by the *content* box. A classic scrollbar takes its width out of the content,
+so a textarea tall enough to need one wrapped fifteen pixels narrower than a mirror that
+had hidden its own with `scrollbar-width: none`, and nothing in the geometry said so:
+every wrapped line drifted a little further out of step down the document, the mirror
+could not scroll as far as the textarea so the last rows were unreachable, and clicking a
+glyph put the caret hundreds of characters away from it — which is what "I can't edit
+this" turned out to mean. So `scrollbar-gutter: stable` is declared on the rule *both*
+layers read, and the mirror keeps a real scrollbar painted in nothing
+(`scrollbar-color: transparent transparent`) rather than removing one: removing it takes
+the reserved gutter with it, because the gutter *is* the scrollbar's width. The same
+reasoning settles the two throwaway mirrors `ui/panes.ts` measures the gutter markers and
+`selectSpan` in — they take the textarea's content width as `clientWidth` minus its
+padding, measured, since the resolved `width` is the *border* box under this app's
+`box-sizing: border-box` and says nothing about a scrollbar at all.
+
+The invariant to hold any change here against: **every character in the mirror sits
+underneath the same character in the textarea, at every width, with and without a
+scrollbar, in both wrapping states.** It is a fact about pixels, so `web/test/` can only
+guard the shape of the stylesheet that makes it true — that the metric-deciding
+properties are declared where both layers read them, that the mirror does not give its
+gutter back, and that nothing in the lexer's palette can move a glyph. The pixels
+themselves are checked in a browser.
 
 **It ships on touch too.** The mirror has been carrying the diagnostic underline on
 phones since W4, so the alignment machinery is not new there; what is new — transparent
