@@ -11,6 +11,11 @@ open it says so in as many words. Where an item contradicts `web/PLAN.md`, the p
 edited *as part of that item* — the plan stays normative, so it is updated, never
 quietly outgrown.
 
+**Read *Instructions for implementer agents*, at the foot of this file, before you
+start and again before you finish.** It has the toolchain setup and its two traps, what
+is deliberately out of scope while you work, how to record a finished item here, and
+what else finishing one obliges you to do.
+
 ---
 
 # Context every item needs
@@ -490,19 +495,33 @@ whatever ships must not outweigh the engine, and must not make typing slower.
 - [ ] It shares the pane with the existing diagnostic underline and gutter markers;
       they must not fight over the same visual channel.
 
+**Considered and declined: highlighting from the parser.** The binding could expose
+techy's own token spans and get highlighting that is exactly as accurate as the parse,
+riding along on the conversion response for free. It is declined because of *when* the
+answer arrives: conversions are debounced 120 ms and the round trip is through the
+worker, so the colours would trail the cursor by a visible fraction of a second on
+every keystroke. A dumb synchronous lexer on the main thread repaints with the
+character. Should the overlay later want something only a parse knows — which
+`\begin` an `\end` closes, say — enriching it from the conversion result is additive
+and the door stays open.
+
 ## Completion
 
 **Where the suggestions come from.**
 
 - [ ] **techxt's own declared symbols**, through the wasm module (below).
-- [ ] **The user's own definitions, the cheap way**: scan the input for
-      `\newcommand`, `\renewcommand`, `\providecommand`, `\def`, `\DeclareMathOperator`
-      and `\newenvironment` and take the names. ~20 lines, no library change, and it
-      gets nearly all of the value. The exact route — having the binding call
-      `language.parse()` itself and read techy's final parsing state — is explicitly
-      **not** being taken: `Conversion` exposes only `text` and `diagnostics`, and the
-      work is out of proportion to the difference. Mark these suggestions as coming
-      from the document so they are distinguishable from the shipped ones.
+- [ ] **The user's own definitions, the cheap way — and in Rust, not JS.** Scan the
+      document for `\newcommand`, `\renewcommand`, `\providecommand`, `\def`,
+      `\DeclareMathOperator` and `\newenvironment` and take the names. A linear scan,
+      ~30 lines, no library change. Doing it **inside the binding** rather than in the
+      app is the simplification: `complete()` then returns one already-merged, already-
+      ranked list and the JS side has no second source to reconcile, no second matcher
+      to keep in step with the first, and nothing to test twice. Mark these entries
+      with a flag (`fromDocument: true`) so the chips can show where they came from.
+      The exact route — having the binding call `language.parse()` itself and read
+      techy's final parsing state — is explicitly **not** being taken: `Conversion`
+      exposes only `text` and `diagnostics`, and the work is out of proportion to the
+      difference.
 
 **L2 — the library change: reading a `DefinitionSet` back.**
 
@@ -553,10 +572,15 @@ Root `PLAN.md` entry and tests as usual.
       replacements is a table the JS side has no reason to hold a second copy of.
       `Session` builds a sorted `SymbolIndex` lazily on the first completion request
       and keeps it.
-- [ ] Export `Session.complete(prefix, limit)` returning a small array of
-      `{ name, kind, replacement, arity }` — a binary search plus a prefix scan, so the
-      answer is microseconds and the payload is a handful of entries.
-- [ ] `src/worker/protocol.ts` grows `{ type: 'complete', id, prefix, limit }` and
+- [ ] Export `Session.complete(latex, prefix, limit)` returning a small array of
+      `{ name, kind, replacement, arity, fromDocument }` — a binary search plus a
+      prefix scan over the index, plus the definer scan over `latex`, merged and
+      ranked. Microseconds either way, and the payload is a handful of entries.
+      The document is passed in rather than remembered so the call stays stateless;
+      if the scan ever shows up in a profile, cache it against the text's length and
+      hash inside `Session` and leave the signature alone.
+- [ ] `src/worker/protocol.ts` grows
+      `{ type: 'complete', id, text, prefix, limit }` and
       `{ type: 'completions', id, items }`, with the same monotonic-id discipline
       conversions use: a stale answer is dropped.
 - [ ] **The one risk is head-of-line blocking** behind a slow conversion in the same
@@ -564,7 +588,9 @@ Root `PLAN.md` entry and tests as usual.
       so there is normally a gap. Measure it on a 200 KB document. If it is laggy, add
       a small JS-side prefix→results cache before reaching for a second worker; a
       second wasm instance is a megabyte of memory for a nicety.
-- [ ] Merge the document's own definitions into the answer on the JS side.
+- [ ] **The JS side does no matching, no merging and no ranking.** It sends a prefix
+      and renders what comes back. Every rule about what is offered and in what order
+      lives in one place, in Rust, next to the table it is drawn from.
 
 **The completion UI, decided.**
 
@@ -736,17 +762,87 @@ the choice exists.
   options never reach the binding, a read of stored or shared data never throws, the
   output pane never gets `innerHTML`, and nothing the user copies or downloads is ever
   something the app added for display.
-- **Tests.** vitest runs in `node` with no DOM, so anything worth testing has to be a
-  pure function: the library store's policy, the import/export codec, the region →
-  element mapping, the completion matcher. Write them that way from the start rather
-  than extracting them afterwards. Rust changes get tests in
-  `rust/techxt/tests/` (L1, L2) and `web/crate/tests/` (the binding).
-- **Run the full set before pushing**: `npm run typecheck`, `npm test`, `npm run
-  build`, and for a Rust change `cd rust && cargo test` plus `cd web/crate && cargo fmt
-  --all --check && cargo clippy --all-targets -- -D warnings && cargo test`. CI runs
-  exactly these; `missing_docs` is denied in `web/crate` too.
+- **Tests.** vitest runs in `node` with no DOM, so anything on the app side worth
+  testing has to be a pure function: the library store's retention and quota policy,
+  the import/export codec, the region → element mapping. Write them that way from the
+  start rather than extracting them afterwards. Rust changes get tests in
+  `rust/techxt/tests/` (L1, L2) and `web/crate/tests/` (the binding — which is where
+  the completion matcher's tests belong, since the matching happens there).
+- **CI runs exactly the checks listed under *When your item is done* below**, and
+  `missing_docs` is denied in `web/crate` too — so a doc comment on a new public item
+  is not optional there.
 - **The repository's prose has a voice** — the plan and the commit messages explain
   *why*, in full sentences, and assume a reader who was not in the room. Match it.
-- **When something here turns out to be wrong**, say so in the commit message and fix
-  this file in the same breath. This is a design record, not a contract; it is only
-  useful while it is true.
+
+## Keeping this file up to date
+
+This file is a design record, not a scratchpad. It is the only place several of these
+decisions are written down, so it has to stay true as the work lands.
+
+**As you go**, tick the boxes: `- [ ]` becomes `- [x]`. Nothing else.
+
+**When an item is finished**, add a status line directly under its heading and leave
+the rest of the item exactly where it is:
+
+```markdown
+# 1. Wrap defaults to soft-wrap
+
+> **Done** — 2026-09-02, `abc1234`. Soft is the default; the select reads
+> Fit / Off / Soft; PLAN §5 and §6.3 updated.
+```
+
+**Do not delete a finished item, and do not strike it through.** The value of this file
+is the *why*, which outlives the work — the next person to touch soft-wrap needs to
+know it was deliberate that old links changed meaning. A struck-through wall of text is
+also unreadable, and these items are long. A `> **Done**` line at the top says
+everything a reader needs to skip it.
+
+**Do not renumber or reorder the items.** Commit messages, the *Order of work* list and
+these instructions all refer to "item 3", "L1", "item 6". A stable number is worth more
+than a tidy sequence.
+
+Three more rules:
+
+- **If reality diverged from the plan, fix the text — do not leave the correction in a
+  commit message.** Say what actually happened and why, in the item, in the same commit
+  as the code. The commit message explains the change; this file explains the design.
+- **New work you discover belongs here**, as a new checkbox in whichever item owns it,
+  or as a new item at the end if it owns nothing. A follow-up that exists only in
+  someone's head is a follow-up that does not exist.
+- **When every item is done, this file's job is over.** Fold whatever is still true and
+  still normative into `web/PLAN.md` (and the root `PLAN.md` for L1 and L2), then
+  delete `TODO.md` in that same commit. The plan is where design lives once it has
+  shipped; keeping a completed TODO alongside it just gives a future reader two
+  documents to reconcile.
+
+## When your item is done
+
+Before you call it finished, in roughly this order:
+
+1. **Run the full check set.** `npm run typecheck`, `npm test`, `npm run build`, and
+   for a Rust change `cd rust && cargo test` plus, in `web/crate`, `cargo fmt --all
+   --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test`. Do not push
+   on a red anything except the wasm size step, which is item 6's.
+2. **Check the item's own *Done when* line.** Each item ends with one. It names the
+   observable behaviour, not the diff — actually observe it, in a browser, rather than
+   reasoning that it must hold.
+3. **Update `web/PLAN.md`** in the same commit — and the root `PLAN.md` for L1 and L2.
+   Not a changelog entry: the plan is written as present-tense design, so change the
+   design it describes.
+4. **`web/README.md`**, if and only if the developer-facing story changed: a new npm
+   script, a new dependency, a new step in a build, a new dev-only tool.
+5. **Tick the boxes and add the `> **Done**` line**, per the section above.
+6. **If you touched `src/examples.ts`**, re-check the invariant `web/PLAN.md` §6.7
+   states: every shipped example converts with **no diagnostics at all**. It has been
+   true since W2 and is worth keeping.
+7. **Note what you cost, for item 6.** If your change adds material weight to `dist/` —
+   a bundled library, a new dependency — put the figure in the commit message. Item 6
+   should not have to bisect for it.
+8. **Commit and push to the working branch.** One commit per item where the item is
+   coherent; a Rust change plus its app-side consumer may reasonably be two (the
+   library change standing on its own, with its own tests, is a feature of the plan
+   rather than an accident).
+9. **Say what surprised you.** If something here was wrong, if a decision looks worse
+   from the inside than it did from the outside, or if you found a cheaper way — write
+   it down, in the item, and say so plainly when you report. The next agent reads this
+   file, not your transcript.
