@@ -56,7 +56,7 @@ export interface AboutSection {
 /** One sentence per answer, in the fine print beside the button. */
 const UPDATE_WORDS: Record<UpdateCheck, string> = {
   ready: 'A new version is ready.',
-  downloading: 'A new version is on its way — you will be offered a reload when it is ready.',
+  downloading: 'A new version is on its way — please wait.',
   current: 'This is the latest version.',
   failed: 'Could not check just now — this device may be offline.',
 };
