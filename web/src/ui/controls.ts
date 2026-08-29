@@ -242,6 +242,23 @@ export function initControls(init: ControlsInit): Controls {
 
   /* Math */
   const math = group('Math');
+
+  /*
+   * The three controls below are options of techxt's *renderer*, and MathJax mode does
+   * not use it: the formula is re-emitted as its own LaTeX and typeset in the pane, so
+   * there is nothing left for a delimiter or a Unicode alphabet to apply to. A control
+   * that cannot do anything is worse than no control, so they are disabled while
+   * MathJax is selected — and the reason is stated *before* them rather than after,
+   * since a note explaining why three fields are grey is only useful on the way in (§5).
+   */
+  const mathInert = el(
+    'p',
+    'hint group-note',
+    'These settings are disabled while Math is set to “MathJax” — it typesets each formula itself.',
+  );
+  mathInert.hidden = true;
+  math.append(mathInert);
+
   math.append(
     field(
       'opt-mathdelims',
@@ -265,21 +282,6 @@ export function initControls(init: ControlsInit): Controls {
       hint: 'The Unicode alphabet variables are mapped into. Not the display font.',
     }),
   );
-
-  /*
-   * All three of the above are options of techxt's *renderer*, and MathJax mode does
-   * not use it: the formula is re-emitted as its own LaTeX and typeset in the pane, so
-   * there is nothing left for a delimiter or a Unicode alphabet to apply to. A control
-   * that cannot do anything is worse than no control, so they are disabled while
-   * MathJax is selected and this line says why (§5).
-   */
-  const mathInert = el(
-    'p',
-    'hint group-note',
-    'MathJax typesets each formula itself, so these three change nothing while it is selected.',
-  );
-  mathInert.hidden = true;
-  math.append(mathInert);
 
   /* Parsing */
   const parsing = group('Parsing');

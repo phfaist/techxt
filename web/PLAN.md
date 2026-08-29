@@ -741,7 +741,11 @@ screen is not what leaves the app, and the control's hint says so. **The three r
 options of the *Math* fieldset stop meaning anything** — `math_expression_in`,
 `matrix_delimiters` and `math_font` are the renderer's, and Source bypasses the
 renderer — so they are disabled while MathJax is selected, with one line saying why,
-rather than left as controls that do nothing. And **fit-to-pane measurement becomes
+rather than left as controls that do nothing. The line goes *above* the three fields
+rather than under them — a note explaining why something is grey is only useful on the
+way in — and a disabled control keeps its resting fill and takes the `not-allowed`
+cursor, because a field that lights up under the pointer and shows a hand is promising
+a click that will never land. And **fit-to-pane measurement becomes
 approximate**: a typeset formula is not a number of columns wide, and *Fit* is still
 sent the column count the pane measured for text. That is a known and accepted
 imprecision rather than something to correct; *Fit* wraps the text around the formulas,
@@ -1291,6 +1295,14 @@ a text search over title and source, sorted by most recently updated. Delete off
 Undo in the toast; **Clear library** demands a typed confirmation and names the count
 and the starred count in it.
 
+**On one column the header spends as little of it as it can.** Vertical space is the
+scarce thing on a phone, and title, count, buttons and search were four rows of chrome
+above the first entry — which on that screen *is* the screen. So the count and
+Export/Import/Clear share a wrapping row rather than stacking, *Clear library* drops to
+*Clear* below 560 px so the three still fit beside the count, and in the entry view the
+header stands down altogether but for the storage notice: the count and those three
+buttons are about the *library*, and the reader is looking at one document.
+
 **The pane loads every entry in full to render the list**, because the text search reads
 the source. That is a deliberate trade rather than an oversight: listing from the
 `updatedAt` index without `source` and fetching a source when an entry is selected would
@@ -1299,13 +1311,21 @@ stop searching sources, so it buys nothing for the libraries a person plausibly
 accumulates. It is written down because the day a library *is* slow to open, this
 paragraph is the first place to look and the index is already there to list from.
 
-**The detail reads the entry**, which is the other half of keeping one: the whole
-`source` in its own scrolling region, and under it the stored `preview` — the rendered
-output as it was — in a second one. Nothing new is stored for this, since an entry has
-always kept the document in full; the preview stays what it is, a few lines for the
-card, allowed to be stale and never the thing the user acts on. The actions sit above
-both regions rather than below them, so Open and Delete are still at the top of the
-detail on a phone where the source alone is a screenful.
+**The detail reads the entry**, which is the other half of keeping one: the stored
+`preview` — the rendered output as it was, six lines at most — and the whole `source`
+under it. Nothing new is stored for this, since an entry has always kept the document
+in full; the preview stays what it is, allowed to be stale and never the thing the user
+acts on. The actions sit above both rather than below them, so Open and Delete are
+still at the top of the detail on a phone where the source alone is a screenful.
+
+**The detail column is the only thing that scrolls in it.** The two blocks have no
+height of their own and no overflow of their own: a capped box inside a scrolling
+column is a second scrollbar answering the same flick, and which of the two moves
+depends on where the pointer happens to be — the complaint that a saved entry opened
+into a pane that scrolled two ways at once. The preview leads because it is the short
+one, so the source is never more than a flick away and the actions above it stay put
+for longer. Their captions are *Preview* and *LaTeX source*: two grey blocks of text do
+need telling apart, and a sentence of label above each is a sentence in the way.
 
 Opening an entry restores its document *and* its options. That is not destructive — the
 settings being replaced belong to the current entry, which is itself in the log and one

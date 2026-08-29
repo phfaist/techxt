@@ -371,6 +371,25 @@ fieldset {
   background-color: var(--field-hover);
 }
 
+/*
+ * A control the current mode has nothing to do with (§5). A disabled field that still
+ * lights up under the pointer and still shows a hand promises a click that will never
+ * land, so it keeps its resting fill, loses the pointer, and says no with the cursor.
+ * `:disabled:hover` beats the rule above on specificity, and the cursor needs the
+ * extra weight only because `select.control` sets a pointer. The range and the
+ * checkbox draw no fill of their own and are never disabled, so the restored
+ * `--field` below reaches nothing that did not have it.
+ */
+.control:disabled,
+select.control:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.control:disabled:hover {
+  background-color: var(--field);
+}
+
 /* The UA's own arrow comes with the UA's own border; ours is a drawn chevron. */
 select.control {
   appearance: none;
@@ -701,7 +720,7 @@ select.control {
   opacity: 0.55;
 }
 
-/* The one line saying *why* those three are disabled, under the group they belong to. */
+/* The one line saying *why* those three are disabled, above the fields it is about. */
 .group-note {
   margin: 0;
   font-style: italic;
@@ -2276,9 +2295,9 @@ select.control {
 }
 
 /*
- * What each of the two reading regions below is, in three words. Without them the
- * source and the rendered preview are two grey blocks of text with no way to tell
- * which is which.
+ * What each of the two blocks below is, in one word or two. Without them the rendered
+ * preview and the source are two grey blocks of text with no way to tell which is
+ * which; with more than that they are a paragraph the reader has to get past.
  */
 .library-caption {
   margin: 0.9rem 0 0.3rem !important;
@@ -2290,44 +2309,41 @@ select.control {
 }
 
 /*
- * The entry's document, in full, scrolling on its own (§6.10). An entry keeps the whole
- * source, so reading one costs nothing new to store — and a card preview is not a
- * document. It is capped rather than allowed to grow: the actions above it and the
- * rendered preview below it both have to stay reachable without a search.
+ * The stored preview, in the pane's own face, and the entry's document under it, in
+ * full (§6.10). An entry keeps the whole source, so reading one costs nothing new to
+ * store — and a card preview is not a document.
+ *
+ * Neither has a height of its own and neither scrolls: the detail column is the one
+ * scroll container in the entry view, and these are laid out down it. A capped box
+ * inside a scrolling column is a second scrollbar for the same gesture, and the
+ * pointer that lands in it takes the wrong one. The preview leads because it is short
+ * — six lines at most, by the time it was stored — so the source below it is never
+ * more than a flick away, and the actions above stay where they were.
+ *
+ * The preview may be out of date, which is why it is never the thing the user acts on:
+ * Open re-converts from the source.
  */
+.library-preview,
 .library-source {
   margin: 0;
   padding: 0.8rem 0.9rem;
   border-radius: var(--r-sm);
   background: var(--bg-inset);
-  font-family: var(--mono);
-  font-size: 0.8rem;
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  tab-size: 2;
-  max-height: min(26rem, 42dvh);
-  overflow: auto;
-  overscroll-behavior: contain;
 }
 
-/*
- * The stored preview, in the pane's own face. It is a few lines of an old rendering
- * and may be out of date, which is why it is never the thing the user acts on: Open
- * re-converts from the source.
- */
 .library-preview {
-  margin: 0 0 1rem;
-  padding: 0.8rem 0.9rem;
-  border-radius: var(--r-sm);
-  background: var(--bg-inset);
   font-family: var(--pane-font, var(--mono));
   font-size: 0.84rem;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  max-height: 14rem;
-  overflow: auto;
+}
+
+.library-source {
+  margin-bottom: 1rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  tab-size: 2;
 }
 
 .library-detail-actions {
@@ -2585,22 +2601,43 @@ select.control {
   .size-out {
     display: none;
   }
+
+  /* Just "Clear", so the three library buttons still fit beside the count (§6.10). */
+  .library-clear-word {
+    display: none;
+  }
 }
 
 /*
  * The library on one column (§6.10): the list, and a tap pushes to the entry's detail
  * with a back control. Same data, same markup — `data-view` on the root is the whole
  * mechanism, so nothing is rebuilt when the screen changes size.
+ *
+ * Vertical space is the scarce thing on a phone, and the chrome above the list was
+ * spending four rows of it — title, stats, buttons, search — before a single entry
+ * appeared. So the stats line and the buttons share a row and wrap only if they must,
+ * and the whole library header stands down in the entry view: the count and
+ * Export/Import/Clear are about the library, and the reader is looking at one
+ * document. Only the storage notice stays, because it is the one line the app says
+ * unprompted and it is true either way. (The sheet itself is already the whole screen
+ * on a phone, with its own tighter padding — see the block below.)
  */
 @media (max-width: 860px) {
+  .sheet-library > .sheet-body {
+    gap: 0.5rem;
+  }
+
   .library-body {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .library[data-view="list"] .library-pane-detail,
   .library[data-view="detail"] .library-pane-list,
-  /* The search and the filter belong to the list; on the entry they are clutter. */
-  .library[data-view="detail"] .library-filters {
+  /* The search, the filter and everything about the library as a whole belong to the
+     list; on one entry they are clutter, and on a phone they are the screen. */
+  .library[data-view="detail"] .library-filters,
+  .library[data-view="detail"] .library-stats,
+  .library[data-view="detail"] .library-actions {
     display: none;
   }
 
@@ -2612,13 +2649,34 @@ select.control {
     padding-left: 0;
   }
 
+  /* One wrapping row rather than a stack: the stats and the buttons sit together
+     while they fit, and the two full-width children below them take their own line. */
   .library-head {
-    grid-template-areas:
-      "stats"
-      "notice"
-      "actions"
-      "filters";
-    grid-template-columns: minmax(0, 1fr);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.6rem;
+  }
+
+  .library-stats {
+    flex: 1 1 auto;
+    font-size: 0.8rem;
+  }
+
+  .library-actions {
+    margin-left: auto;
+  }
+
+  /* Narrower and a shade smaller so the three fit beside the count. No `min-height`:
+     the 44 px touch target of the `pointer: coarse` block below is not negotiable. */
+  .library-actions .btn {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+  }
+
+  .library-notice,
+  .library-filters {
+    flex: 1 0 100%;
   }
 }
 
