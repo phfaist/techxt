@@ -206,7 +206,7 @@ export interface ControlsInit {
    * keeps `Fonts` because the stored `UiState` key does.
    */
   onKeepFontsOffline(enabled: boolean): void;
-  /** The Library button beside *More options* — the second door of §6.10. */
+  /** The Library button beside *More options* — the way into §6.10's sheet. */
   onOpenLibrary(): void;
 }
 

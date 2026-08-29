@@ -175,10 +175,11 @@ export function initControls(init: ControlsInit): Controls {
   /* --- Library */
 
   /*
-   * The second door to the library (§6.10). The first is in the site header beside
-   * About and Install; this one is here because that is where it was asked for — the
-   * row the user is already looking at — and two doors cost less than a third row on
-   * a phone.
+   * The door to the library (§6.10), and the only one: it is here because this is the
+   * row the user is already looking at, and because a glyph, a tooltip and the
+   * first-run pulse can say what the sheet holds where a word in a nav of About and
+   * Install cannot. The header link that used to sit beside About was the same action
+   * a second time, in a row that is about the *app* rather than the user's documents.
    */
   const libraryButton = el('button', 'btn btn-labelled library-button');
   libraryButton.type = 'button';

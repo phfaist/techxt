@@ -1284,8 +1284,14 @@ one huge paste must not be the reason something else is lost.
 A `<dialog>` sheet like About and Install (§6.8), because a scrolling list of entries
 belongs inside a dialog in an app whose page never scrolls, and because the sheet
 machinery already gives Escape, the backdrop, focus handling and inertness for free.
-It opens from the header, beside About and Install, and from the primary options row
-next to *More options* — one action, two doors, and no third row on a phone.
+It opens from the primary options row, next to *More options* — the row the user is
+already looking at, and no third row on a phone. That is the only door, and
+deliberately so: the button carries a glyph, a tooltip and the first-run pulse, none of
+which a word in the header nav can. It used to open from there too, beside About and
+Install, and that was the same action twice in a row that is about the *app* — what it
+is, how to install it, where the source is — where the library is the user's own
+documents. The About prose still links to it, which is a sentence naming it rather than
+a second door.
 
 Desktop shows the list on the left and the selected entry on the right; below 860 px it
 is one column and a tap pushes to the entry's detail with a back control, which is a
