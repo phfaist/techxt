@@ -1984,6 +1984,26 @@ select.control {
   color: var(--fg-faint) !important;
 }
 
+/* --------------------------------------------- “Check for updates” (§9) */
+
+.update-check {
+  margin-top: 2rem;
+}
+
+.update-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Same fine print as the install prompt's answer, and for the same reason: it is a
+   report on the button beside it, not something to read on the way past. */
+.update-note {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
 /* ------------------------------------------------------- the Install sheet */
 
 .install-action {

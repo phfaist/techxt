@@ -127,6 +127,24 @@
 Here is some math: ∑ₖ₌₁ⁿ 1/𝑘² …
 </code></pre>
 
+        <!--
+          Hidden until the service worker registers: without one there is nothing to
+          ask, and a button that can only report that it could not look is worse than
+          no button. `src/about.ts` shows it and owns everything it says.
+        -->
+        <section class="update-check" id="update-check" hidden>
+          <h3>Updates</h3>
+          <p>
+            The app looks for a new version each time it starts, and whenever the page is
+            reloaded. An installed app has no reload button, and may go a long time between
+            starts, so it can also be asked now:
+          </p>
+          <p class="update-action">
+            <button class="btn" type="button" id="check-update">Check for updates</button>
+            <span class="update-note" id="update-note" role="status"></span>
+          </p>
+        </section>
+
         <div class="colophon font-credits-fine-print">
           techxt <span id="techxt-version">—</span> · MIT licensed · © Philippe Faist <br/>
           <!--· -->Fonts: <ul class="credits" id="font-credits"></ul><ul class="credits" id="ui-font-credit"></ul>

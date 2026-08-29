@@ -16,6 +16,7 @@ import './styles.css';
 import { registerSW } from 'virtual:pwa-register';
 
 import { initAbout } from './about';
+import type { AboutSection, UpdateCheck } from './about';
 import { ConvertClient } from './convert-client';
 import type { RequestMode } from './convert-client';
 import { DEFAULT_EXAMPLE, EXAMPLES } from './examples';
@@ -158,9 +159,35 @@ interface LaunchQueue {
 
 /* ------------------------------------------------------------ service worker */
 
-function registerServiceWorker(toast: Toaster): void {
+/**
+ * The service worker, and the two things the rest of the app needs of it (§9).
+ *
+ * The browser looks for a new worker when one is registered — which is once, at
+ * startup — and on a navigation within its scope. That is the whole of it: a tab
+ * gets a check on every reload, and an installed copy that is left open for a week
+ * gets one when it is next started. {@link check} is the About section's way of
+ * asking in between, for the installed copy that has no reload gesture to give.
+ */
+interface Updates {
+  /** Ask the server whether it has a newer build than the one running. */
+  check(): Promise<UpdateCheck>;
+  /** Report to the About section: when there is a worker, and when one has arrived. */
+  report(about: AboutSection): void;
+}
+
+function registerServiceWorker(toast: Toaster): Updates {
+  /** The registration, once the browser has given us one. */
+  let registration: ServiceWorkerRegistration | null = null;
+  /** Whether a new version has arrived and is waiting for nothing but a reload. */
+  let arrived = false;
+  let about: AboutSection | null = null;
+
   const update = registerSW({
     immediate: true,
+    onRegisteredSW(_url, reg) {
+      registration = reg ?? null;
+      if (registration) about?.enableUpdates();
+    },
     // `registerType: 'autoUpdate'` is configured in vite.config.ts, and in that mode
     // the plugin calls `onNeedReload` — the hook that *replaces* its automatic
     // reload — rather than `onNeedRefresh`. Both are wired so the toast of §9
@@ -170,6 +197,8 @@ function registerServiceWorker(toast: Toaster): void {
   });
 
   function announce(): void {
+    arrived = true;
+    about?.updateReady();
     toast.show({
       message: 'A new version is ready.',
       timeoutMs: 0,
@@ -183,13 +212,51 @@ function registerServiceWorker(toast: Toaster): void {
       },
     });
   }
+
+  return {
+    report(section: AboutSection): void {
+      about = section;
+      if (registration) section.enableUpdates();
+      if (arrived) section.updateReady();
+    },
+
+    async check(): Promise<UpdateCheck> {
+      if (arrived) return 'ready';
+      if (!registration) return 'failed';
+      // A worker that is not controlling this page yet is the *first* install rather
+      // than an update: there is nothing newer to reload into, and saying there is
+      // would send the user back to the version they are already reading.
+      const controlled = navigator.serviceWorker.controller !== null;
+      try {
+        await registration.update();
+      } catch {
+        // The script could not be fetched — offline, or a server that said no.
+        return 'failed';
+      }
+      if (arrived) return 'ready';
+      const arriving = registration.installing ?? registration.waiting;
+      if (!arriving || !controlled) return 'current';
+      // `update()` resolves as soon as a new worker *starts* installing, so this is
+      // normally "found it, still fetching". `announce` says when it is ready, in a
+      // toast that follows the About sheet into the top layer (ui/toast.ts) and
+      // through `report` in the sheet's own words as well.
+      return arriving.state === 'activated' ? 'ready' : 'downloading';
+    },
+  };
 }
 
 /* ------------------------------------------------------------------- the app */
 
 async function start(): Promise<void> {
   const toast = initToast(mountPoint('toast-mount'));
-  const about = initAbout();
+  // Before About, which offers the button that asks it a question, and told about
+  // About immediately afterwards so it can answer back (§9).
+  const updates = registerServiceWorker(toast);
+  const about = initAbout({
+    checkForUpdate: () => updates.check(),
+    onReload: () => window.location.reload(),
+  });
+  updates.report(about);
   // Every sheet is a dialog over the tool (§6.8). A modal makes everything behind it
   // inert, so the disclosure has to be told to put itself away first — otherwise it
   // is still open, and still open when the sheet closes.
@@ -201,7 +268,6 @@ async function start(): Promise<void> {
       if (id === 'library') openedLibrary();
     },
   });
-  registerServiceWorker(toast);
 
   const storage = browserStorage();
   // What this *tab* remembers, as against what the origin does: one fact, the entry

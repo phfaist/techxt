@@ -115,7 +115,7 @@ web/
       toast.ts            copy confirmation, update-available notice
     fonts.ts              font registry (family, metrics class, warnings)
     examples.ts           the sample documents, inlined
-    about.ts              below-the-fold content, or plain markup in index.html
+    about.ts              below-the-fold content: version, font credits, updates
     styles.css            tokens, layout, light/dark
   test/                   vitest over the pure logic (§13)
   public/
@@ -1915,6 +1915,21 @@ chrome rather than content:
   no document leaves the device. This is stated in About and is worth keeping true.
 - **Updates**: `autoUpdate` plus a toast ("A new version is ready — Reload"). The
   document is already in localStorage, so a reload never loses work.
+- **How often it looks**: the browser fetches `sw.js` when the worker is registered —
+  once, at startup, `immediate: true` — and again on a navigation within scope. A tab
+  therefore gets a check on every reload; an **installed app gets one when it is next
+  started**, and an installed copy left open for a week gets none in between. Nothing
+  polls, deliberately: a background check on a timer would be the app talking to the
+  server while nobody asked it to, and §9's promise is that it asks nobody for
+  anything the user did not ask for. What the installed copy has instead is a **Check
+  for updates** button in About — it has no reload gesture of its own, which is the
+  whole reason the gap matters there and not in a tab. The button calls
+  `registration.update()` and reports what came back: *the latest version*, *on its
+  way* (found, still installing — the usual answer, since `update()` resolves as soon
+  as the new worker starts installing), *ready* — in which case the button becomes the
+  Reload — or *could not check*, which on this app almost always means offline. It is
+  hidden until the worker registers: with no worker to ask, a button that can only
+  report failure is worse than no button.
 - **Stretch (W8), both shipped**: a GET `share_target` (`?text=`) so Android's share
   sheet can send selected LaTeX straight into the app, and `file_handlers` for
   `.tex`/`.latex` where supported. Both are additive — a browser that implements
