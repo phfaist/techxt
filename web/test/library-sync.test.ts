@@ -6,6 +6,16 @@
  * asserted here against a real channel rather than described in a comment. Get that
  * wrong and every tab releases the entry it just claimed, which is a bug no unit test
  * of the message codec would ever catch.
+ *
+ * **Nothing below waits a fixed number of turns of the event loop**, and the history
+ * is worth keeping: it used to, and the file failed about one full-suite run in five.
+ * A message posted here is delivered on a later task, and one `setTimeout(…, 0)` is
+ * enough to see it — measured, five hundred times out of five hundred — right up
+ * until the process is busy. Vitest runs test files in parallel workers in one
+ * process, so this file's turn of the loop is shared with everything else running,
+ * and under that load the timer fires before the channel's own task has been drained.
+ * The tab helper below therefore waits for *the message*, and the timeout it carries
+ * exists to make a message that never arrives read as a failure rather than a hang.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -17,18 +27,77 @@ import type { LibraryChannel, LibraryMessage } from '../src/library-sync';
 
 const open: LibraryChannel[] = [];
 
-/** A tab: its channel, and everything it has heard from the others. */
-function tab(): { channel: LibraryChannel; heard: LibraryMessage[] } {
-  const heard: LibraryMessage[] = [];
-  const channel = openLibraryChannel((message) => heard.push(message));
-  if (!channel) throw new Error('this node has no BroadcastChannel');
-  open.push(channel);
-  return { channel, heard };
+/**
+ * How long a message is given before the test calls it lost.
+ *
+ * Generous on purpose, because it is not a wait: a passing test never spends any of
+ * it, and what it buys is a broken channel reported as a failure naming what was
+ * heard, rather than as a suite that hangs until vitest's own timeout kills it.
+ */
+const DELIVERY_TIMEOUT = 2000;
+
+interface Tab {
+  channel: LibraryChannel;
+  /** Everything this tab has heard from the others, in order. */
+  heard: LibraryMessage[];
+  /** Resolves once this tab has heard `count` messages; rejects if it never does. */
+  hears(count?: number): Promise<void>;
 }
 
-/** Messages are delivered on a later task; one turn of the loop is enough. */
-function delivered(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+/** A tab: its channel, everything it has heard, and a way to wait for the next thing. */
+function tab(): Tab {
+  const heard: LibraryMessage[] = [];
+  const waiting = new Set<() => void>();
+  const channel = openLibraryChannel((message) => {
+    heard.push(message);
+    for (const wake of [...waiting]) wake();
+  });
+  if (!channel) throw new Error('this node has no BroadcastChannel');
+  open.push(channel);
+
+  return {
+    channel,
+    heard,
+    hears(count = 1) {
+      return new Promise<void>((resolve, reject) => {
+        const enough = (): boolean => heard.length >= count;
+        // Already there: a message can arrive before anyone asks to wait for it.
+        if (enough()) {
+          resolve();
+          return;
+        }
+        const wake = (): void => {
+          if (!enough()) return;
+          waiting.delete(wake);
+          clearTimeout(timer);
+          resolve();
+        };
+        const timer = setTimeout(() => {
+          waiting.delete(wake);
+          reject(
+            new Error(
+              `waited ${DELIVERY_TIMEOUT} ms for ${count} message(s), heard ${heard.length}: ${JSON.stringify(heard)}`,
+            ),
+          );
+        }, DELIVERY_TIMEOUT);
+        waiting.add(wake);
+      });
+    },
+  };
+}
+
+/**
+ * A few turns of the loop, for anything that should *not* arrive to arrive.
+ *
+ * Used only after the message a test is waiting for has already been heard, and only
+ * to catch a delivery the channel should never have made at all. Too short a settle
+ * can let such a bug pass; it cannot turn a working channel into a failure, which is
+ * the only direction that makes a test flaky.
+ */
+async function settle(): Promise<void> {
+  for (let turn = 0; turn < 3; turn += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 }
 
 afterEach(() => {
@@ -77,7 +146,7 @@ describe('openLibraryChannel', () => {
     const c = tab();
 
     a.channel.post({ kind: 'claim', id: 'e1' });
-    await delivered();
+    await Promise.all([b.hears(), c.hears()]);
 
     expect(b.heard).toEqual([{ kind: 'claim', id: 'e1' }]);
     expect(c.heard).toEqual([{ kind: 'claim', id: 'e1' }]);
@@ -89,7 +158,11 @@ describe('openLibraryChannel', () => {
 
     a.channel.post({ kind: 'claim', id: 'e1' });
     b.channel.post({ kind: 'changed' });
-    await delivered();
+    // Each has the one message it should have. A tab hearing itself would be a
+    // *second* one, so the assertions are on the whole array after a settle rather
+    // than on the first thing to arrive.
+    await Promise.all([a.hears(), b.hears()]);
+    await settle();
 
     expect(a.heard).toEqual([{ kind: 'changed' }]);
     expect(b.heard).toEqual([{ kind: 'claim', id: 'e1' }]);
@@ -98,10 +171,17 @@ describe('openLibraryChannel', () => {
   it('says nothing to a tab that has closed its channel', async () => {
     const a = tab();
     const b = tab();
+    // The one assertion here has nothing of its own to wait for, so a third tab does
+    // the waiting: once the witness has the message, this post has been delivered,
+    // and b's silence is a fact about its closed channel rather than about how soon
+    // the test looked. Opened after b so that it is behind b in the delivery order —
+    // and the settle after it covers the case where it is not.
+    const witness = tab();
 
     b.channel.close();
     a.channel.post({ kind: 'changed' });
-    await delivered();
+    await witness.hears();
+    await settle();
 
     expect(b.heard).toEqual([]);
   });
