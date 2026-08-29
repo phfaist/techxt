@@ -22,7 +22,7 @@ use techy::source::SourceSpan;
 
 use crate::def::CallableKind;
 
-use super::source::latex_source;
+use super::source::{latex_source, latex_source_of};
 use super::RenderLang;
 
 /// One parsed tree, with its language erased.
@@ -97,11 +97,9 @@ impl<LLL: RenderLang> TreeView for NodeTree<LLL, ()> {
         // `Err` is "no such argument declared", `Ok(None)` is "declared but absent";
         // neither has a source, and the caller wants to tell neither apart.
         let nodes = self.node(id).argument_content_nodes_named(name).ok()??;
-        let mut source = String::new();
-        for content in nodes.iter() {
-            source.push_str(&latex_source(content));
-        }
-        Some(source)
+        // Reassembled as one run rather than node by node: two of these nodes may need
+        // a separator between them just as two inside one of them would.
+        Some(latex_source_of(nodes.iter()))
     }
 }
 

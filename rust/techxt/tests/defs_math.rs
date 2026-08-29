@@ -402,6 +402,27 @@ fn a_math_environment_re_emits_its_source_in_source_mode() {
 }
 
 #[test]
+fn source_mode_separates_an_expanded_macro_from_the_text_after_it() {
+    // A macro at the end of a `\newcommand` body swallowed no post-space — nothing
+    // followed it in the definition — so re-emitting the expansion next to the text
+    // after the invocation once ran the two together: `\ranglex`, a name MathJax has
+    // never heard of, in place of the `\rangle` and the `x` the tree actually holds.
+    let source = with(|b| b.math_mode(MathMode::Source));
+    let text = |latex: &str| source.latex_to_text(latex).expect("parses").text;
+
+    assert_eq!(
+        text(r"\newcommand\ketx[1]{\lvert{#1}\rangle}$\ketx\phi x$"),
+        "$\\lvert{\\phi}\\rangle x$\n"
+    );
+    // The separator goes in only where the name would otherwise grow: an escape
+    // character, a digit and a brace all end a name on their own.
+    assert_eq!(
+        text(r"\newcommand\aa{\alpha}$\aa\beta$ and $\aa 12$ and $\aa{}b$"),
+        "$\\alpha\\beta$ and $\\alpha12$ and $\\alpha{}b$\n"
+    );
+}
+
+#[test]
 fn source_mode_shows_a_formula_once_and_does_not_enter_it() {
     // An environment inside a formula is part of that formula's source, and the
     // formula is re-emitted whole: the inner one is not shown a second time, and
