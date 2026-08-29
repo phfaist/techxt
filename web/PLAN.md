@@ -994,6 +994,21 @@ error is left uncorrected rather than guessed at (§5).
 - `visualViewport` `resize`/`scroll` listener keeps the primary bar and the copy
   button reachable with the keyboard up.
 - Touch targets ≥ 44 px; the divider is desktop-only.
+- The primary bar is **two rows, never three**: below 860 px it is a two-column grid
+  of four cells — Wrap | Math, then the display font | *Library* and *More options*
+  together. The two doors share one cell (`.bar-tools`, `display: contents` on a wide
+  screen, a flex row hard against the right edge on a narrow one) because as two cells
+  they filled the second row and pushed *More options* onto a third, half of it empty,
+  on the screen where a row costs the most.
+- Words stand down before controls do, and always as `.sr-only` rather than
+  `display: none`, so the accessible name and the 44 px target survive: the bar's
+  labels at 700 px (§6.9), the pane buttons that have a mark of their own at 620 px,
+  and at that same 620 px the two doors of the tools cell — spelled out they are a
+  third of a 360 px screen, and the cell they share is half of one. Each keeps its
+  mark, which is why both have one that reads alone: an open book for the library, the
+  sliders for the options. *More options* also drops its caret there, since a lone `▸`
+  is a direction and not a door; open is then said by the button's fill and by the
+  panel itself.
 
 ### 6.7 Examples and the first visit
 
@@ -1284,10 +1299,12 @@ one huge paste must not be the reason something else is lost.
 A `<dialog>` sheet like About and Install (§6.8), because a scrolling list of entries
 belongs inside a dialog in an app whose page never scrolls, and because the sheet
 machinery already gives Escape, the backdrop, focus handling and inertness for free.
-It opens from the primary options row, next to *More options* — the row the user is
-already looking at, and no third row on a phone. That is the only door, and
-deliberately so: the button carries a glyph, a tooltip and the first-run pulse, none of
-which a word in the header nav can. It used to open from there too, beside About and
+It opens from the primary options row, beside *More options* and sharing a cell with it
+— the row the user is already looking at, and no third row on a phone (§6.6). That is
+the only door, and deliberately so: the button carries a mark of its own, a tooltip and
+the first-run pulse, none of which a word in the header nav can. The mark is an open
+book rather than the `◪` it started as, because below 620 px the word stands down and
+the mark is then the whole control. It used to open from there too, beside About and
 Install, and that was the same action twice in a row that is about the *app* — what it
 is, how to install it, where the source is — where the library is the user's own
 documents. The About prose still links to it, which is a sentence naming it rather than

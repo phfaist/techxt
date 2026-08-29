@@ -176,15 +176,25 @@ export function initControls(init: ControlsInit): Controls {
 
   /*
    * The door to the library (§6.10), and the only one: it is here because this is the
-   * row the user is already looking at, and because a glyph, a tooltip and the
+   * row the user is already looking at, and because an icon, a tooltip and the
    * first-run pulse can say what the sheet holds where a word in a nav of About and
    * Install cannot. The header link that used to sit beside About was the same action
    * a second time, in a row that is about the *app* rather than the user's documents.
+   *
+   * The open book replaced a `◪`: below 620 px the word stands down (see the tools
+   * row below) and the mark is then the whole control, which a quartered square was
+   * never going to carry.
    */
-  const libraryButton = el('button', 'btn btn-labelled library-button');
+  const libraryButton = el('button', 'btn library-button');
   libraryButton.type = 'button';
   libraryButton.title = 'Every document you convert is kept here, on this device';
-  libraryButton.append(glyph('◪'), document.createTextNode('Library'));
+  libraryButton.append(
+    svgIcon(
+      ['path', { d: 'M8 4.85C6.6 4 4.8 3.55 2.75 3.55v7.9c2.05 0 3.85.45 5.25 1.3 1.4-.85 3.2-1.3 5.25-1.3v-7.9C11.2 3.55 9.4 4 8 4.85Z' }],
+      ['path', { d: 'M8 4.85v7.9' }],
+    ),
+    label('Library'),
+  );
   libraryButton.addEventListener('click', () => init.onOpenLibrary());
   libraryButton.classList.toggle('is-new', init.libraryNew === true);
 
@@ -192,7 +202,22 @@ export function initControls(init: ControlsInit): Controls {
 
   const more = el('details', 'more');
   const summary = el('summary', 'btn more-summary');
-  summary.append(glyph('▸'), document.createTextNode('More options'));
+  /*
+   * Caret, sliders, word — and never all three at once. Wide, the caret leads and
+   * rotates, which is what a `<details>` looks like; below 620 px the caret and the
+   * word give way to the sliders, because a lone `▸` is a direction and not a door
+   * (§6.6). Both marks are in the DOM at every width; the CSS picks one.
+   */
+  summary.append(
+    glyph('▸'),
+    svgIcon(
+      ['path', { d: 'M2.75 4.25h10.5M2.75 8h10.5M2.75 11.75h10.5' }],
+      ['circle', { cx: '5.75', cy: '4.25', r: '1.6' }],
+      ['circle', { cx: '10.25', cy: '8', r: '1.6' }],
+      ['circle', { cx: '6.75', cy: '11.75', r: '1.6' }],
+    ),
+    label('More options'),
+  );
   const moreBody = el('div', 'more-body');
   const moreGrid = el('div', 'more-grid');
 
@@ -344,7 +369,18 @@ export function initControls(init: ControlsInit): Controls {
   moreBody.append(moreGrid, moreFoot);
   more.append(summary, moreBody);
 
-  bar.append(wrapField, mathField, fontField, libraryButton, more);
+  /*
+   * The two doors travel together (§6.1, §6.6). On a wide screen the wrapper is
+   * `display: contents` and they are the same two flex items in the same two places
+   * they have always been; on a phone the bar is a two-column grid, and one cell
+   * holding both is what keeps the row count at two. Before this they were two cells,
+   * the second of which had nothing to sit beside, so *More options* took a third row
+   * of a screen whose scarcest thing is vertical space.
+   */
+  const tools = el('div', 'bar-tools');
+  tools.append(libraryButton, more);
+
+  bar.append(wrapField, mathField, fontField, tools);
   root.append(bar);
   mount.append(root);
 
@@ -751,6 +787,44 @@ function glyph(mark: string): HTMLSpanElement {
   node.setAttribute('aria-hidden', 'true');
   node.textContent = mark;
   return node;
+}
+
+/**
+ * A button's word, in a span of its own — the same treatment the pane headers give
+ * theirs (`ui/panes.ts`). Below 620 px the two buttons of the tools row hide these
+ * (§6.6), and the hiding is `.sr-only` rather than `display: none`, so the button
+ * keeps its accessible name and its 44 px target.
+ */
+function label(value: string): HTMLSpanElement {
+  return el('span', 'btn-label', value);
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * A tiny stroked icon, built element by element — no icon library, no innerHTML. The
+ * twin of `ui/panes.ts`'s, as `el` below is of its `el`: the ui modules share types
+ * and nothing else.
+ */
+function svgIcon(...shapes: [string, Record<string, string>][]): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('width', '15');
+  svg.setAttribute('height', '15');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.4');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  svg.classList.add('icon');
+  for (const [tag, attrs] of shapes) {
+    const shape = document.createElementNS(SVG_NS, tag);
+    for (const [name, value] of Object.entries(attrs)) shape.setAttribute(name, value);
+    svg.append(shape);
+  }
+  return svg;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(

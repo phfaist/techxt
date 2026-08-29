@@ -628,7 +628,17 @@ select.control {
   white-space: nowrap;
 }
 
-/* ----------------------------------------------------- More options (§5) */
+/* ------------------------------------------ Library and More options (§5) */
+
+/*
+ * The two doors of the bar share a wrapper so that the phone layout can put them in
+ * one grid cell (see the 860 px block). A wide bar wants nothing of the sort: the
+ * wrapper disappears and they are flex items of `.bar` again, with *More options*
+ * pushed to the far end by the `margin-left: auto` below.
+ */
+.bar-tools {
+  display: contents;
+}
 
 .more {
   position: relative;
@@ -639,6 +649,11 @@ select.control {
   list-style: none;
   cursor: pointer;
   user-select: none;
+}
+
+/* The sliders stand in for the caret and the word only where those two stand down. */
+.more-summary .icon {
+  display: none;
 }
 
 .more-summary::-webkit-details-marker {
@@ -2371,10 +2386,6 @@ select.control {
 
 /* --- the button in the primary bar, and its one-time pulse */
 
-.library-button .glyph {
-  color: var(--fg-faint);
-}
-
 /*
  * The library only helps if people know it is there, so the button says so for the
  * first three sessions and then never again (§6.10). It is a slow tint, not a bounce:
@@ -2721,10 +2732,16 @@ select.control {
 
   /*
    * Two rows on a phone, by construction (§6.1): the bar becomes a two-column grid
-   * and auto-placement puts Wrap | Math on the first row and the display font | More
-   * options on the second, in DOM order. A wrapping flex row could not promise that —
-   * a select is as wide as its widest option unless it is told it may shrink, which
-   * is what turned this into four rows and a page that scrolled sideways.
+   * and auto-placement puts Wrap | Math on the first row and the display font |
+   * Library + More options on the second, in DOM order. A wrapping flex row could not
+   * promise that — a select is as wide as its widest option unless it is told it may
+   * shrink, which is what turned this into four rows and a page that scrolled
+   * sideways.
+   *
+   * Four children, not five: the two buttons are one cell (`.bar-tools`), which is
+   * what keeps the promise the row above makes. As two cells they filled the second
+   * row and pushed *More options* onto a third — half of it empty, on the screen
+   * where a row costs the most.
    */
   .bar {
     display: grid;
@@ -2758,8 +2775,19 @@ select.control {
     width: 4.5rem;
   }
 
+  /*
+   * The cell the two doors share, hard against the right edge so the row reads as
+   * "what the text looks like" on the left and "where to go next" on the right.
+   */
+  .bar-tools {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+
   .more {
-    justify-self: end;
     margin-left: 0;
   }
 
@@ -2844,9 +2872,15 @@ select.control {
  * their own — Download's icon, Focus's ⇅ — and keep them as `.sr-only` text so the
  * accessible name and the 44 px target both survive. Load and Copy keep their words:
  * Load has no icon at all, and Copy is goal 1 of §1.
+ *
+ * The bar's two doors go the same way at the same width, and for the same reason:
+ * *Library* and *More options* spelled out are a third of a 360 px screen, and the
+ * cell they share is half of one. Each keeps its own mark — the book, the sliders —
+ * so the pair reads as two doors rather than two words that did not fit.
  */
 @media (max-width: 620px) {
-  .pane-tools .btn:not(.btn-labelled) .btn-label {
+  .pane-tools .btn:not(.btn-labelled) .btn-label,
+  .bar-tools .btn-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -2860,6 +2894,20 @@ select.control {
   .pane-tools .btn:not(.btn-labelled) {
     padding-inline: 0.5rem;
     gap: 0;
+  }
+
+  .bar-tools .btn {
+    padding-inline: 0.6rem;
+    gap: 0;
+  }
+
+  /* A lone caret says "there is more of this", which is not what this button is. */
+  .more-summary .glyph {
+    display: none;
+  }
+
+  .more-summary .icon {
+    display: inline-block;
   }
 }
 
@@ -2889,7 +2937,9 @@ select.control {
     min-height: var(--tap);
   }
 
-  .pane-tools .btn {
+  /* Both rows where a button may be its icon alone; a 34 px square is not a target. */
+  .pane-tools .btn,
+  .bar-tools .btn {
     min-width: var(--tap);
   }
 
