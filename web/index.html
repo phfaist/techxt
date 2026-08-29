@@ -103,7 +103,7 @@
           want gone, and <strong>Export</strong> writes the whole library to a file you keep.
         </p>
 
-        <h3>Rust libraries <i>techy</i> and <i>techxt</i>, successors to python's <i>pylatexenc</i></h3>
+        <h3>Rust libraries <i>techy</i>, <i>techy-xp</i>, and <i>techxt</i>, successors to python's <i>pylatexenc</i></h3>
         <p>The <i>techxt</i> converter library is written in Rust.  It is based on the
           <i>techy</i> parser library, designed to parse (La)TeX-like construct code.
           Both libraries can be compiled to WebAssembly (WASM), facilitating their
@@ -112,10 +112,15 @@
         <p>The techy and techxt libraries are the result of rewriting the <i>pylatexenc</i>
           python library capabilities from scratch, in Rust.  We've improved the design and
           made the parsing faster.</p>
-        <p>Techy: <a href="https://github.com/phfaist/techy" target="_blank">github project</a> |
-           Techxt: <a href="https://github.com/phfaist/techxt" target="_blank">github project</a> |
-           Pylatexenc: <a href="https://github.com/phfaist/pylatexenc" target="_blank">github project</a></p>
-        <p>The techy/techxt libraries are currently in early development stage.</p>
+        <p>The parsing mechanics is further boosted with the <i>techy-xp</i> library, an extension
+          to <i>techy</i> that provides token-time expansion of input and supports complex
+          <code>\newcommand</code> and <code>\def</code> macros.
+        </p>
+        <p><a href="https://github.com/phfaist/techy" target="_blank">Techy's github page</a> |
+           <a href="https://github.com/phfaist/techcy-xp" target="_blank">Techy-xp's github page</a> |
+           <a href="https://github.com/phfaist/techxt" target="_blank">Techxt's github page</a> |
+           <a href="https://github.com/phfaist/pylatexenc" target="_blank">Pylatexenc's github page</a></p>
+        <p>The techy/techy-xp/techxt libraries are currently in early development stage.</p>
 
         <h3>The <i>techxt</i> command-line tool</h3>
         <p>Prefer the command line? Download/clone
@@ -126,6 +131,8 @@
         <pre class="snippet" tabindex="0"><code>$ techxt myfile.tex 
 Here is some math: ∑ₖ₌₁ⁿ 1/𝑘² …
 </code></pre>
+        <p>(You'll miss out on some features, though, such as your text being automatically
+          saved in the app's library.)</p>
 
         <!--
           Hidden until the service worker registers: without one there is nothing to
