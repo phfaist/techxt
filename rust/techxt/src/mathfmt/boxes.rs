@@ -205,7 +205,7 @@ pub enum MatrixFence {
     Parens,
     /// `[` … `]`: `bmatrix` and `array`.
     Brackets,
-    /// `{` … `}`: `Bmatrix`.
+    /// `{` … `}`: `Bmatrix` and the `cases` family.
     Braces,
     /// `|` … `|`: `vmatrix` (a determinant).
     Vert,
@@ -222,6 +222,7 @@ impl MatrixFence {
     ///
     /// assert_eq!(MatrixFence::for_environment("pmatrix"), Some(MatrixFence::Parens));
     /// assert_eq!(MatrixFence::for_environment("matrix"), Some(MatrixFence::None));
+    /// assert_eq!(MatrixFence::for_environment("rcases"), Some(MatrixFence::Braces));
     /// assert_eq!(MatrixFence::for_environment("tabular"), None);
     /// ```
     pub fn for_environment(name: &str) -> Option<MatrixFence> {
@@ -231,8 +232,13 @@ impl MatrixFence {
             "bmatrix" | "bsmallmatrix" | "array" => MatrixFence::Brackets,
             // `cases` draws only a left brace in LaTeX; there is no half-delimited box
             // here, and a pair of braces around a column of alternatives is what the
-            // construct means. `dcases` is the same environment in display size.
-            "Bmatrix" | "cases" | "dcases" => MatrixFence::Braces,
+            // construct means. That reading answers mathtools' relatives at the same
+            // time: `rcases` is the mirror image, brace on the right and nothing on the
+            // left, and a pair is as close as either gets. What the `d` and `*`
+            // spellings change — the size the cells are set at, whether the second
+            // column is text — the delimiters do not see.
+            "Bmatrix" | "cases" | "cases*" | "dcases" | "dcases*" | "rcases" | "rcases*"
+            | "drcases" | "drcases*" => MatrixFence::Braces,
             "vmatrix" => MatrixFence::Vert,
             "Vmatrix" => MatrixFence::DoubleVert,
             _ => return None,
