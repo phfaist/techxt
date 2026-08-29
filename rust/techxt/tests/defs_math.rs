@@ -573,6 +573,41 @@ fn cases_is_a_matrix_with_braces() {
     assert_eq!(text(r"$\begin{cases} a \\ b \end{cases}$"), "{ 𝑎; 𝑏 }\n");
 }
 
+/// mathtools' seven spellings of `cases` render as the one environment they are: the
+/// display size `d…` asks for is not a thing plain text has, and `rcases`' right-hand
+/// brace is a pair here for the reason `cases`' left-hand one is.
+#[test]
+fn the_rest_of_the_cases_family_renders_as_cases_does() {
+    let body = |name: &str| {
+        text(&format!(
+            r"\[\begin{{{name}}} 1 & x > 0 \\ 0 & x \le 0 \end{{{name}}}\]"
+        ))
+    };
+    let expected = "    ⎧ 1  𝑥 > 0 ⎫\n    ⎩ 0  𝑥 ≤ 0 ⎭\n";
+    for name in [
+        "cases", "cases*", "dcases", "dcases*", "rcases", "rcases*", "drcases", "drcases*",
+    ] {
+        assert_eq!(body(name), expected, "{name}");
+    }
+}
+
+/// And none of them reaches the unknown-environment policy on the way there.
+#[test]
+fn the_cases_family_converts_without_a_diagnostic() {
+    for name in [
+        "cases", "cases*", "dcases", "dcases*", "rcases", "rcases*", "drcases", "drcases*",
+    ] {
+        let converted = Converter::standard()
+            .latex_to_text(&format!(r"\[\begin{{{name}}} a \\ b \end{{{name}}}\]"))
+            .expect("parses");
+        assert!(
+            converted.diagnostics.is_empty(),
+            "{name}: {:?}",
+            converted.diagnostics
+        );
+    }
+}
+
 #[test]
 fn math_style_declarations_are_known_and_render_as_nothing() {
     let converted = Converter::standard()

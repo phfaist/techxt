@@ -2,7 +2,8 @@
 //!
 //! `equation`, `align`, `gather`, `multline`, `eqnarray`, `split` and `dmath` (with
 //! their starred forms), `subequations`, and the matrix family — `matrix`, `pmatrix`,
-//! `bmatrix`, `Bmatrix`, `vmatrix`, `Vmatrix`, `smallmatrix` and `array`.
+//! `bmatrix`, `Bmatrix`, `vmatrix`, `Vmatrix`, `smallmatrix`, the `cases` family and
+//! `array`.
 //!
 //! # An environment can be a math scope, or contribute to one
 //!
@@ -136,8 +137,26 @@ fn matrices(category: &mut Category) {
         "bsmallmatrix",
         // `cases` is a matrix in every way that plain text can see: rows of
         // alternatives, a condition in the second column, and a brace around the lot.
+        // mathtools' seven relatives are that same matrix spelled differently: `d…`
+        // sets the cells in display size, `r…` moves the brace to the other side, and
+        // the starred forms set the second column in text mode. The first two are
+        // invisible here — plain text has one size, and `MatrixFence` explains why the
+        // brace is a pair either way.
+        //
+        // The third is *not* invisible, and is a known gap: a `cases*` writing its
+        // condition as bare words rather than `\text{…}` gets them math-italic, since
+        // a cell here is math wherever it sits. Registering the name is still the
+        // better answer — the alternative is the unknown-environment path, which loses
+        // the rows and the brace as well and reports two diagnostics for a document
+        // that is not wrong.
         "cases",
+        "cases*",
         "dcases",
+        "dcases*",
+        "rcases",
+        "rcases*",
+        "drcases",
+        "drcases*",
     ] {
         category.add_env(EnvDef::new(name).math_body().rule(handler(Matrix)));
     }

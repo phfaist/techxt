@@ -386,6 +386,8 @@ fn inline_matrix_delimiters_come_from_the_environment() {
     assert_eq!(text("bmatrix"), "[ 1  2 ]");
     assert_eq!(text("array"), "[ 1  2 ]");
     assert_eq!(text("Bmatrix"), "{ 1  2 }");
+    assert_eq!(text("cases"), "{ 1  2 }");
+    assert_eq!(text("rcases*"), "{ 1  2 }");
     assert_eq!(text("vmatrix"), "| 1  2 |");
     assert_eq!(text("Vmatrix"), "‖ 1  2 ‖");
 }
