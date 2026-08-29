@@ -90,9 +90,19 @@ function openDatabase(): Promise<IDBDatabase> {
     request.onsuccess = (): void => resolve(request.result);
     request.onerror = (): void => reject(request.error ?? new Error('IndexedDB refused to open'));
     // Firefox in a private window, and a profile with storage disabled, answer by
-    // never firing either handler; the caller's timeout below is what saves the app
-    // from waiting for a database that is not coming.
-    request.onblocked = (): void => reject(new Error('the database is blocked by another tab'));
+    // never firing any handler; the caller's timeout below is what saves the app from
+    // waiting for a database that is not coming.
+    //
+    // `blocked` is *not* one of those cases and must not be treated as a failure: it
+    // says another tab is holding an older version open, and every tab from this
+    // build on closes its connection when it hears `versionchange` below. So the open
+    // is a moment away from succeeding, and rejecting here would hand a user with two
+    // tabs the "no library in this browser" state on the day `DB_VERSION` first
+    // moves. A tab running a build too old to let go is the case the timeout covers,
+    // and it is then the honest answer rather than a wrong one.
+    request.onblocked = (): void => {
+      /* waiting for the other tab to close; `withTimeout` bounds the wait */
+    };
   });
 }
 
@@ -120,11 +130,27 @@ function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
  *
  * `null` is not an error state: it is the honest answer for a locked-down profile,
  * and the pane says so rather than offering buttons that cannot work.
+ *
+ * `onClosed` is called if the connection is given up while the page is still running,
+ * which happens for exactly one reason: another tab is upgrading the database and
+ * this one is in its way. Holding on would leave that tab with no library at all
+ * (its open fires `blocked` and never completes), so this one lets go — and every
+ * call on the backend fails from then on, which is what the callback exists to say
+ * before the failures start arriving as toasts.
  */
-export async function openLibraryBackend(): Promise<LibraryBackend | null> {
+export async function openLibraryBackend(
+  onClosed?: () => void,
+): Promise<LibraryBackend | null> {
   try {
     if (typeof indexedDB === 'undefined') return null;
     const db = await withTimeout(openDatabase(), OPEN_TIMEOUT_MS);
+    // A connection that stays open across a version change blocks the tab making it
+    // *indefinitely*: there is no timeout on the other side of `blocked`, only this
+    // handler. Closing is not optional politeness, it is the whole of the protocol.
+    db.onversionchange = (): void => {
+      db.close();
+      onClosed?.();
+    };
     return indexedDbBackend(db);
   } catch {
     return null;

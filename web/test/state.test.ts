@@ -19,10 +19,13 @@ import {
   defaultState,
   encodeShare,
   loadState,
+  migrateCurrentEntryId,
   pruneOptions,
   sanitizeOptions,
   sanitizeUi,
+  readCurrentEntryId,
   withDefaults,
+  writeCurrentEntryId,
 } from '../src/state';
 import type { Clock, StorageLike } from '../src/state';
 import type { AppOptions, UiState } from '../src/types';
@@ -391,5 +394,90 @@ describe('loadState', () => {
     const loaded = await loadState({ storage: hostile });
     expect(loaded.state).toEqual(defaultState());
     expect(loaded.firstVisit).toBe(true);
+  });
+});
+
+/* -------------------------------------------------- the tab's current entry */
+
+describe('the current entry id', () => {
+  it('round-trips, and a removal clears it', () => {
+    writeCurrentEntryId(storage, 'e1');
+    expect(readCurrentEntryId(storage)).toBe('e1');
+    writeCurrentEntryId(storage, null);
+    expect(readCurrentEntryId(storage)).toBeNull();
+  });
+
+  it('refuses an id that is not one', () => {
+    storage.setItem(STORAGE_KEYS.libraryCurrent, '');
+    expect(readCurrentEntryId(storage)).toBeNull();
+    storage.setItem(STORAGE_KEYS.libraryCurrent, 'x'.repeat(200));
+    expect(readCurrentEntryId(storage)).toBeNull();
+  });
+
+  it('never throws over a storage that will not answer', () => {
+    const hostile: StorageLike = {
+      getItem: () => {
+        throw new Error('SecurityError');
+      },
+      setItem: () => {
+        throw new Error('QuotaExceededError');
+      },
+      removeItem: () => {
+        throw new Error('SecurityError');
+      },
+    };
+    expect(readCurrentEntryId(hostile)).toBeNull();
+    expect(() => writeCurrentEntryId(hostile, 'e1')).not.toThrow();
+    expect(() => writeCurrentEntryId(hostile, null)).not.toThrow();
+    expect(() => migrateCurrentEntryId(hostile, hostile)).not.toThrow();
+  });
+});
+
+describe('migrateCurrentEntryId', () => {
+  let tab: MemoryStorage;
+
+  beforeEach(() => {
+    tab = new MemoryStorage();
+  });
+
+  it('hands the origin-wide id previous builds kept to this tab, and deletes it', () => {
+    storage.setItem(STORAGE_KEYS.libraryCurrent, 'e1');
+
+    migrateCurrentEntryId(tab, storage);
+
+    expect(readCurrentEntryId(tab)).toBe('e1');
+    // Deleted, so the *second* tab to run this finds nothing and starts its own
+    // entry rather than adopting the first tab's — which is the point of the move.
+    expect(storage.getItem(STORAGE_KEYS.libraryCurrent)).toBeNull();
+  });
+
+  it('gives it to one tab only', () => {
+    storage.setItem(STORAGE_KEYS.libraryCurrent, 'e1');
+    const other = new MemoryStorage();
+
+    migrateCurrentEntryId(tab, storage);
+    migrateCurrentEntryId(other, storage);
+
+    expect(readCurrentEntryId(tab)).toBe('e1');
+    expect(readCurrentEntryId(other)).toBeNull();
+  });
+
+  it('never overwrites a live session with a stale origin-wide id', () => {
+    writeCurrentEntryId(tab, 'mine');
+    storage.setItem(STORAGE_KEYS.libraryCurrent, 'stale');
+
+    migrateCurrentEntryId(tab, storage);
+
+    expect(readCurrentEntryId(tab)).toBe('mine');
+    expect(storage.getItem(STORAGE_KEYS.libraryCurrent)).toBeNull();
+  });
+
+  it('does nothing when there is nothing to move', () => {
+    migrateCurrentEntryId(tab, storage);
+    expect(readCurrentEntryId(tab)).toBeNull();
+  });
+
+  it('does nothing where there is no storage at all', () => {
+    expect(() => migrateCurrentEntryId(null, null)).not.toThrow();
   });
 });

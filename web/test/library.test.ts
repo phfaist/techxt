@@ -417,6 +417,37 @@ describe('the current entry', () => {
     expect(entries.map((item) => item.source).sort()).toEqual(['first, edited', 'second']);
   });
 
+  it('lets an entry go when another tab claims it, keeping what was typed here', async () => {
+    const sessions: { entryId: string | null; sealed: boolean }[] = [];
+    const log = library({ onSession: (session) => sessions.push({ ...session }) });
+    log.record('shared', {}, 'shared');
+    clock.advance(2000);
+    await log.flush();
+    const id = (await log.list())[0]!.id;
+
+    // Typed here, and then the other tab claims the entry before the two seconds are
+    // up. Those keystrokes belong to the entry they were typed into.
+    log.record('shared, edited here', {}, 'shared, edited here');
+    log.release();
+    clock.advance(2000);
+    await log.flush();
+
+    expect((await log.get(id))?.source).toBe('shared, edited here');
+    expect(log.session).toEqual({ entryId: null, sealed: false });
+    expect(sessions.at(-1)).toEqual({ entryId: null, sealed: false });
+
+    // And what comes next is this tab's own entry, so the two never put one record.
+    stamp = 20_000;
+    log.record('what this tab does next', {}, '');
+    clock.advance(2000);
+    await log.flush();
+
+    const entries = await log.list();
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.id).not.toBe(id);
+    expect((await log.get(id))?.source).toBe('shared, edited here');
+  });
+
   it('starts a new entry after a long idle gap', async () => {
     const log = library();
     log.record('morning', {}, 'morning');

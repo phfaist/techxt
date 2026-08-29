@@ -375,19 +375,41 @@ export interface StorageLike {
 }
 
 /**
- * `localStorage`, or `null` where it is absent or refuses to be touched — Safari in
- * private mode throws on *access*, not only on write.
+ * A store that answers, or `null` — Safari in private mode throws on *access*, not
+ * only on write, so the probe is a write and not a feature test.
  */
-export function browserStorage(): StorageLike | null {
+function probeStorage(store: Storage | undefined): StorageLike | null {
   try {
-    if (typeof localStorage === 'undefined') return null;
+    if (typeof store === 'undefined') return null;
     const probe = '__techxt_probe__';
-    localStorage.setItem(probe, '1');
-    localStorage.removeItem(probe);
-    return localStorage;
+    store.setItem(probe, '1');
+    store.removeItem(probe);
+    return store;
   } catch {
     return null;
   }
+}
+
+/**
+ * `localStorage`, or `null` where it is absent or refuses to be touched — everything
+ * the app remembers about this *origin*: the document, the options, the interface.
+ */
+export function browserStorage(): StorageLike | null {
+  return probeStorage(typeof localStorage === 'undefined' ? undefined : localStorage);
+}
+
+/**
+ * `sessionStorage`, or `null` on the same terms — everything the app remembers about
+ * this *tab*.
+ *
+ * There is exactly one such fact, and it is the one in {@link readCurrentEntryId}:
+ * which library entry this tab is writing into. It lives here rather than beside the
+ * document because it is not true of the origin. Two tabs are two editing sessions,
+ * and an origin-wide answer to "which entry am I writing into" makes the second tab
+ * adopt the first one's entry and overwrite it (§6.10, "more than one tab").
+ */
+export function tabStorage(): StorageLike | null {
+  return probeStorage(typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
 }
 
 function readJson(storage: StorageLike | null, key: string): unknown {
@@ -560,13 +582,18 @@ export function shouldPulseLibrary(hints: LibraryHints): boolean {
 }
 
 /**
- * Which library entry the editing session was writing into, so that a reload
+ * Which library entry *this tab's* editing session was writing into, so that a reload
  * continues it rather than logging the same document twice (§6.10).
  *
  * A reload is not "a new document": the pane comes back with the same text in it, and
  * an entry per reload would turn the log into a pile of copies. This is the one fact
  * that has to outlive the page for the session to survive it, and it is a bare id —
  * the entry itself lives in IndexedDB, and a stale id simply finds nothing.
+ *
+ * The store is `sessionStorage` ({@link tabStorage}), which is what makes a reload and
+ * a *second tab* different things: a reload is the same tab and keeps the id, a new
+ * tab starts with none and so starts its own entry instead of adopting one that is
+ * already being written to.
  */
 export function readCurrentEntryId(storage: StorageLike | null): string | null {
   try {
@@ -587,6 +614,34 @@ export function writeCurrentEntryId(storage: StorageLike | null, id: string | nu
     return;
   }
   write(storage, STORAGE_KEYS.libraryCurrent, id);
+}
+
+/**
+ * Take over the origin-wide current-entry id that builds before this one kept, and
+ * delete it.
+ *
+ * Previous builds wrote this id to `localStorage`, where every tab read it and every
+ * tab therefore adopted the same entry. The upgrade path has to hand it to *one* tab,
+ * or a user who reloads mid-document loses the entry they were writing into and gets
+ * a duplicate of it. Moving it is that hand-off, and removing it is what makes the
+ * move safe: the second tab to run this finds nothing and starts its own entry, which
+ * is exactly the outcome the new arrangement is for.
+ *
+ * A no-op once done, and a no-op for a tab that already has an id of its own — the
+ * migration must never overwrite a live session with a stale origin-wide id.
+ */
+export function migrateCurrentEntryId(
+  tab: StorageLike | null,
+  origin: StorageLike | null,
+): void {
+  const stale = readCurrentEntryId(origin);
+  try {
+    origin?.removeItem(STORAGE_KEYS.libraryCurrent);
+  } catch {
+    /* an id that will not be removed is one the next tab may take instead */
+  }
+  if (stale === null || readCurrentEntryId(tab) !== null) return;
+  writeCurrentEntryId(tab, stale);
 }
 
 /* -------------------------------------------------------------------- share link */

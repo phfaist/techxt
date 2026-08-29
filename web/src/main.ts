@@ -34,6 +34,8 @@ import {
 import type { Library, LibraryEntry } from './library';
 import { decodeLibrary, describeImport, encodeLibrary, libraryFileName, planImport } from './library-io';
 import { isPersisted, openLibraryBackend, requestPersistence, storageEstimate } from './library-store';
+import { openLibraryChannel } from './library-sync';
+import type { LibraryChannel } from './library-sync';
 import { loadMathJax, resetMathJax, typeset } from './mathjax';
 import {
   DEFAULT_OPTIONS,
@@ -44,12 +46,14 @@ import {
   encodeShareSettingsOnly,
   loadState,
   mathJax,
+  migrateCurrentEntryId,
   readCurrentEntryId,
   readLibraryHints,
   resolveOptions,
   sanitizeOptions,
   shouldPulseLibrary,
   softWraps,
+  tabStorage,
   withDefaults,
   writeCurrentEntryId,
   writeLibraryHints,
@@ -78,6 +82,9 @@ const DOC_TOO_LARGE =
 
 /** The aside for a library the user asked to stop growing (§6.10). */
 const LIBRARY_PAUSED = 'the library has stopped logging new documents — nothing in it was removed';
+
+/** The aside for a library another tab has upgraded out from under this one (§6.10). */
+const LIBRARY_STALE = 'the library was updated in another tab — reload to use it here';
 
 const ISSUE_URL = 'https://github.com/phfaist/techxt/issues/new';
 
@@ -197,6 +204,12 @@ async function start(): Promise<void> {
   registerServiceWorker(toast);
 
   const storage = browserStorage();
+  // What this *tab* remembers, as against what the origin does: one fact, the entry
+  // being written into (§6.10). The migration runs before anything reads it, and
+  // hands the id previous builds kept for the whole origin to whichever tab gets here
+  // first.
+  const tab = tabStorage();
+  migrateCurrentEntryId(tab, storage);
   const loaded = await loadState({
     fragment: window.location.hash,
     query: window.location.search,
@@ -218,6 +231,18 @@ async function start(): Promise<void> {
    * conversion waits for; {@link openLibrary} below is what fills it in.
    */
   let library: Library | null = null;
+  /**
+   * The line to the app's other tabs, or `null` where this browser has not got one
+   * (§6.10). Opened beside the library and for the library's sake alone: nothing else
+   * in the app is shared between two copies of it.
+   */
+  let channel: LibraryChannel | null = null;
+  /**
+   * Whether the database has been given up to another tab's upgrade. It is not the
+   * same as a paused library and must not be described as one: the user asked for
+   * neither, and only one of the two is fixed by a reload.
+   */
+  let libraryStale = false;
 
   /** The last output we are willing to show: what a cancel or a crash falls back to. */
   let lastGoodOutput = '';
@@ -661,7 +686,7 @@ async function start(): Promise<void> {
    * converted by the time this resolves is logged then.
    */
   async function openLibrary(): Promise<void> {
-    const backend = await openLibraryBackend();
+    const backend = await openLibraryBackend(() => libraryClosed());
     if (!backend) {
       // Honest and inert, the way `browserStorage()` is for localStorage (§6.10).
       panes.setEntryState(null);
@@ -670,6 +695,19 @@ async function start(): Promise<void> {
       );
       return;
     }
+
+    // Before the library, so that the claim the adoption below makes is one the other
+    // tabs actually hear.
+    channel = openLibraryChannel((message) => {
+      if (message.kind === 'changed') {
+        // Another tab added, removed, starred, renamed or imported something. The
+        // pane may be open on the old set, and `refreshLibrary` is what it already
+        // does for this tab's own writes.
+        void refreshLibrary();
+        return;
+      }
+      entryTakenOver(message.id);
+    });
 
     library = createLibrary({
       backend,
@@ -708,11 +746,17 @@ async function start(): Promise<void> {
         // Only an *open* entry is worth continuing after a reload. A sealed one is not
         // being written to, and is found again below by what it holds rather than by
         // an id that would invite the next keystroke straight back into it (§6.10).
-        writeCurrentEntryId(storage, session.sealed ? null : session.entryId);
+        const open = session.sealed ? null : session.entryId;
+        writeCurrentEntryId(tab, open);
+        // And the other tabs are told, for the same reason and on the same terms: an
+        // entry being written into is claimed, a sealed one is not being written to
+        // and so is nobody's to lose.
+        if (open !== null) channel?.post({ kind: 'claim', id: open });
         syncEntry();
       },
       onChange() {
         void refreshLibrary();
+        channel?.post({ kind: 'changed' });
       },
     });
 
@@ -720,13 +764,13 @@ async function start(): Promise<void> {
     // A reload is not a new document: if the editing session was writing into an
     // entry and the pane came back with that same session's text in it, the log
     // continues there rather than growing a second copy (§6.10).
-    const previous = readCurrentEntryId(storage);
+    const previous = readCurrentEntryId(tab);
     const resumed =
       loaded.source === 'storage' && previous !== null ? await library.get(previous) : null;
     if (resumed) {
       library.adopt(resumed.id);
     } else {
-      writeCurrentEntryId(storage, null);
+      writeCurrentEntryId(tab, null);
       // A reload after Save has no id to resume — a sealed entry keeps none — but it
       // does have the document, and a document already in the log *verbatim* does not
       // deserve a second copy of it. Coming back to it sealed is also the conservative
@@ -744,6 +788,65 @@ async function start(): Promise<void> {
     await refreshLibrary();
   }
 
+  /**
+   * Another tab has taken over the entry this one was writing into (§6.10).
+   *
+   * Giving it up is not a courtesy, it is the point: two tabs updating one entry in
+   * place put the whole record each time, so the second write silently replaces the
+   * first tab's document, its title and its star. Whatever is pending here was typed
+   * here and is written into the entry it was typed into; what comes next starts an
+   * entry of its own.
+   *
+   * Said out loud, briefly, because the user did nothing to cause it and the header
+   * is about to stop naming the entry they were saving into.
+   */
+  function entryTakenOver(id: string): void {
+    // A library this tab has already let go of has nothing to hand over, and the
+    // persistent toast `libraryClosed` raised has already said so once.
+    if (!library || libraryStale) return;
+    const session = library.session;
+    // Not this tab's entry, or this tab is only holding a sealed version of it —
+    // which is nobody's to lose, since nothing is being written to it.
+    if (session.sealed || session.entryId !== id) return;
+    const name = shownEntry?.id === id ? shownEntry.title : null;
+    library.release();
+    toast.show({
+      message:
+        name === null
+          ? 'Another tab is now saving into this entry. What you type here starts a new one.'
+          : `Another tab is now saving into “${name}”. What you type here starts a new entry.`,
+      timeoutMs: 8000,
+    });
+  }
+
+  /**
+   * The database was given up while the page is still running (§6.10).
+   *
+   * One cause: another tab is upgrading it, and this one was in the way. Holding on
+   * would have left *that* tab with no library at all, so `library-store.ts` let go —
+   * which means every call from here on fails. Logging stops on purpose rather than
+   * by a stream of failed writes, and the offer is the only one that helps: reload,
+   * and come back on the new schema.
+   */
+  function libraryClosed(): void {
+    if (libraryStale) return;
+    libraryStale = true;
+    library?.pause();
+    notes.library = LIBRARY_STALE;
+    updateNote();
+    // Not a refresh: the database is closed, so a read would answer "no entries" and
+    // the pane would report an empty library rather than an unreachable one.
+    libraryPane.setUnavailable(
+      'Another tab updated the library. Reload this tab to use it here — nothing was lost.',
+    );
+    panes.setEntryState(null);
+    toast.show({
+      message: 'The library was updated in another tab.',
+      timeoutMs: 0,
+      action: { label: 'Reload', onSelect: () => window.location.reload() },
+    });
+  }
+
   /** Note the document as it stands, if there is a library and an answer to note. */
   function recordCurrent(): void {
     if (!library || state.doc.trim() === '') return;
@@ -755,7 +858,9 @@ async function start(): Promise<void> {
    * size, and the one line of warning that is ever shown about storage (§6.10).
    */
   async function refreshLibrary(): Promise<void> {
-    if (!library) return;
+    // A closed database answers every read with nothing, and a pane that reported
+    // that would be saying the library is empty when it is only out of reach.
+    if (!library || libraryStale) return;
     const entries = await library.list();
     libraryPane.setEntries(entries, statsOf(entries));
     const current = library.session.entryId;
@@ -1262,7 +1367,15 @@ async function start(): Promise<void> {
     // couple of seconds' typing rather than a session (§6.10).
     void library?.flush();
   };
-  window.addEventListener('pagehide', flush);
+  window.addEventListener('pagehide', (event) => {
+    flush();
+    // `persisted` is the whole of the condition: a page going into the back/forward
+    // cache is coming back, with the entry it was writing into and every reason to
+    // still be hearing the other tabs. Only a page actually going away lets go.
+    if (event.persisted) return;
+    channel?.close();
+    channel = null;
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flush();
   });

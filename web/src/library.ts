@@ -627,6 +627,18 @@ export interface Library {
   /** The document was replaced wholesale: the next `record` starts a new entry. */
   beginNewEntry(): void;
   /**
+   * Another tab is writing into this entry now, so this one stops (§6.10).
+   *
+   * The same primitive as {@link beginNewEntry} for a different reason, and the
+   * reasoning behind it is the reasoning behind every other fork in this file: what
+   * is pending was typed here and belongs to the entry it was typed into, so it is
+   * written there; what comes next starts an entry of its own. That costs one entry
+   * holding the same text as the one given up, and buys the guarantee that two tabs
+   * never put the same record — which is the only interference between them that can
+   * cost the user work rather than tidiness.
+   */
+  release(): void;
+  /**
    * One input event happened, from `before` to `after`. Answers what it did to the
    * session, so the app can say so and offer to undo it.
    *
@@ -1030,6 +1042,8 @@ export function createLibrary(init: LibraryInit): Library {
     },
 
     beginNewEntry: endSession,
+
+    release: endSession,
 
     noteEdit(before, after) {
       if (!backend || paused) return { kind: 'none' };

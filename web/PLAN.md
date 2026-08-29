@@ -98,6 +98,7 @@ web/
     library.ts            the library's entry model, session and retention policy
     library-store.ts      the IndexedDB backend, and the quota facts around it
     library-io.ts         the export format, and what an import is allowed to do
+    library-sync.ts       the two things one tab tells the others about the library
     mathjax.ts            MathJax in four functions: load, loaded, typeset, reset
     math-regions.ts       cutting the output into the runs the pane wraps in elements
     highlight.ts          the editor's lexer, and the chunking the mirror renders
@@ -1116,16 +1117,19 @@ non-empty document and updated in place from then on, debounced 2 s and on `page
 Changing only the options updates it too. A new entry begins where the app already
 knows the user has moved on: Load ▾, the `.tex` file handler, opening an entry from the
 library, an import that replaced everything — and after a 30-minute idle gap. A
-*reload* is none of those: the id of the current entry is kept in `localStorage`
+*reload* is none of those: the id of the current entry is kept in `sessionStorage`
 (`techxt.library.current.v1`) and adopted on load when the document came from storage,
-so coming back to a tab continues the entry instead of logging a second copy of it.
+so coming back to a tab continues the entry instead of logging a second copy of it. It
+is `sessionStorage` and not `localStorage` because "which entry am I writing into" is
+true of a *tab* and not of an origin — see **More than one tab** below for what the
+origin-wide answer used to cost.
 
 **The next entry is always created lazily**, by the first `record` whose source differs
 from what the sealed entry holds — never at the moment of sealing. Otherwise pressing
 Save and walking away would leave an empty entry in the log, and an option change on a
 kept version would quietly duplicate it.
 
-**A sealed session keeps no id in `localStorage`**, because it is not writing anywhere.
+**A sealed session keeps no id**, because it is not writing anywhere.
 Coming back after a reload it is found by what it holds instead: a document that is
 already in the log *verbatim* is adopted sealed rather than logged a second time. That
 is also the conservative half of the guess — the worst it can cost is one extra entry
@@ -1180,6 +1184,61 @@ honest inert pane that says so, Save, ★ and the entry chip hidden rather than 
 everything else working exactly as usual. New stays, because clearing the document with
 one level of undo is worth having on its own, and its toast then claims nothing about a
 library that is not there.
+
+#### More than one tab
+
+Two copies of the app on one origin share one library, one `localStorage` and one
+quota. The job is not to make them collaborate — that would be a document-sync problem
+and this is not one — but to stop them standing on each other. Four rules do it, and
+the first two — both halves of "an entry belongs to one tab" — are the only ones that
+were ever costing work rather than tidiness.
+
+**The entry a tab is writing into is a fact about the tab.** It lived in
+`localStorage`, so a second tab read the first one's id on load, adopted the same entry
+and updated it in place every two seconds alongside it. That is the interference that
+costs the user work, because a write puts the *whole* record back — an in-place update
+is a read, a merge and a `put`, in separate transactions — so the loser's document, its
+title and its star all go with it. The id moves to `sessionStorage`, which is per tab
+and survives a reload: a reload keeps the entry, a new tab starts its own. The id
+previous builds left in `localStorage` is taken by whichever tab loads first and
+deleted, so the upgrade neither strands a live session nor hands one entry to two tabs.
+
+**A tab that is beaten to an entry gives it up.** `sessionStorage` is copied into a
+*duplicated* tab, and two tabs can open the same entry from the pane in any case, so
+the storage change is not the whole rule. Over a `BroadcastChannel`
+(`techxt.library.v1`, `src/library-sync.ts`) a tab announces the entry it is writing
+into, and a tab that hears an announcement for the entry *it* is writing into stops
+writing to it: what is pending was typed there and is written there, and the next
+keystroke starts an entry of its own. It costs one entry holding the same text — the
+asymmetry every other fork in this section is decided on — and buys the guarantee that
+two tabs never put one record. A `BroadcastChannel` never delivers to the object that
+posted, which is what makes the rule safe to state that bluntly: a tab cannot release
+on its own announcement. Two tabs announcing in the same instant both let go, which
+costs a second entry and loses nothing. The header stops naming the entry, so a toast
+says why: the user did nothing to cause it.
+
+**A change to the set of entries is announced too**, so a pane open on the old set
+re-reads it instead of showing a library that has moved on: a create, a delete, a star,
+a rename, an import, a clear. Deliberately *not* the two-second in-place update of the
+entry being typed into — the pane loads every entry in full, and reloading all of them
+every two seconds to restate a preview this section already allows to be stale would be
+a poor trade.
+
+**The database is let go when another tab needs to upgrade it.** A connection held open
+across a version change blocks the tab performing it *indefinitely* — there is no
+timeout on that side, only the `versionchange` handler — so a tab that hears one closes
+its connection, stops logging, says so in the status line and in the pane, and offers a
+reload. For the same reason `blocked` on opening is a wait and not a failure: it means
+another tab is about to let go. A tab that has not let go within the four-second
+timeout is running a build too old to know how, and that is the one case that deserves
+the "no library here" answer. `DB_VERSION` is 1 and has never moved, so none of this
+has run in anger; it is written now because the day it first runs is the day it is too
+late to add.
+
+What is deliberately left shared: the converter needs nothing, since a tab has its own
+worker and its own wasm instance; the stored document stays origin-wide and last writer
+wins, which only ever decides what a *reload* comes back to; and the quota is the
+origin's, which is what the proposal below is already for.
 
 #### Retention: the app never quietly drops the user's data
 
