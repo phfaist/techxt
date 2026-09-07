@@ -12,8 +12,8 @@
 //!
 //! # Two ways to register the same macro
 //!
-//! Resolution is techy's, and techy performs it only for a macro registered with its own
-//! [`input_macro_spec`] — no argument declaration can ask for it. So this category
+//! Resolution is techy's, and techy performs it only for a macro whose spec is an
+//! [`InputMacroSpec`] — no argument declaration can ask for it. So this category
 //! registers `\input` through [`MacroDef::spec`], the escape hatch for a spec techxt does
 //! not model (DECISIONS.md D15), and the spec it hands over depends on how the converter
 //! was configured:
@@ -29,6 +29,25 @@
 //! A foreign spec carries no rule, so `\input`'s rule is found by name at dispatch step 3
 //! rather than by downcast at step 2 (PLAN.md §10.3); the fallback table
 //! [`DefinitionSet`](crate::def::DefinitionSet) builds holds it either way.
+//!
+//! # The reference is a group, so a macro in it expands
+//!
+//! techy's [`input_macro_spec`](techy::latexlike::input_macro_spec) recipe declares the
+//! reference as a *chars-group*: the braces are read raw, commands and specials off, so
+//! `\input{\name}` asks the resolver for the literal `\name`. That is the right reading
+//! for an embedder without macro expansion, and the wrong one here — techxt parses
+//! through techy-xp, where a `\newcommand` is expanded as the tokens are read, and a file
+//! name assembled from a macro is an ordinary thing to write.
+//!
+//! So the spec is built with [`InputMacroSpec::new`] and a reference argument declared
+//! `BracedOnly`, the same word code the fallback declaration uses. Both paths therefore
+//! agree on the argument's shape — a `{…}` group, contents parsed as content, and **no**
+//! single-token fallback, so `\input chapter.tex` is a missing mandatory argument rather
+//! than an inclusion of the file `c`.
+//!
+//! What the chars-group would have bought — an underscore in `\input{my_file.tex}`
+//! surviving as a character — techxt already has without it: `_` outside math stages as
+//! plain characters here, so the reference reads exactly as written either way.
 //!
 //! # An included file's definitions end with the file
 //!
@@ -65,7 +84,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 
 use techy::core::specs::CallableSpec;
-use techy::latexlike::{input_macro_spec, BodyMarker};
+use techy::latexlike::{argument_specs_named, BodyMarker, InputMacroSpec};
 use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{CallableSpecSource, Category, MacroDef, SpecBuildCx, TextHandler};
@@ -103,17 +122,35 @@ struct Resolving;
 impl CallableSpecSource for Resolving {
     fn callable_spec(&self, cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<LatexlikeXp>>> {
         cx.source_resolver()?;
-        Some(Arc::new(input_macro_spec(
-            // State-transparent (`persist_state: false`): every state change an included
-            // file makes ends with the file. Since PLAN.md §16 M9 that is **observable**,
-            // and the module documentation's *An included file's definitions end with the
-            // file* says exactly what it costs.
-            false,
-            // Not the node's body: the attached content is retrieved by slot name, and
-            // marking it as a body would make every generic body walk descend into a
-            // whole included file.
-            BodyMarker::not_body(),
-        )))
+        // `InputMacroSpec::new`, not the `input_macro_spec` recipe: the recipe declares
+        // the reference as a *chars-group*, which reads the braces raw and so never lets
+        // techy-xp expand what is inside them — `\input{\name}` would ask the resolver
+        // for the literal `\name`. `BracedOnly` is the same code the fallback
+        // declaration above uses, so both paths now say the same thing about the
+        // argument: a `{…}` group, no single-token fallback, contents parsed as content.
+        // The name is techy's to choose — the reference is read from the argument called
+        // `REFERENCE_ARGUMENT_NAME` — where the fallback spec is free to call it
+        // `filename`.
+        let arguments = argument_specs_named::<LatexlikeXp, _, _, _>([(
+            "BracedOnly",
+            InputMacroSpec::<LatexlikeXp>::REFERENCE_ARGUMENT_NAME,
+        )])
+        .expect("`BracedOnly` is one of techy's word codes");
+        Some(Arc::new(
+            InputMacroSpec::new(
+                arguments,
+                // State-transparent (`persist_state: false`): every state change an
+                // included file makes ends with the file. Since PLAN.md §16 M9 that is
+                // **observable**, and the module documentation's *An included file's
+                // definitions end with the file* says exactly what it costs.
+                false,
+                // Not the node's body: the attached content is retrieved by slot name,
+                // and marking it as a body would make every generic body walk descend
+                // into a whole included file.
+                BodyMarker::not_body(),
+            )
+            .expect("the one declared argument carries the reference name"),
+        ))
     }
 }
 

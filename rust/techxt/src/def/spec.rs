@@ -93,7 +93,7 @@ impl CallableSpec<LatexlikeXp> for TechxtMacroSpec {
 /// over the whole spec, for a construct techy itself implements and techxt only wants
 /// to register — the shipped case is `\input`, which techy resolves at parse time only
 /// when the macro is registered with its bespoke
-/// [`input_macro_spec`](techy::latexlike::input_macro_spec).
+/// [`InputMacroSpec`](techy::latexlike::InputMacroSpec).
 ///
 /// The spec is asked for once per converter, while the converter is being built, and
 /// gets a [`SpecBuildCx`] describing what that converter is configured with — the only

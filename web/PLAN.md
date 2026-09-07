@@ -2436,6 +2436,29 @@ The **raw** ceiling was left untouched, and the same build sits 19 608 B (1.7 %)
 it — proportionally tighter than the gzip line now is. Raw is the likelier of the two to
 fire next.
 
+### Measured at the techy `541117a` / techy-xp `16a16d2` rev bump — no tripwire
+
+54 upstream techy commits, most of them documentation, plus the `\input` change they
+forced on `rust/techxt/src/defs/inputs.rs` (techy `6abad52` made the reference a
+chars-group; `fa5156e` then made `InputMacroSpec::new` public so the definer declares
+the argument itself, and techxt declares it `BracedOnly`).
+
+Both rows below are the **current** profile — `opt-level = "s"` + `wasm-opt -Os`, the
+choice taken at the size pass above — measured on the development machine on the same
+day, so the difference is the code and nothing else:
+
+| Quantity | Value |
+|---|---|
+| wasm at techy `736c97c` + techy-xp `58c8aef` | 928 757 B raw · 361 069 B gzip |
+| wasm at techy `541117a` + techy-xp `16a16d2` | **926 959 B raw · 360 384 B gzip** |
+
+Size-neutral again, marginally favourable: −1 798 B raw, −685 B gzipped. Comfortably
+inside both ceilings, and neither step fired.
+
+These numbers sit about 4.5 % below what CI reports for the same commit, which is the
+toolchain spread `web.yml` sizes its headroom from — not a regression and not a
+saving.
+
 ### Measured with the editor overlay — in a browser, on Chromium
 
 The two numbers the editor is judged by, and the two that surprised. Same machine, same
@@ -2862,8 +2885,9 @@ Confirmed present on the development machine on 2026-08-20: rustc/cargo **1.97.0
 `pyftsubset`/fonttools. `wasm-bindgen-cli` and a standalone `wasm-opt` are **not**
 installed — wasm-pack supplies both.
 
-- **`techy` is a git dependency** pinned to rev `736c97c`, so a cold build needs
-  network. `web/crate/Cargo.lock` is committed to pin it for deploys.
+- **`techy` is a git dependency** pinned to an exact revision in `rust/Cargo.toml` —
+  the only place the revision is written — so a cold build needs network.
+  `web/crate/Cargo.lock` is committed to pin it for deploys.
 - **`techy-xp` joins it at M9**, pinned the same way and to a revision that itself pins
   the *same* techy revision — cargo cannot unify two revs of one git dependency, so the
   two pins move together. It reaches `web/crate` through `techxt`, which is why

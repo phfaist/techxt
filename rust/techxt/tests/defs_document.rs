@@ -311,6 +311,55 @@ fn an_input_pulls_in_the_resolved_content() {
     );
 }
 
+/// The reference is a `BracedOnly` group, not a chars-group, so techy-xp expands what
+/// is written inside the braces (`defs/inputs.rs`, *The reference is a group*).
+#[test]
+fn a_macro_in_the_reference_expands() {
+    let conversion = including(&[("chapter.tex", "included")])
+        .latex_to_text(r"\newcommand\name{chapter.tex}a \input{\name} b")
+        .expect("parses");
+    assert_eq!(conversion.text, "a included b\n");
+    assert!(
+        conversion.diagnostics.is_empty(),
+        "{:?}",
+        conversion.diagnostics
+    );
+}
+
+/// `BracedOnly` again, for the half that is *not* about expansion: no single-token
+/// fallback, so an unbraced reference is a missing argument rather than an inclusion of
+/// the file `c` with `hapter.tex` left in the document.
+#[test]
+fn an_unbraced_reference_is_a_missing_argument() {
+    let conversion = including(&[("chapter.tex", "included")])
+        .latex_to_text(r"a \input chapter.tex b")
+        .expect("parses");
+    assert_eq!(conversion.text, "a chapter.tex b\n");
+    assert!(
+        conversion
+            .diagnostics
+            .iter()
+            .any(|d| d.message().contains("missing mandatory argument")),
+        "{:?}",
+        conversion.diagnostics
+    );
+}
+
+/// A character that is a specials elsewhere is ordinary text here, so a file name keeps
+/// it — the case techy's chars-group exists for, which techxt has without one.
+#[test]
+fn an_underscore_in_the_reference_reads_as_written() {
+    let conversion = including(&[("my_file.tex", "underscored")])
+        .latex_to_text(r"a \input{my_file.tex} b")
+        .expect("parses");
+    assert_eq!(conversion.text, "a underscored b\n");
+    assert!(
+        conversion.diagnostics.is_empty(),
+        "{:?}",
+        conversion.diagnostics
+    );
+}
+
 #[test]
 fn the_include_cycle_guard_still_fires() {
     // The resolver's own policy (techy's `check_include_chain`) is what refuses the
