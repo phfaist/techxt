@@ -336,15 +336,13 @@
 //!
 //! ## Status
 //!
-//! Version 0.1.0, feature-complete and green under the full gate set (rustfmt, clippy,
-//! an MSRV build, a `no_std` build, and the test suite). Implemented are the layout
-//! engine and the flow model; the renderer, its state and the diagnostics channel; the
-//! definitions model with its template mini-language; and the whole definitions
-//! library — escapes and spacing, accents, font styles, sectioning, lists, verbatim,
-//! tables, theorems and the other block environments, footnotes, cross-references,
-//! citations (including natbib), links, graphics, titling, the preamble and the
-//! `document` environment, `\input` with a caller-supplied resolver, and the generated
-//! ~1000-entry symbol table.
+//! Version 0.1.0 is feature-complete: the layout engine and the flow model; the
+//! renderer, its state and the diagnostics channel; the definitions model with its
+//! template mini-language; and the whole definitions library — escapes and spacing,
+//! accents, font styles, sectioning, lists, verbatim, tables, theorems and the other
+//! block environments, footnotes, cross-references, citations (including natbib),
+//! links, graphics, titling, the preamble and the `document` environment, `\input`
+//! with a caller-supplied resolver, and a symbol table of about 1000 entries.
 //!
 //! **Macro definitions are honoured**: `\newcommand`, `\renewcommand`, `\providecommand`,
 //! `\newenvironment`, `\renewenvironment`, `\def`, `\gdef`, `\let`, `\edef`, `\xdef` and
