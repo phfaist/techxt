@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "techxt in the browser — a static, installable LaTeX-to-text converter",
-  "license": "MIT",
+  "license": "MIT OR Apache-2.0",
   "scripts": {
     "wasm": "wasm-pack build crate --target web --release --out-dir pkg",
     "dev": "npm run wasm && vite",

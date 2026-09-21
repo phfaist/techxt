@@ -20,7 +20,7 @@ edition = "2021"
 # `dyn Any` in its diagnostics payloads.
 rust-version = "1.86"
 authors = ["Philippe Faist"]
-license = "MIT"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/phfaist/techxt"
 
 # Workspace-wide lint policy; members opt in with `[lints] workspace = true`.
