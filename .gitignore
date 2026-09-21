@@ -5,7 +5,7 @@ target/
 
 # The library and CLI are applications-in-progress rather than published crates, but
 # the workspace lockfile is checked in so CI and contributors build identical trees —
-# it also pins what the `techy` git revision resolves to.
+# it also pins the exact techy and techy-xp releases the tree was tested against.
 # (Nothing to ignore here — Cargo.lock is tracked on purpose.)
 
 # Editor / OS noise

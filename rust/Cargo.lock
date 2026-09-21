@@ -477,7 +477,8 @@ dependencies = [
 [[package]]
 name = "techy"
 version = "0.1.0"
-source = "git+https://github.com/phfaist/techy?rev=541117a#541117a529a06ff398aa18af0874f2c681c8b91c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5f77a281dd7235ec6b9d0e8dd6acca405c19275b562fd3c5836e93aa69f51f6"
 dependencies = [
  "hashbrown",
  "techy-derive",
@@ -486,7 +487,8 @@ dependencies = [
 [[package]]
 name = "techy-derive"
 version = "0.1.0"
-source = "git+https://github.com/phfaist/techy?rev=541117a#541117a529a06ff398aa18af0874f2c681c8b91c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e45f8f4d92a8af282b58cb13a1e226d24eb02dcec7e32a0944c3498c43eb971"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -496,7 +498,8 @@ dependencies = [
 [[package]]
 name = "techy-xp"
 version = "0.1.0"
-source = "git+https://github.com/phfaist/techy-xp?rev=16a16d2#16a16d2628e398af73bc9cd4b969191dfb865a75"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "111a3309c1f05d3fff4b26401d7675920a0b45d5174e29c224d2ae510f1869a9"
 dependencies = [
  "hashbrown",
  "techy",

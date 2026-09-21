@@ -367,10 +367,6 @@
 //! environments, and matrices — inline, and as multi-line boxes with delimiters drawn
 //! to height.
 //!
-//! **Not published to crates.io**, and not publishable while [`techy`] and [`techy_xp`]
-//! are git dependencies: a release on crates.io cannot carry one. Publication waits for
-//! their own releases.
-//!
 //! ## Deliberate omissions
 //!
 //! Documented rather than half-implemented (PLAN.md §17). Each is noted again where a
