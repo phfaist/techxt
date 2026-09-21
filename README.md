@@ -17,6 +17,8 @@ parser, and is a from-scratch Rust-based redesign of the capabilities of
 
 ## The library
 
+Add it to a project with `cargo add techxt`, then:
+
 ```rust
 use techxt::Converter;
 
@@ -64,10 +66,11 @@ cargo run --bin techxt -- --help
 cargo run --bin techxt -- --wrap 78 paper.tex -o paper.txt
 ```
 
-Install it with:
+Install it from crates.io with:
 ```sh
-cargo install --path rust/techxt-cli
+cargo install techxt-cli
 ```
+(or, from a checkout of this repository, `cargo install --path rust/techxt-cli`).
 
 Command-line options:
 ```
