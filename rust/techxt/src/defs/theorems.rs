@@ -1,4 +1,4 @@
-//! Theorem-like environments, and the other blocks that shape a body (PLAN.md §9.8).
+//! Theorem-like environments, and the other blocks that shape a body.
 //!
 //! `theorem`, `proposition`, `lemma`, `corollary`, `definition`, `conjecture`,
 //! `remark`, `example` and `proof`, with their short aliases, plus the block
@@ -18,14 +18,14 @@
 //! guessed, and it would put trailing whitespace on every line; `center` therefore
 //! renders as an ordinary block. Nothing is numbered either: a theorem says `Theorem.`
 //! and not `Theorem 2.4.`, because numbering means resolving counters that a document
-//! can redefine (PLAN.md §17).
+//! can redefine.
 //!
 //! # The label is generated text
 //!
 //! `Theorem`, `Proof` and `Abstract` are English words techxt writes itself, from the
 //! fixed alias table below — the environment's own name is a keyword, not a label, and
 //! `\begin{thm}` must read as `Theorem.` and not as `thm.`. Localizing them is future
-//! work (PLAN.md §17); a document that needs other words overrides the rule.
+//! work; a document that needs other words overrides the rule.
 
 use alloc::string::String;
 
@@ -45,8 +45,8 @@ const QED: &str = "\u{25a1}";
 /// The environments that render as a theorem, and the word each is called by.
 ///
 /// The short aliases are the ones `\newtheorem{thm}{Theorem}` conventionally declares;
-/// techxt cannot read that declaration (it discards `\newtheorem`'s arguments, PLAN.md
-/// §9.8), so the common spellings are simply known.
+/// techxt cannot read that declaration (it discards `\newtheorem`'s arguments), so the
+/// common spellings are simply known.
 const THEOREM_ENVIRONMENTS: [(&str, &str); 15] = [
     ("theorem", "Theorem"),
     ("proposition", "Proposition"),
@@ -65,7 +65,7 @@ const THEOREM_ENVIRONMENTS: [(&str, &str); 15] = [
     ("rem", "Remark"),
 ];
 
-/// The theorems category (PLAN.md §12.1).
+/// The theorems category.
 pub fn category() -> Category {
     let mut category = Category::new("theorems");
     blocks(&mut category);

@@ -1,5 +1,5 @@
 //! The result DTO: diagnostics, spans, math regions, and the byte-to-UTF-16 offset
-//! mapping (web/PLAN.md §4.3, §4.4, §4.5).
+//! mapping.
 //!
 //! [`convert_native`] is the whole of the binding's work: it converts a document and
 //! shapes the answer into the `ConversionResult` of `web/src/worker/protocol.ts`. It
@@ -17,8 +17,8 @@
 //! # Why a span can be approximate, and why it can still be `null`
 //!
 //! A diagnostic's span points into a `Source`, which need not be the document the user
-//! typed: a macro expansion synthesizes one, and an `\input` would resolve one. Since
-//! M9 the parse reads through techy-xp, so `\newcommand`, `\def` and friends expand at
+//! typed: a macro expansion synthesizes one, and an `\input` would resolve one. The
+//! parse reads through techy-xp, so `\newcommand`, `\def` and friends expand at
 //! token-reading time and a diagnostic raised *inside* an expansion carries a span into
 //! the macro's body — a source the textarea cannot select any offset of. That is now
 //! routine rather than hypothetical: `\newcommand{\a}{x \nope}\a` reports its unknown
@@ -30,7 +30,7 @@
 //! [`approx`](DiagnosticDto::approx) so the panel can say the position is the macro
 //! call rather than the message's own place. [`invocation`] is the whole of that
 //! search. Only when nothing in the chain lands in the buffer does the span stay
-//! `null`, with the message and `rendered` text intact but nothing to click (§4.5).
+//! `null`, with the message and `rendered` text intact but nothing to click.
 //!
 //! # Why only some of the regions survive
 //!
@@ -44,7 +44,7 @@
 //! its own output back as source. `KeptSource` and `Verbatim` are not mathematics at all.
 //!
 //! The app therefore never meets a provenance: it receives a flat list of
-//! `{ start, end, display }` and wraps each range in an element (§4.3, §6.3).
+//! `{ start, end, display }` and wraps each range in an element.
 
 use std::sync::Arc;
 
@@ -60,7 +60,7 @@ use techxt::convert::{Converter, OutputRegion, Severity, Source, SourceSpan, Ver
 #[derive(Clone, Debug, Serialize)]
 pub struct ConversionResultDto {
     /// `false` only for a hard parse failure — which, with a tolerant recovery policy,
-    /// means the descent guard refused (§4.6), and under `strict` means the document
+    /// means the descent guard refused, and under `strict` means the document
     /// was malformed.
     pub ok: bool,
     /// The converted text; `""` when `!ok`.
@@ -87,11 +87,11 @@ pub struct ConversionResultDto {
     pub regions: Vec<MathRegionDto>,
 }
 
-/// One run of the converted text that is a formula's own LaTeX source (§4.3).
+/// One run of the converted text that is a formula's own LaTeX source.
 ///
 /// The offsets are **UTF-16 code units** into
 /// [`ConversionResultDto::text`](ConversionResultDto::text), mapped by the same
-/// [`OffsetMap`] a diagnostic's span goes through (§4.4) — over the *output* rather than
+/// [`OffsetMap`] a diagnostic's span goes through — over the *output* rather than
 /// over the document the user typed, since that is what the range indexes.
 ///
 /// Three properties the library measured, which the code wrapping these ranges in
@@ -121,7 +121,7 @@ pub struct DiagnosticDto {
     /// traceback included, for the panel's per-row detail view.
     pub rendered: String,
     /// Where it is, or `null` when neither it nor anything it came from is in the
-    /// document that was converted (§4.5).
+    /// document that was converted.
     pub span: Option<SpanDto>,
     /// Whether [`span`](Self::span) is the diagnostic's own position (`false`) or the
     /// nearest enclosing invocation in the typed document (`true`) — see [`invocation`].
@@ -133,7 +133,7 @@ pub struct DiagnosticDto {
     pub frames: Vec<TraceFrameDto>,
 }
 
-/// A span of the converted document, in **UTF-16 code units** (§4.4).
+/// A span of the converted document, in **UTF-16 code units**.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct SpanDto {
     /// Start offset, in UTF-16 code units, ready for `setSelectionRange`.
@@ -151,7 +151,7 @@ pub struct SpanDto {
 pub struct TraceFrameDto {
     /// The rendered frame title, e.g. `argument #1 of ‘\frac’`.
     pub title: String,
-    /// Where the parse descended into the frame, or `null` (§4.5).
+    /// Where the parse descended into the frame, or `null`.
     pub span: Option<SpanDto>,
 }
 
@@ -180,7 +180,7 @@ impl From<Severity> for SeverityDto {
 /// Convert `latex` and shape the answer for the app.
 ///
 /// This never fails: a parse the recovery policy could not survive comes back as
-/// `ok: false` with exactly one error diagnostic, which is the whole of §4.1's promise
+/// `ok: false` with exactly one error diagnostic, which is the whole of the promise
 /// that `Session::convert` does not throw for a document-level failure.
 ///
 /// [`ms`](ConversionResultDto::ms) is left at `0.0` for the caller to fill in.
@@ -247,7 +247,7 @@ pub fn convert_native(converter: &Converter, latex: &str) -> ConversionResultDto
     }
 }
 
-/// The `MathSource` regions of `regions`, as UTF-16 ranges into `text` (§4.3).
+/// The `MathSource` regions of `regions`, as UTF-16 ranges into `text`.
 ///
 /// Everything else the library reports is dropped here, which is the whole of the
 /// filter the module documentation argues for: `MathRendered` is techxt's own converted
@@ -256,7 +256,7 @@ pub fn convert_native(converter: &Converter, latex: &str) -> ConversionResultDto
 ///
 /// The offsets go through the same [`OffsetMap`] as a diagnostic's — one pass over the
 /// output for every offset the whole table needs — rather than through a second mapper
-/// written for the purpose (§4.4). A document with no source-mode formulas in it does
+/// written for the purpose. A document with no source-mode formulas in it does
 /// not walk its output at all.
 fn math_regions(text: &str, regions: &[OutputRegion]) -> Vec<MathRegionDto> {
     let mut kept: Vec<(usize, usize, bool)> = Vec::new();
@@ -287,7 +287,7 @@ fn math_regions(text: &str, regions: &[OutputRegion]) -> Vec<MathRegionDto> {
 /// A diagnostic whose spans are still byte offsets, waiting for the one pass over the
 /// document that turns them into [`SpanDto`]s.
 ///
-/// The two-phase shape is what makes §4.4's single pass possible: phase one decides
+/// The two-phase shape is what makes the single pass possible: phase one decides
 /// which spans are in the document at all and collects their byte offsets, phase two
 /// maps them all at once.
 struct RawDiagnostic {
@@ -322,8 +322,8 @@ impl RawDiagnostic {
         let frames: Vec<(String, Option<(usize, usize)>)> = frames
             .map(|(title, span)| (title.to_string(), byte_span(span, ours, wanted)))
             .collect();
-        // §4.5: a span the textarea cannot select is replaced by the invocation it came
-        // from, if that is in the buffer, and the substitution is declared.
+        // A span the textarea cannot select is replaced by the invocation it came from,
+        // if that is in the buffer, and the substitution is declared.
         let (span, approx) = match own {
             Some(range) => (Some(range), false),
             None => match invocation(span, &frames, ours, wanted) {
@@ -364,7 +364,7 @@ impl RawDiagnostic {
 }
 
 /// The byte range of `span` if it is in the converted document, recording its two
-/// offsets in `wanted`; `None` otherwise (§4.5).
+/// offsets in `wanted`; `None` otherwise.
 fn byte_span(
     span: &SourceSpan,
     ours: &mut OurSource<'_>,
@@ -379,7 +379,7 @@ fn byte_span(
 }
 
 /// The byte range of the nearest enclosing *invocation* of `span` that is in the
-/// converted document, for a `span` that is not itself in it (§4.5).
+/// converted document, for a `span` that is not itself in it.
 ///
 /// Two chains are walked, in this order, and both are asked the same question: is this
 /// position one the textarea can select?
@@ -415,7 +415,7 @@ fn invocation(
         .find_map(|span| byte_span(span, ours, wanted))
 }
 
-/// Decides whether a span points into the document this call converted (§4.5).
+/// Decides whether a span points into the document this call converted.
 ///
 /// `Language::parse` mints a fresh `Source` per call, so there is no `Arc` the binding
 /// could have kept to compare identities against: the test is `Source::content()`
@@ -455,7 +455,7 @@ impl<'a> OurSource<'a> {
     }
 }
 
-/// Where a byte offset lands, in the terms JavaScript needs (§4.4).
+/// Where a byte offset lands, in the terms JavaScript needs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Position {
     /// The offset in UTF-16 code units — what `setSelectionRange` counts in.
@@ -476,7 +476,7 @@ impl Position {
     };
 }
 
-/// Byte offsets into a document, mapped to [`Position`]s in one pass (§4.4).
+/// Byte offsets into a document, mapped to [`Position`]s in one pass.
 ///
 /// Build it with every offset any diagnostic needs — [`build`](Self::build) sorts and
 /// deduplicates them — and then ask for them back in any order.
@@ -576,12 +576,12 @@ fn as_u32(value: usize) -> u32 {
 mod tests {
     use super::*;
 
-    /// §4.5's reject path, which since M9 an ordinary document reaches every time it
-    /// defines a macro: the parse reads through techy-xp, an expansion synthesizes a
-    /// source, and a diagnostic raised in the macro's body points into it rather than
-    /// into the buffer. The comparison has to be right — a panel that scrolls the
-    /// textarea to an offset in some other string is worse than one that says nothing —
-    /// and what happens *after* a reject is [`invocation`]'s business, tested below.
+    /// The reject path, which an ordinary document reaches every time it defines a
+    /// macro: the parse reads through techy-xp, an expansion synthesizes a source, and a
+    /// diagnostic raised in the macro's body points into it rather than into the buffer.
+    /// The comparison has to be right — a panel that scrolls the textarea to an offset in
+    /// some other string is worse than one that says nothing — and what happens *after* a
+    /// reject is [`invocation`]'s business, tested below.
     #[test]
     fn a_span_in_another_source_is_not_ours() {
         let latex = "the document";
@@ -657,10 +657,10 @@ mod tests {
         raw.resolve(&OffsetMap::build(latex, wanted))
     }
 
-    /// The M9 case, and the reason [`invocation`] exists: the diagnostic's own span is
-    /// in the macro body, no frame is available at all, and the provenance chain leads
-    /// back to the `\a` that expanded it — which is what the panel selects, marked
-    /// `approx`.
+    /// The macro-expansion case, and the reason [`invocation`] exists: the diagnostic's
+    /// own span is in the macro body, no frame is available at all, and the provenance
+    /// chain leads back to the `\a` that expanded it — which is what the panel selects,
+    /// marked `approx`.
     #[test]
     fn an_expansion_diagnostic_takes_the_invocations_span() {
         let latex = r"\newcommand{\a}{x \nope}\a";

@@ -1,5 +1,5 @@
 /**
- * The share codec (web/PLAN.md §6.4): what a link carries, and what happens to a
+ * The share codec: what a link carries, and what happens to a
  * link that arrives damaged.
  *
  * Node 18+ has `CompressionStream`, so the compressed path is exercised for real
@@ -81,7 +81,7 @@ describe('encodeShare / decodeShare', () => {
 
   it('carries the MathJax mode, which is the app’s answer and not the library’s', async () => {
     // A link reproduces the session it was made in, and the pane the sender was
-    // looking at was typesetting (§5). The value survives; it is `resolveOptions`
+    // looking at was typesetting. The value survives; it is `resolveOptions`
     // that never lets it reach the binding, and options.test.ts holds it to that.
     const fragment = await encodeShare({ v: 1, doc: '$a+b$', opts: { math: 'mathjax' } });
     expect((await decodeShare(fragment))?.opts).toEqual({ math: 'mathjax' });

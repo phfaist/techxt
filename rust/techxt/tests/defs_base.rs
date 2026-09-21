@@ -1,5 +1,4 @@
-//! `defs::base`: escapes, spacing, ligatures, breaks and the miscellaneous text macros
-//! (PLAN.md §9.3, §9.7, §9.8).
+//! `defs::base`: escapes, spacing, ligatures, breaks and the miscellaneous text macros.
 
 use techxt::def::{Category, DefinitionSet, MacroDef, TextRule};
 use techxt::diag::{MisplacedAlignment, UnsupportedIgnored};
@@ -46,7 +45,7 @@ fn a_negative_thin_space_is_nothing_at_all() {
 
 #[test]
 fn quads_are_em_spaces_not_ascii_runs() {
-    // DECISIONS.md D14: a text item holds no whitespace, and a quad *is* one em.
+    // A text item holds no whitespace, and a quad *is* one em.
     assert_eq!(text(r"a\quad b"), "a\u{2003}b\n");
     assert_eq!(text(r"a\qquad b"), "a\u{2003}\u{2003}b\n");
     // Unbreakable, so a narrow wrap width cannot split the gap.
@@ -106,7 +105,7 @@ fn paragraph_and_line_breaks() {
 
 #[test]
 fn a_line_break_takes_its_optional_length_and_ignores_it() {
-    // DECISIONS.md D8: the length is parsed, so it never reaches the reader.
+    // The length is parsed, so it never reaches the reader.
     assert_eq!(text(r"a\\[2ex]b"), "a\nb\n");
     assert_eq!(text(r"a\\*[2ex]b"), "a\nb\n");
 }
@@ -221,7 +220,7 @@ fn the_curated_text_symbols() {
 
 #[test]
 fn the_category_stands_on_its_own() {
-    // Every module is usable without the rest of the library (PLAN.md §12).
+    // Every module is usable without the rest of the library.
     let converter = Converter::builder()
         .definitions(DefinitionSet::new().with(techxt::defs::base::category()))
         .build()
@@ -234,7 +233,7 @@ fn the_category_stands_on_its_own() {
 
 #[test]
 fn a_later_category_shadows_base() {
-    // The shadowing rule of PLAN.md §10.2, exercised against the shipped library.
+    // The shadowing rule, exercised against the shipped library.
     let definitions = techxt::defs::standard().with(
         Category::new("mine")
             .with_macro(MacroDef::new("ldots").rule(TextRule::Literal("...".into()))),
@@ -265,7 +264,7 @@ fn a_box_renders_its_contents_and_none_of_its_measurements() {
 
 #[test]
 fn case_changing_macros_leave_the_case_alone() {
-    // Case is content (PLAN.md §9.2): the argument comes out as it was written.
+    // Case is content: the argument comes out as it was written.
     assert_eq!(text(r"\MakeUppercase{quiet}"), "quiet\n");
     assert_eq!(text(r"\MakeLowercase{LOUD}"), "LOUD\n");
     assert_eq!(text(r"\uppercase{a} \lowercase{B}"), "a B\n");
@@ -302,8 +301,8 @@ fn typesetting_only_commands_render_as_nothing_and_are_not_unknown() {
         converted.diagnostics
     );
 
-    // A counter's value is a number techxt does not track (PLAN.md §17), so it renders
-    // as nothing rather than as a wrong number — and the counter name does not leak.
+    // A counter's value is a number techxt does not track, so it renders as nothing
+    // rather than as a wrong number — and the counter name does not leak.
     let converted = conversion(r"page \arabic{page} \stepcounter{page}");
     assert_eq!(converted.text, "page\n");
     assert!(

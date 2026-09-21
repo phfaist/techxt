@@ -1,4 +1,4 @@
-//! The command line: what `techxt --help` prints, and what it means (PLAN.md §13).
+//! The command line: what `techxt --help` prints, and what it means.
 //!
 //! Every flag here maps onto exactly one `techxt::Options` field or one builder setting,
 //! and the mapping is the only thing this module does. The enumerated values are
@@ -128,13 +128,13 @@ impl Cli {
         options.heading_style = self.heading_style.into();
         options.footnote_style = self.footnote_style.into();
         options.unknown_macro = self.unknown_macro.into();
-        // PLAN.md §13: the CLI is the caller that knows what day it is, so `\today`
+        // The CLI is the caller that knows what day it is, so `\today`
         // renders a date here rather than the library's `<today>` placeholder.
         options.today = Some(today.into_boxed_str());
         options
     }
 
-    /// Whether the defining commands are honoured or only declared (PLAN.md §16 M9).
+    /// Whether the defining commands are honoured or only declared.
     ///
     /// A method rather than a bare field read, so that the flag's *meaning* — the
     /// library value it selects — is stated once and tested here rather than in `main`.
@@ -156,7 +156,7 @@ impl Cli {
     }
 }
 
-/// Which diagnostics are printed (PLAN.md §13's `-q` / default / `-v`).
+/// Which diagnostics are printed (`-q` / default / `-v`).
 ///
 /// This is about *reporting* only. Whatever is printed, every diagnostic still counts
 /// towards the exit code: `-q` silences the report, not the failure.
@@ -317,8 +317,8 @@ mod tests {
 
     #[test]
     fn the_defaults_are_the_librarys_defaults() {
-        // PLAN.md §13 states the default of every flag, and every one of them is the
-        // library's own default. Stating them twice (here and in the library) is only
+        // Every flag has a stated default, and every one of them is the library's own
+        // default. Stating them twice (here and in the library) is only
         // safe if a test says so.
         let defaults = Options::default();
         let cli = Cli::parse_from(["techxt"]).options("May 1, 2001".into());
@@ -335,7 +335,7 @@ mod tests {
         assert!(cli.today.is_some());
 
         // The builder settings, which are not `Options` fields: the two expansion budgets
-        // and the definer switch (PLAN.md §13 as amended for M9 phase 3).
+        // and the definer switch.
         let cli = Cli::parse_from(["techxt"]);
         assert_eq!(
             cli.expansion_depth_limit,
@@ -405,8 +405,8 @@ mod tests {
 
     #[test]
     fn the_enumerated_values_are_spelled_as_the_plan_writes_them() {
-        // PLAN.md §13 fixes the value spellings; clap's kebab-casing produces them, but
-        // a rename of a variant would silently change the command line without this.
+        // The value spellings are fixed; clap's kebab-casing produces them, but a
+        // rename of a variant would silently change the command line without this.
         let parse = |flag: &str, value: &str| {
             Cli::try_parse_from(["techxt", flag, value])
                 .map(|_| ())

@@ -1,7 +1,7 @@
-# The web app's gates and its deployment (web/PLAN.md §11).
+# The web app's gates and its deployment.
 #
 # `ci.yml` stays untouched and `rust/`-scoped. This workflow exists because
-# `web/crate` deliberately lives outside the `rust/` workspace (web/PLAN.md D1), so
+# `web/crate` deliberately lives outside the `rust/` workspace, so
 # `cd rust && cargo …` cannot see it: the fmt/clippy/test steps below are the gates
 # the binding would otherwise lose by being a standalone package.
 #
@@ -42,18 +42,18 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   # **The four values below are the only authoritative copy of the size ceilings.** The
-  # plan (§4.7, §9.1, §11, §14) describes the policy and records measurements but
-  # deliberately restates none of the numbers, so a budget change is a one-file edit and
-  # cannot go stale in prose.
+  # design notes describe the policy and record measurements but deliberately restate
+  # none of the numbers, so a budget change is a one-file edit and cannot go stale in
+  # prose.
   #
   # ## The wasm module
   #
-  # Set at the size pass (§14) against a module built `opt-level = "s"` +
+  # Set at the size pass against a module built `opt-level = "s"` +
   # `wasm-opt -Os`: **971 601 B raw / 370 323 B gzipped**. That profile is itself the
-  # outcome of the pass. The wire had by then fired twice — the gzip line at M10, and
-  # the raw line as items 1-5 landed (1 241 264 B against a 1 150 000 B ceiling) — and
-  # the answer to the first firing was recorded as a deferral pending a browser-side
-  # speed comparison. §14 now has that comparison, so the second firing gets the
+  # outcome of the pass. The wire had by then fired twice — first the gzip line, then
+  # the raw line (1 241 264 B against a 1 150 000 B ceiling) — and the answer to the
+  # first firing was recorded as a deferral pending a browser-side speed comparison.
+  # That comparison has since been made, so the second firing gets the
   # decision rather than a third raise. `"s"` costs about a fifth of the conversion CPU
   # on a 45 KB document and nothing measurable on the few-kilobyte documents people
   # actually write; behind a Worker and a 120 ms debounce it never touches a keystroke.
@@ -65,7 +65,7 @@ env:
   #
   #   - **The toolchain moves the number by more than a feature does.** The same commit
   #     measured 1 199 689 B on a container's rustc 1.94 and 1 120 513 B on a newer
-  #     stable (§14) — a 6.6 % spread that a budget must absorb, or CI turns red when a
+  #     stable — a 6.6 % spread that a budget must absorb, or CI turns red when a
   #     runner image updates and tells us nothing about the code.
   #   - **One substantial binding feature.** The completion surface cost 33 933 B raw /
   #     15 627 B gzipped; the curated ranking 4 290 B / 1 628 B. What is left after the
@@ -73,13 +73,13 @@ env:
   #     should fire when a feature adds real weight, so the trade is looked at again,
   #     and not before.
   #
-  # §4.7 still owns the policy, and its first response to an overrun is now `"z"` —
-  # `"s"` having been spent here.
+  # The policy's first response to an overrun is now `"z"` — `"s"` having been spent
+  # here.
   WASM_MAX_BYTES: 1100000
   WASM_MAX_GZIP_BYTES: 415000
   # ## MathJax
   #
-  # The typesetter is a lazily fetched asset, not part of the bundle (§9.1), so nothing
+  # The typesetter is a lazily fetched asset, not part of the bundle, so nothing
   # above covers it and a mistake there is invisible to every other gate in this file.
   # Two numbers, because they fail in different ways:
   #
@@ -160,8 +160,8 @@ jobs:
         working-directory: web
         run: npm run wasm
 
-      # §11 step 3. A module that outgrows this is not necessarily wrong, but it is a
-      # decision, and §4.7 names what to try first — `"z"` now, `"s"` having been taken.
+      # A module that outgrows this is not necessarily wrong, but it is a decision, and
+      # the first thing to try is `opt-level = "z"`, `"s"` having been taken.
       - name: Assert the wasm size budget
         working-directory: web
         run: |
@@ -191,7 +191,7 @@ jobs:
         working-directory: web
         run: npx vite build
 
-      # §9.1. The typesetter is copied into `dist/` rather than bundled, so it is
+      # The typesetter is copied into `dist/` rather than bundled, so it is
       # invisible to Rollup's own reporting and to every other gate here. This is the
       # only thing standing between a MathJax upgrade — or an output-format change — and
       # eleven megabytes landing in the repository unremarked.
@@ -212,7 +212,7 @@ jobs:
           fi
           exit $fail
 
-      # §9.1. The same shape as the glyph gate below, over a different table: every name
+      # The same shape as the glyph gate below, over a different table: every name
       # `DefinitionSet::symbols()` reports is typeset under the app's own TeX
       # configuration, read out of `src/mathjax.ts` rather than copied. techxt's own
       # mathematics is a hard gate — a construct it calls mathematics and MathJax cannot
@@ -224,7 +224,7 @@ jobs:
         working-directory: web
         run: node tools/mathjax_coverage.mjs --check
 
-      # §8.5. The default face is a hard gate — the out-of-the-box rendering of
+      # The default face is a hard gate — the out-of-the-box rendering of
       # techxt's own output is not allowed to regress. The other four warn into the
       # job summary: a handful of gaps filled by the fallback chain is a documented
       # fact about a face, not a bug.
@@ -233,7 +233,7 @@ jobs:
           pip install --quiet fonttools brotli
           python3 web/tools/coverage_check.py --check
 
-      # §11 step 6. The numbers live in `fetch_fonts.py`, beside the fonts they are
+      # The numbers live in `fetch_fonts.py`, beside the fonts they are
       # about, so CI and a developer running the script locally cannot disagree —
       # and so the reason a budget moved sits next to the value.
       - name: Assert the font budget

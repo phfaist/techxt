@@ -1,4 +1,4 @@
-//! natbib's citation commands (PLAN.md §9.8, §12.1).
+//! natbib's citation commands.
 //!
 //! natbib replaces LaTeX's one `\cite` with a family of about twenty, distinguished by
 //! how the reference is *typeset*: `\citet{x}` writes "Author (2019)", `\citep{x}`
@@ -10,7 +10,7 @@
 //! **All of it needs the bibliography.** Author, year and the ordering of the reference
 //! list come out of a BibTeX run that a plain-text conversion never performs, so every
 //! one of these renders as `<cit.>` — the same honest marker
-//! [`defs::refs`](super::refs) uses, saying that a citation stood here (PLAN.md §9.8).
+//! [`defs::refs`](super::refs) uses, saying that a citation stood here.
 //!
 //! **One command in the family is not a citation marker.** `\citetext{priv. comm.}`
 //! takes the *text* to set inside the citation delimiters, not a list of keys — it is
@@ -18,7 +18,7 @@
 //! `<cit.>`. Throwing away an author's words to print a marker instead would be the
 //! one thing this category exists to prevent.
 //!
-//! This category is pushed **last** (PLAN.md §12.1) so that its fuller shapes shadow
+//! This category is pushed **last** so that its fuller shapes shadow
 //! the plain `\cite` of [`defs::refs`](super::refs). That is not cosmetic: `refs`
 //! declares `\cite` as `[m]`, and against `\citep[see][p. 5]{x}` such a declaration
 //! reads `[see]` as the note and then spills `[p. 5]` into the reader's sentence.
@@ -38,7 +38,7 @@ use alloc::borrow::Cow;
 
 use crate::def::{Category, MacroDef, TextRule};
 
-/// What every citation command renders as (PLAN.md §9.8).
+/// What every citation command renders as.
 const MARKER: &str = "<cit.>";
 
 /// techy's code for a mandatory group with **no** single-expression fallback.
@@ -49,7 +49,7 @@ const MARKER: &str = "<cit.>";
 /// behind instead of a mangled sentence.
 const KEY_LIST: &str = "BracedOnly";
 
-/// The natbib category (PLAN.md §12.1).
+/// The natbib category.
 pub fn category() -> Category {
     let mut category = Category::new("natbib");
 

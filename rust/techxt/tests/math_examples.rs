@@ -1,8 +1,8 @@
-//! PLAN.md §15's normative math examples, end to end through [`Converter`].
+//! The normative math examples, end to end through [`Converter`].
 //!
-//! These are behavior law: every assertion here is an exact string from the plan's
-//! acceptance table, converted with the shipped definitions and (except where a test
-//! says otherwise) the default options.
+//! These are behavior law: every assertion here is an exact string from the acceptance
+//! table, converted with the shipped definitions and (except where a test says
+//! otherwise) the default options.
 
 use techxt::convert::{MathMode, MatrixDelims};
 use techxt::Converter;
@@ -79,8 +79,8 @@ fn example_23_a_display_matrix_in_both_delimiter_styles() {
 
 #[test]
 fn example_23_holds_for_a_bare_matrix_environment_too() {
-    // A math environment *is* display math (PLAN.md §9.5), so the matrix renders the
-    // same whether or not a display group was written around it.
+    // A math environment *is* display math, so the matrix renders the same whether or
+    // not a display group was written around it.
     assert_eq!(
         text(r"\begin{pmatrix} 1 & 2 \\ 30 & 4 \end{pmatrix}"),
         "    ⎛  1  2 ⎞\n    ⎝ 30  4 ⎠\n"

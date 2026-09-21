@@ -1,4 +1,4 @@
-//! Property tests for definer syntax and expansion (PLAN.md §14.2, §16 M9 phase 3).
+//! Property tests for definer syntax and expansion.
 //!
 //! The generators here write `\def`, `\newcommand`, `\gdef`, `\let` and the environment
 //! definers at random, with random bodies, uses and groups around them — including the

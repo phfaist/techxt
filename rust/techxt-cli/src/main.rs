@@ -9,7 +9,7 @@
 //!
 //! The program is one pass: read, build a converter from the arguments, convert, write
 //! the text, print the diagnostics, exit with a code that says which of the three things
-//! happened (PLAN.md §13).
+//! happened.
 
 mod cli;
 mod resolve;
@@ -113,7 +113,7 @@ fn build_converter(cli: &Cli) -> Result<Converter, String> {
         .map_err(|error| format!("the standard definitions failed to build: {error}"))
 }
 
-/// The descent guard this program parses under (DECISIONS.md D9 item 3).
+/// The descent guard this program parses under.
 ///
 /// techy's guard bounds how deeply the parser and the fold may recurse, so that a
 /// document nesting a thousand groups deep is refused instead of overflowing the stack.

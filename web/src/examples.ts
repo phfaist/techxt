@@ -1,6 +1,6 @@
 /**
- * The six sample documents of web/PLAN.md §6.7, inlined as string constants so they
- * cost no fetch and work offline.
+ * The six sample documents, inlined as string constants so they cost no fetch and
+ * work offline.
  *
  * Each is at most about fifteen lines — a demo, not a corpus — and each was converted
  * with the library's own defaults before being pasted here: all six convert with **no
@@ -16,7 +16,7 @@
 import type { ExampleDoc } from './types';
 
 /**
- * The first visit's document (§6.7): a section, an accent, emphasis, an inline
+ * The first visit's document: a section, an accent, emphasis, an inline
  * formula, a footnote and a citation, in one screen.
  *
  * `\cite` resolves to techxt's `<cit.>` placeholder rather than a warning — the
@@ -56,7 +56,7 @@ and a rotation by $\theta$ acts as
 `;
 
 /**
- * A preamble's worth of shorthands, and what they expand to (§5, "Macro definitions").
+ * A preamble's worth of shorthands, and what they expand to.
  *
  * The one example whose point is the *parse* rather than the rendering: `\newcommand`
  * and `\newenvironment` written in the document take effect, so `\ket{0}` is `|0⟩` and
@@ -116,7 +116,7 @@ Greek runs $\alpha, \beta, \gamma, \delta, \epsilon, \zeta, \eta, \theta,
 $\to$, $\gets$, $\Rightarrow$, $\Leftrightarrow$, $\mapsto$, $\uparrow$.
 `;
 
-/** The case the font fallback chains of §8.2 exist for. */
+/** The case the font fallback chains exist for. */
 const UNICODE = String.raw`Techxt copies text it does not recognize straight through, so a document can
 mix scripts freely: \emph{kanji} 漢字とかな in Japanese, \emph{ivrit} עברית
 written right to left, and an emoji 🎉 in the middle of a sentence.
@@ -167,5 +167,5 @@ export const EXAMPLES: readonly ExampleDoc[] = [
   },
 ];
 
-/** What a first visit loads before the user has touched anything (§6.7). */
+/** What a first visit loads before the user has touched anything. */
 export const DEFAULT_EXAMPLE: ExampleDoc = EXAMPLES[0] as ExampleDoc;

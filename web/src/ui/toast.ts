@@ -1,5 +1,5 @@
 /**
- * Toasts (web/PLAN.md §6.7, §9).
+ * Toasts.
  *
  * One message at a time, with at most one action — "Undo" after a Load or a library
  * Delete, "Reload" after an update, "Report" after a `fatal`. Showing a second toast

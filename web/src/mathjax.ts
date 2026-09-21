@@ -1,5 +1,5 @@
 /**
- * MathJax, wrapped in four functions (web/PLAN.md §9.1).
+ * MathJax, wrapped in four functions.
  *
  * The rest of the app never imports MathJax, never names a MathJax option and never
  * touches `window.MathJax`. It asks for a formula to be typeset and gets a promise back.
@@ -22,7 +22,7 @@
  * The mode shipped on the SVG output, chosen on the belief that an SVG bundle fetches no
  * fonts at runtime. That was wrong — MathJax 4 splits *both* font formats into character
  * ranges loaded on demand — and once the premise went, so did the argument. Measured at
- * the size pass (§9.1, §14): a reader who turns the mode on and reads all six shipped
+ * the size pass: a reader who turns the mode on and reads all six shipped
  * examples fetches **414 244 B** here against 647 876 B under SVG, and the tree behind it
  * is 3.2 MB in `dist/` against 11.8 MB. SVG's ranges carry glyph outlines as path data;
  * CHTML's carry metrics and let the woff2 faces — which the browser fetches only for the
@@ -32,7 +32,7 @@
  * **Nothing here ever contacts a CDN.** MathJax 4 would, twice over, if left alone:
  * `loader.paths.fonts` defaults to jsdelivr, and the speech-rule engine fetches its
  * locale tables from there as well. Both are shut off below, deliberately and with the
- * offline promise of §9 in mind — a converter that quietly phones a third party the
+ * app's offline promise in mind — a converter that quietly phones a third party the
  * first time it meets `\mathbb{R}` would make a liar of the About screen.
  *
  * # It is told where the mathematics is
@@ -40,7 +40,7 @@
  * MathJax's own page scanning is off: no `$…$`, no `\[…\]`, no environments, no
  * `\(…\)`. It has to be, because techxt's output is *text* — a document writing `\$5`
  * produces a `$` that no amount of scanning can tell apart from the `$` of a formula.
- * The binding reports where the formulas are instead (§4.3), the caller wraps each range
+ * The binding reports where the formulas are instead, the caller wraps each range
  * in an element, and {@link typeset} converts exactly that element's content and nothing
  * else.
  *
@@ -48,7 +48,7 @@
  *
  * {@link TEX_INPUT} is the TeX input configuration, and it is exported because
  * `tools/mathjax_coverage.mjs` typesets every name techxt defines under *this* object to
- * find the ones MathJax does not know (§9.1). A checker that read a copy of
+ * find the ones MathJax does not know. A checker that read a copy of
  * the package list would be checking a copy.
  */
 
@@ -99,7 +99,7 @@ type MacroDefinition = string | [string, number];
 
 /**
  * The TeX input configuration — the packages, and the definitions that fill the gaps
- * between what techxt defines and what those packages know (§9.1).
+ * between what techxt defines and what those packages know.
  *
  * **This object is the only authoritative copy**, which is what the export is for:
  * `tools/mathjax_coverage.mjs` imports it, typesets every name
@@ -125,7 +125,7 @@ export const TEX_INPUT: {
   // throwing, because the document is the user's and techxt will happily re-emit a macro
   // no engine has heard of.
   //
-  // The last two were chosen against the measurement recorded in §9.1 rather than against
+  // The last two were chosen against a coverage measurement rather than against
   // a bug report, and each closes a group of names techxt defines and the five above do
   // not: `mathtools` the `psmallmatrix`/`bsmallmatrix`/`dcases` family — and
   // `\overbracket`, `\underbracket` and `\coloneqq` with them — and `upgreek` the 41
@@ -233,7 +233,7 @@ export const TEX_INPUT: {
   },
   // breqn's display environments, which MathJax has no port of. A `dmath` is a display
   // formula that breaks itself across lines; MathJax will not break it, and each display
-  // formula already scrolls in a box of its own (§6.5), so a transparent wrapper renders
+  // formula already scrolls in a box of its own, so a transparent wrapper renders
   // the mathematics and loses only the automatic break.
   environments: {
     dmath: ['', ''],
@@ -307,7 +307,7 @@ function configure(): void {
       // then reaches the `attachSpeech` render action, starts a web worker for the
       // speech-rule engine, and waits for an answer that never comes — the worker's
       // script is not one of the files `vite.config.ts` copies, and even if it were,
-      // fetching locale tables is exactly what §9.1 says this app does not do. The
+      // fetching locale tables is exactly what this app says it does not do. The
       // symptom is not an error: `tex2chtmlPromise` simply never settles.
       //
       // `explorer` was on this list and is not a menu setting the bundle knows — the

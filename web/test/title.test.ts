@@ -1,5 +1,5 @@
 /**
- * What a document calls itself (web/PLAN.md §6.3, §6.10) — the regex Download and the
+ * What a document calls itself — the regex Download and the
  * library both name a thing by.
  */
 

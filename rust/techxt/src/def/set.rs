@@ -1,4 +1,4 @@
-//! Categories, definition sets, and what building one produces (PLAN.md §10.2).
+//! Categories, definition sets, and what building one produces.
 //!
 //! A [`Category`] is a themed group of definitions — the accents, the list
 //! environments, the maths symbols — and a [`DefinitionSet`] is an ordered stack of
@@ -37,7 +37,7 @@ const UNKNOWN_PACKAGE: &str = "techxt-unknown";
 /// The macro whose definition a list body brings into scope.
 const ITEM_MACRO: &str = "item";
 
-/// A themed group of definitions (PLAN.md §10.1).
+/// A themed group of definitions.
 ///
 /// Categories are how a definitions library is organized and how a user takes only part
 /// of one: `techxt::defs` offers one category per theme, and a converter built from
@@ -123,7 +123,7 @@ impl Category {
     }
 }
 
-/// Every definition a converter knows, in shadowing order (PLAN.md §10.2).
+/// Every definition a converter knows, in shadowing order.
 ///
 /// # Later categories shadow earlier ones
 ///
@@ -180,8 +180,7 @@ impl DefinitionSet {
         self.categories.iter()
     }
 
-    /// Every name this set defines, resolved through the set's own shadowing rule
-    /// (PLAN.md §10.7).
+    /// Every name this set defines, resolved through the set's own shadowing rule.
     ///
     /// Building the index walks every category once; the [`SymbolIndex`] it answers with
     /// is a sorted table that answers each subsequent question by binary search. Build
@@ -206,7 +205,7 @@ impl DefinitionSet {
         SymbolIndex::build(self)
     }
 
-    /// Compile the set into what a converter needs (PLAN.md §10.2).
+    /// Compile the set into what a converter needs.
     ///
     /// Everything is validated here — argument codes, templates against the argument
     /// names of the entry they belong to, category names — so that a bad definition
@@ -215,11 +214,11 @@ impl DefinitionSet {
     ///
     /// Three things the *converter* decides reach the definitions here rather than being
     /// read back out of them: `cx` is what an entry's own
-    /// [`CallableSpecSource`](super::CallableSpecSource) may consult (DECISIONS.md D15),
+    /// [`CallableSpecSource`](super::CallableSpecSource) may consult,
     /// `unknown_macro_fallback` says whether the catch-all provider is registered, and
     /// `frame` carries the providers techy-xp contributes around the categories. The set
     /// deliberately does not look at the recovery mode itself — the builder has already
-    /// resolved that question (DECISIONS.md D10).
+    /// resolved that question.
     ///
     /// # The stack this builds, outermost first
     ///
@@ -255,11 +254,10 @@ impl DefinitionSet {
 
         // Outermost: the catch-all that gives an unresolvable command a spec, so that
         // it reaches the renderer as a callable node and techxt's unknown-macro policy
-        // can apply to it (PLAN.md §10.6). Being outermost, it is shadowed by every
-        // real definition — suppression is a property of the search order, not a
-        // special case. Whether it is registered at all is the converter's call
-        // (DECISIONS.md D10): without it an unclaimed command is techy's own
-        // unresolvable-command error.
+        // can apply to it. Being outermost, it is shadowed by every real definition —
+        // suppression is a property of the search order, not a special case. Whether it
+        // is registered at all is the converter's call: without it an unclaimed command
+        // is techy's own unresolvable-command error.
         if unknown_macro_fallback {
             providers.push(Arc::new(unknown_command_provider()));
         }
@@ -318,7 +316,7 @@ impl DefinitionSet {
     }
 
     /// The package a list environment's body delta pushes, holding the set's own
-    /// definition of `\item` (PLAN.md §9.4).
+    /// definition of `\item`.
     ///
     /// The definition is the innermost one the set declares, exactly as name resolution
     /// would find it, so customizing `\item` customizes it inside every list too.
@@ -421,10 +419,10 @@ impl DefinitionSet {
 ///
 /// Normally that is techxt's own [`TechxtMacroSpec`], carrying the rule into the tree.
 /// An entry with a [`spec`](MacroDef::spec) source may hand back a techy spec of its own
-/// instead (DECISIONS.md D15) — its rule then travels no further than the name fallback
-/// table, which is built from the same entry either way. The declarations are validated
-/// in both cases: a template that names an argument the entry does not declare is a
-/// build error whoever ends up parsing the invocation.
+/// instead — its rule then travels no further than the name fallback table, which is
+/// built from the same entry either way. The declarations are validated in both cases:
+/// a template that names an argument the entry does not declare is a build error
+/// whoever ends up parsing the invocation.
 fn macro_spec(
     definition: &MacroDef,
     cx: &SpecBuildCx,
@@ -463,7 +461,7 @@ fn validated_rule(
     Ok(rule.cloned())
 }
 
-/// The provider that answers every command no definition claims (PLAN.md §10.6).
+/// The provider that answers every command no definition claims.
 ///
 /// Without it an unresolvable `\foo` never reaches the renderer as a construct at all:
 /// under tolerant recovery techy cannot shape an invocation it has no definition for, so
@@ -486,7 +484,7 @@ fn unknown_command_provider() -> FallbackProvider<LatexlikeXp> {
     provider
 }
 
-/// The providers techy-xp contributes around techxt's own categories (PLAN.md §16 M9).
+/// The providers techy-xp contributes around techxt's own categories.
 ///
 /// Both halves come off the very [`XpDriver`] the converter will parse with, which is
 /// the point of passing a driver rather than two strings: the definer specs write into
@@ -524,7 +522,7 @@ impl ScopeFrame {
     }
 }
 
-/// What building a [`DefinitionSet`] produces (PLAN.md §10.2).
+/// What building a [`DefinitionSet`] produces.
 pub(crate) struct BuiltDefinitions {
     /// The parsing state the packages make, ready for `Language::new`.
     pub(crate) state: ParsingState<LatexlikeXp>,
@@ -532,8 +530,8 @@ pub(crate) struct BuiltDefinitions {
     pub(crate) fallback: RuleTable,
 }
 
-/// Rules keyed by `(kind, name)`, as PLAN.md §10.3 keys both the override map and the
-/// name fallback table.
+/// Rules keyed by `(kind, name)`, as both the override map and the name fallback table
+/// are keyed.
 ///
 /// Macros, environments and specials live in separate stores because their names do:
 /// techy resolves `\emph` and an environment called `emph` through different tables,

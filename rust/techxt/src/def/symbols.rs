@@ -1,4 +1,4 @@
-//! Reading a definition set back (PLAN.md §10.7).
+//! Reading a definition set back.
 //!
 //! The public prose lives on [`SymbolIndex`], because this module is private and its own
 //! documentation is never rendered — the same arrangement the entry builders use.
@@ -11,7 +11,7 @@ use techy::latexlike::Mode;
 use super::set::DefinitionSet;
 use super::{CallableKind, TextRule};
 
-/// Which parsing modes a definition is visible in (PLAN.md §10.7).
+/// Which parsing modes a definition is visible in.
 ///
 /// A mode restriction is a parse-side gate and buys less than it looks like it does —
 /// [`MacroDef::math_mode_only`](super::MacroDef::math_mode_only) says exactly what — but
@@ -47,7 +47,7 @@ impl ModeVisibility {
     }
 }
 
-/// One name a definition set defines, as the set resolves it (PLAN.md §10.7).
+/// One name a definition set defines, as the set resolves it.
 ///
 /// Everything here borrows from the set the entry was read out of, so an entry is
 /// `Copy` and costs nothing to pass around; the strings are the definition's own.
@@ -78,8 +78,7 @@ pub struct SymbolEntry<'a> {
     pub modes: ModeVisibility,
 }
 
-/// Every name a definition set defines, later categories shadowing earlier ones
-/// (PLAN.md §10.7).
+/// Every name a definition set defines, later categories shadowing earlier ones.
 ///
 /// The entry builders are how a definitions library is *written*; this is how it is
 /// *read*. The question it answers — what does this converter actually know? — is one

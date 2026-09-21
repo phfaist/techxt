@@ -1,6 +1,6 @@
-//! Property tests for the layout invariants of PLAN.md §7 and §14.2.
+//! Property tests for the layout invariants.
 //!
-//! The plan states five guarantees the engine must hold for *every* flow:
+//! There are five guarantees the engine must hold for *every* flow:
 //!
 //! 1. no line exceeds `wrap_width`, unless it holds a single oversized word or
 //!    verbatim content;
@@ -167,9 +167,8 @@ fn a_verbatim_word_keeps_its_trailing_space_at_a_line_end() {
 }
 
 proptest! {
-    /// §7.1: a line may only exceed the wrap width when it holds a single word that
-    /// does not fit — which, with space-free block prefixes, means a line without a
-    /// space in it.
+    /// A line may only exceed the wrap width when it holds a single word that does not
+    /// fit — which, with space-free block prefixes, means a line without a space in it.
     #[test]
     fn wrap_width_is_respected(flow in flow_of(layout_item()), wrap in 1usize..24) {
         let out = render(&flow, &options(Some(wrap)));
@@ -184,8 +183,8 @@ proptest! {
         }
     }
 
-    /// §7.2: glue never survives to the end of a line — the invariant in its qualified
-    /// form, over flows that do carry raw spaces.
+    /// Glue never survives to the end of a line — the invariant in its qualified form,
+    /// over flows that do carry raw spaces.
     ///
     /// Collapsible whitespace is glue, and glue at a line end is dropped. The
     /// generated inline-verbatim words are the exception the qualification exists for:
@@ -221,8 +220,8 @@ proptest! {
         }
     }
 
-    /// §7.3: separation requests merge, so at most one blank line appears anywhere, and
-    /// none at either end; a nonempty output ends with exactly one newline.
+    /// Separation requests merge, so at most one blank line appears anywhere, and none
+    /// at either end; a nonempty output ends with exactly one newline.
     #[test]
     fn vertical_separation_is_normalized(
         flow in flow_of(layout_item()),
@@ -237,10 +236,10 @@ proptest! {
         }
     }
 
-    /// §7.5: a `Verbatim` payload reaches the output byte for byte. Checked without
-    /// blocks, so that no continuation indent is inserted between its lines; the
-    /// trailing newline of a payload is its terminator, so it is the only byte that a
-    /// payload may "lose".
+    /// A `Verbatim` payload reaches the output byte for byte. Checked without blocks,
+    /// so that no continuation indent is inserted between its lines; the trailing
+    /// newline of a payload is its terminator, so it is the only byte that a payload
+    /// may "lose".
     #[test]
     fn verbatim_payloads_are_preserved(flow in flow_of(any_item()), wrap in 1usize..12) {
         let out = render(&flow, &options(Some(wrap)));
@@ -257,8 +256,7 @@ proptest! {
         }
     }
 
-    /// §14.2: the same flow always renders to the same string, whichever entry point
-    /// is used.
+    /// The same flow always renders to the same string, whichever entry point is used.
     #[test]
     fn rendering_is_deterministic(
         flow in flow_of(any_item()),

@@ -7,7 +7,7 @@ time, and nothing in `rust/` depends on them at runtime.
 ## `gen_symbols.py`
 
 Reads pylatexenc's tables from a read-only checkout and emits checked-in Rust
-statics (PLAN.md §12.4).
+statics.
 
 ```sh
 tools/gen_symbols.py /path/to/pylatexenc          # regenerate
@@ -19,7 +19,7 @@ Generated files:
 | file | contents |
 |---|---|
 | `rust/techxt/src/defs/accents_data.rs` | the accent macros and their combining marks (from `unicode_accents_list`), the standalone form of each mark, and the (base, mark) pairs that compose under NFC |
-| `rust/techxt/src/defs/symbols_extra_data.rs` | the ~1000-entry symbol long tail of PLAN.md §12.3: the union of pylatexenc's render-side (`latex2text/_defaultspecs.py`) and parse-side (`latexwalker/_defaultspecs.py`) macro tables — each row a name, what it renders as, the arguments it declares, and the mode it is visible in |
+| `rust/techxt/src/defs/symbols_extra_data.rs` | the ~1000-entry symbol long tail: the union of pylatexenc's render-side (`latex2text/_defaultspecs.py`) and parse-side (`latexwalker/_defaultspecs.py`) macro tables — each row a name, what it renders as, the arguments it declares, and the mode it is visible in |
 
 The accent *table* is ported from pylatexenc; the composition and spacing-clone
 tables are derived from the Python runtime's unicode database, because they are

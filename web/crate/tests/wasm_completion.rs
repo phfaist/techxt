@@ -1,5 +1,5 @@
 //! The other test that needs a browser: `Session::complete` across the `JsValue`
-//! boundary (web/PLAN.md §4.9).
+//! boundary.
 //!
 //! What only wasm can show is the wire spelling — that `from_document` arrives as
 //! `fromDocument`, that a kind is the lowercase string `protocol.ts` declares, that a

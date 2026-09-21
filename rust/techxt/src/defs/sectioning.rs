@@ -1,5 +1,4 @@
-//! The sectioning category: the seven heading commands and how they number themselves
-//! (PLAN.md §9.2).
+//! The sectioning category: the seven heading commands and how they number themselves.
 //!
 //! All seven parse identically — `\section*[toc entry]{Title}`, spelled `s o m` and
 //! named `("star", "toctitle", "title")` — and the table-of-contents title is accepted
@@ -53,7 +52,7 @@ const SECTION: usize = 2;
 /// Level 4: `\subsubsection`, the deepest level that is ever numbered.
 const DEEPEST_NUMBERED: usize = 4;
 
-/// The sectioning category (PLAN.md §12.1).
+/// The sectioning category.
 pub fn category() -> Category {
     let mut category = Category::new("sectioning");
     for (level, name) in [
@@ -90,7 +89,7 @@ pub fn category() -> Category {
 ///
 /// `\appendix` is the interesting one: it switches section numbering to letters, which
 /// techxt does not do. Headings after it keep counting in the numbers they were up to
-/// (PLAN.md §17 leaves numbering to a later version), and the appendix's own heading
+/// (lettered numbering is left to a later version), and the appendix's own heading
 /// text is rendered exactly as it was written.
 fn structure(category: &mut Category) {
     for name in [
@@ -173,7 +172,7 @@ impl crate::def::TextHandler for Heading {
 }
 
 impl Heading {
-    /// Whether this level can carry a number at all (PLAN.md §9.2: 5 and 6 never do).
+    /// Whether this level can carry a number at all (5 and 6 never do).
     fn numberable(&self) -> bool {
         self.level <= DEEPEST_NUMBERED
     }
@@ -216,7 +215,7 @@ impl Heading {
         Some(number)
     }
 
-    /// The heading's one line of text, per PLAN.md §9.2's table.
+    /// The heading's one line of text.
     fn heading_line(&self, style: HeadingStyle, number: Option<&str>, title: &str) -> String {
         let mut line = String::new();
         match style {

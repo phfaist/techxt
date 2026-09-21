@@ -1,6 +1,5 @@
 /**
- * Cutting the converted text into the runs the output pane wraps in elements
- * (web/PLAN.md §4.3, §6.3).
+ * Cutting the converted text into the runs the output pane wraps in elements.
  *
  * The binding says where the formulas are as a side table of `{start, end, display}`
  * ranges beside the text; the pane sets the text as it always has and then wraps each
@@ -44,7 +43,7 @@ export interface OutputRun {
  * something MathJax can read.
  *
  * A region may contain a newline: an inline formula's payload can keep one, so a run is
- * not guaranteed to sit within a single line of the output (§4.3). Nothing here cares,
+ * not guaranteed to sit within a single line of the output. Nothing here cares,
  * and neither does the element it becomes.
  */
 export function splitMathRuns(text: string, regions: readonly MathRegion[]): OutputRun[] {

@@ -47,7 +47,7 @@ export interface Toaster {
 /* ------------------------------------------------------------------ ui/panes.ts */
 
 /**
- * One question the editor asks about a name being typed (§6.13).
+ * One question the editor asks about a name being typed.
  *
  * The object *is* the token that pairs an answer with its question: the pane hands it
  * out with {@link PanesInit.onCompletionQuery} and gets it back with
@@ -64,7 +64,7 @@ export interface CompletionQuery {
 }
 
 /**
- * What the document on screen is to the library, in the words the pane shows (§6.10).
+ * What the document on screen is to the library, in the words the pane shows.
  *
  * The strings are computed by `main.ts` from `describeSession`, because this module
  * knows what a button is and nothing about what an entry is.
@@ -89,7 +89,7 @@ export interface PanesInit {
   examples: readonly ExampleDoc[];
   /** Fired on every keystroke or paste; debouncing belongs upstream. */
   onInput(text: string, cause: 'type' | 'paste'): void;
-  /** Fired when the measured fit-to-pane column count changes (§6.5). */
+  /** Fired when the measured fit-to-pane column count changes. */
   onColumnsChange(columns: number): void;
   onSplitChange(split: number): void;
   onFocusChange(focus: 'input' | 'output' | null): void;
@@ -98,7 +98,7 @@ export interface PanesInit {
   onLoadExample(example: ExampleDoc): void;
   /**
    * **New**, beside `Load ▾`: seal the current library entry and clear the input, so
-   * that what is typed next is a document of its own (§6.10).
+   * that what is typed next is a document of its own.
    */
   onNew(): void;
   /**
@@ -106,7 +106,7 @@ export interface PanesInit {
    * log is automatic, so this does not save — it stops *this* version being edited.
    */
   onSave(): void;
-  /** **★**, beside Save: seal the entry and star it, or just toggle the star (§6.10). */
+  /** **★**, beside Save: seal the entry and star it, or just toggle the star. */
   onStar(): void;
   /** The header's entry chip was activated: show that entry in the library. */
   onShowEntry(): void;
@@ -115,7 +115,7 @@ export interface PanesInit {
   /** A gutter marker was clicked: reveal that diagnostic in the panel. */
   onMarkerSelect(diagnostic: Diagnostic): void;
   /**
-   * The editor wants the completions for a name being typed (§6.13). The answer comes
+   * The editor wants the completions for a name being typed. The answer comes
    * back through {@link Panes.setCompletions} carrying this same object; an unanswered
    * query costs nothing but a row that never appears.
    */
@@ -133,7 +133,7 @@ export interface Panes {
   getOutput(): string;
   /**
    * Wrap each math region of the text last given to {@link setOutput} in an element,
-   * and hand those elements back in output order for the caller to typeset (§6.3).
+   * and hand those elements back in output order for the caller to typeset.
    *
    * The text does not change — the elements are built with `createElement` and
    * `createTextNode` around slices of the string that is already there, so
@@ -142,7 +142,7 @@ export interface Panes {
    * `main.ts`; the pane has no idea what MathJax is.
    */
   markMath(regions: readonly MathRegion[]): HTMLElement[];
-  /** Focus the textarea and select `[start, end)` in UTF-16 code units (§4.4). */
+  /** Focus the textarea and select `[start, end)` in UTF-16 code units. */
   selectSpan(start: number, end: number): void;
   /**
    * The latest diagnostics, for the in-editor underline and the gutter markers
@@ -151,18 +151,18 @@ export interface Panes {
   setDiagnostics(diagnostics: readonly Diagnostic[]): void;
   /**
    * The answer to a {@link CompletionQuery} the pane asked for — the chips, in the order
-   * the binding ranked them (§4.9, §6.13).
+   * the binding ranked them.
    *
    * Handing back the query object is what makes an answer identifiable: one for a prefix
    * the user has already typed past is dropped, exactly as a superseded conversion
    * result is.
    */
   setCompletions(query: CompletionQuery, items: readonly Completion[]): void;
-  /** The current fit-to-pane column count for the output pane (§6.5). */
+  /** The current fit-to-pane column count for the output pane. */
   columns(): number;
   /**
    * Fold the output's long lines to the pane's own width instead of scrolling
-   * sideways — CSS only, and never a change to the text `getOutput` returns (§6.3).
+   * sideways — CSS only, and never a change to the text `getOutput` returns.
    */
   setSoftWrap(enabled: boolean): void;
   /** Apply a display font; resolves when the face has loaded (or failed to). */
@@ -174,7 +174,7 @@ export interface Panes {
   /**
    * Where the document stands in the library, for the header's entry chip and the
    * Save and ★ buttons. `null` where there is no library at all, which hides all
-   * three rather than leaving them dead (§6.10).
+   * three rather than leaving them dead.
    */
   setEntryState(state: EntryState | null): void;
   /** A hard parse failure dims the (stale) output rather than blanking it. */
@@ -185,7 +185,7 @@ export interface Panes {
 
 export interface ControlsInit {
   mount: HTMLElement;
-  /** Whether the library button should catch the eye this session (§6.10). */
+  /** Whether the library button should catch the eye this session. */
   libraryNew?: boolean;
   ui: UiState;
   /** The options the user has changed; everything else is a library default. */
@@ -201,12 +201,12 @@ export interface ControlsInit {
   onFontChange(font: FontId, size: number): void;
   onMoreToggle(open: boolean): void;
   /**
-   * "Keep everything offline" was ticked or unticked (§8.3): the display faces, and
-   * the MathJax bundle that is the app's other lazily fetched asset (§9.1). The name
+   * "Keep everything offline" was ticked or unticked: the display faces, and
+   * the MathJax bundle that is the app's other lazily fetched asset. The name
    * keeps `Fonts` because the stored `UiState` key does.
    */
   onKeepFontsOffline(enabled: boolean): void;
-  /** The Library button beside *More options* — the way into §6.10's sheet. */
+  /** The Library button beside *More options* — the way into the library sheet. */
   onOpenLibrary(): void;
 }
 
@@ -218,15 +218,15 @@ export interface Controls {
   setKeepFontsOffline(enabled: boolean): void;
   /** Fill in the embedded techxt version once the worker has reported it. */
   setVersion(version: string): void;
-  /** Stop drawing attention to the library button; it has been noticed (§6.10). */
+  /** Stop drawing attention to the library button; it has been noticed. */
   setLibraryNew(pulse: boolean): void;
-  /** Close the disclosure — what Escape does (§6.9). */
+  /** Close the disclosure — what Escape does. */
   close(): void;
 }
 
 /* ------------------------------------------------------------- ui/diagnostics.ts */
 
-/** What the status strip shows while a conversion is in flight (§6.2). */
+/** What the status strip shows while a conversion is in flight. */
 export type BusyState = 'idle' | 'converting' | 'cancellable';
 
 export interface DiagnosticsInit {
@@ -275,14 +275,14 @@ export type PruneAnswer = 'remove' | 'decline';
 
 export interface LibraryPaneInit {
   mount: HTMLElement;
-  /** Load this entry's document *and* its options into the editor (§6.10). */
+  /** Load this entry's document *and* its options into the editor. */
   onOpenEntry(entry: LibraryEntry): void;
   onStar(entry: LibraryEntry, starred: boolean): void;
   onRename(entry: LibraryEntry, title: string): void;
   onDelete(entry: LibraryEntry): void;
   onCopySource(entry: LibraryEntry): void;
   onDownloadSource(entry: LibraryEntry): void;
-  /** Save the whole library as one file (§6.11). */
+  /** Save the whole library as one file. */
   onExport(): void;
   /** A file the user chose; the app decodes it and asks the pane what to do with it. */
   onImportFile(file: File): void;
@@ -295,7 +295,7 @@ export interface LibraryPane {
   setEntries(entries: readonly LibraryEntry[], stats: LibraryStats): void;
   /** One unobtrusive line about the storage: near the quota, or a private window. */
   setNotice(notice: LibraryNotice | null): void;
-  /** Turn the pane into an honest inert state: no IndexedDB here (§6.10). */
+  /** Turn the pane into an honest inert state: no IndexedDB here. */
   setUnavailable(reason: string): void;
   /** Select an entry, or `null` for the list. */
   select(id: string | null): void;
@@ -304,7 +304,7 @@ export interface LibraryPane {
   askImport(request: ImportRequest): Promise<ImportChoice | null>;
   /**
    * The full-disk proposal: what the app *offers* to remove, with Export first. It
-   * removes nothing itself, and a `'decline'` is a complete answer (§6.10).
+   * removes nothing itself, and a `'decline'` is a complete answer.
    */
   askPrune(proposal: PruneProposal): Promise<PruneAnswer>;
 }

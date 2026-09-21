@@ -1,4 +1,4 @@
-//! Cross-references and citations (PLAN.md §9.8).
+//! Cross-references and citations.
 //!
 //! A reference's *text* is the number LaTeX would have resolved it to, and nothing in a
 //! plain-text conversion knows that number: it comes from the `.aux` file of a run that
@@ -13,7 +13,7 @@
 //! Resolving a reference to the thing it names would take a second pass — collect every
 //! `\label` and the number of the construct it sits in, then convert again with that
 //! table in hand — and a citation would need the bibliography besides. Both are
-//! deliberate omissions of this version (PLAN.md §17), not oversights: an embedder that
+//! deliberate omissions of this version, not oversights: an embedder that
 //! has the numbers can supply them today by overriding these rules
 //! ([`ConverterBuilder::override_macro`](crate::ConverterBuilder::override_macro)).
 //!
@@ -33,7 +33,7 @@ use crate::render::{NodeView, RenderCx, RenderError};
 
 use super::handler;
 
-/// The refs category (PLAN.md §12.1).
+/// The refs category.
 pub fn category() -> Category {
     let mut category = Category::new("refs");
 

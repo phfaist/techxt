@@ -1,5 +1,5 @@
 /**
- * The library pane (web/PLAN.md §6.10, §6.11).
+ * The library pane.
  *
  * A `<dialog>` sheet over the tool, like About and Install: the page never scrolls, so
  * a scrolling list of entries belongs inside a dialog, and the sheet machinery in
@@ -68,7 +68,7 @@ function when(time: number, now = Date.now()): string {
   });
 }
 
-/** "142 entries · 8 starred · 3.1 MB" — where the user stands, unasked (§6.10). */
+/** "142 entries · 8 starred · 3.1 MB" — where the user stands, unasked. */
 function statsLine(stats: LibraryStats): string {
   const entries = `${stats.count} ${stats.count === 1 ? 'entry' : 'entries'}`;
   return `${entries} · ${stats.starred} starred · ${formatBytes(stats.bytes)}`;
@@ -181,7 +181,7 @@ export function initLibraryPane(init: LibraryPaneInit): LibraryPane {
   // Source order is the order it reads in: where the user stands, what can be done to
   // all of it, anything the app has to say about storage, then what narrows the list.
   // A wide screen puts the first two side by side with grid areas; a narrow one lays
-  // this row out with flex, where source order *is* the order (§6.10).
+  // this row out with flex, where source order *is* the order.
   head.append(statsText, actions, noticeBox, filters);
 
   /* --- the list */
@@ -215,7 +215,7 @@ export function initLibraryPane(init: LibraryPaneInit): LibraryPane {
   /**
    * The two things there are to read about an entry, in the order they are wanted:
    * the stored rendering first — it is a handful of lines and it is what the user
-   * recognises the document by — and the whole `source` under it (§6.10).
+   * recognises the document by — and the whole `source` under it.
    *
    * Neither scrolls. The detail column is one scroll container and these are laid out
    * inside it at their full height, because a pane that scrolls and holds two boxes
@@ -630,7 +630,7 @@ export function initLibraryPane(init: LibraryPaneInit): LibraryPane {
 
       const foot = el('div', 'ask-foot');
       if (request.escape) {
-        // Offered first and prominently: nothing has to be lost at all (§6.10).
+        // Offered first and prominently: nothing has to be lost at all.
         const escape = request.escape;
         const rescue = button('btn btn-accent ask-escape', escape.label);
         rescue.addEventListener('click', () => {

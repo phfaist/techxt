@@ -1,4 +1,4 @@
-//! Footnotes, theorems, quotations, floats and captions (PLAN.md §9.8).
+//! Footnotes, theorems, quotations, floats and captions.
 
 use techxt::convert::FootnoteStyle;
 use techxt::Converter;

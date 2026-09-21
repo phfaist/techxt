@@ -1,4 +1,4 @@
-//! The handler-facing context (PLAN.md §10.4) and the error a rule can fail with.
+//! The handler-facing context and the error a rule can fail with.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -18,7 +18,7 @@ use super::math;
 use super::state::{ListKind, RenderState};
 use super::{NodeView, RenderLang};
 
-/// Why a rule could not render a construct (PLAN.md §10.4).
+/// Why a rule could not render a construct.
 ///
 /// Neither variant aborts the conversion: the renderer turns a `RenderError` into a
 /// diagnostic, renders the construct as nothing, and carries on with the document.
@@ -83,16 +83,16 @@ impl core::fmt::Display for RenderError {
 
 impl core::error::Error for RenderError {}
 
-/// Everything a conversion accumulates that is not a piece of the output (PLAN.md §8).
+/// Everything a conversion accumulates that is not a piece of the output.
 ///
 /// One of these exists per conversion, inside the renderer. It is not downward state:
 /// heading numbers must keep counting across siblings, footnotes are collected in
 /// document order and emitted at the end, and `\title` may be set anywhere and used
 /// somewhere else entirely.
 // The sectioning and list counters live here rather than in the downward state because
-// PLAN.md §8 puts them here, and because their *lifetime rules* — document order for the
-// counters, one push per open list — are what the renderer core guarantees to the
-// handlers in the definitions library that read them.
+// their *lifetime rules* — document order for the counters, one push per open list —
+// are what the renderer core guarantees to the handlers in the definitions library that
+// read them.
 #[derive(Debug, Default)]
 pub(crate) struct RunState {
     pub(crate) diagnostics: Diagnostics<Option<String>>,
@@ -102,12 +102,11 @@ pub(crate) struct RunState {
     /// The kinds of the open list environments, innermost last — the same stack
     /// discipline as `list_counter_stack`, and pushed and popped alongside it.
     ///
-    /// `RenderState::list` names only the *innermost* list, which cannot answer
-    /// PLAN.md §9.4's question "how many enclosing lists are of this kind?" once a list
-    /// of another kind intervenes: an `itemize` inside an `enumerate` inside an
-    /// `itemize` is a second-level itemize, and the innermost context alone cannot say
-    /// so. Keeping the enclosing kinds here answers it without widening the public
-    /// downward state.
+    /// `RenderState::list` names only the *innermost* list, which cannot answer the
+    /// question "how many enclosing lists are of this kind?" once a list of another
+    /// kind intervenes: an `itemize` inside an `enumerate` inside an `itemize` is a
+    /// second-level itemize, and the innermost context alone cannot say so. Keeping the
+    /// enclosing kinds here answers it without widening the public downward state.
     pub(crate) list_kind_stack: Vec<ListKind>,
     pub(crate) footnotes: Vec<Flow>,
     pub(crate) doc_title: Option<Flow>,
@@ -134,8 +133,8 @@ pub(crate) trait RendererOps<LLL: RenderLang>:
 
 /// Everything [`RenderCx`] does to the fold, with the tree's language erased.
 ///
-/// This is the seam that keeps [`TextHandler`](crate::def::TextHandler) non-generic
-/// (PLAN.md §11.1): the renderer, the recompose context and the node all name the
+/// This is the seam that keeps [`TextHandler`](crate::def::TextHandler) non-generic: the
+/// renderer, the recompose context and the node all name the
 /// [`RenderLang`](super::RenderLang) `LLL`, and all three are erased together behind one
 /// trait object, of which only the tree's lifetime `'t` survives. The one implementor is
 /// [`FoldOn`].
@@ -187,7 +186,7 @@ pub(crate) trait Fold<'t> {
     }
 }
 
-/// The fold, positioned on one node of one tree (PLAN.md §10.4).
+/// The fold, positioned on one node of one tree.
 ///
 /// Note the three lifetimes and why they differ: techy hands
 /// [`recompose_node`](Recomposer::recompose_node) the node and the context with
@@ -288,7 +287,7 @@ impl<'t, LLL: RenderLang> Fold<'t> for FoldOn<'_, '_, 't, LLL> {
     }
 }
 
-/// A rule's view of the conversion in progress (PLAN.md §10.4).
+/// A rule's view of the conversion in progress.
 ///
 /// This is the whole interface between a [`TextHandler`](crate::def::TextHandler) and
 /// the fold. A handler never walks the tree itself: it asks the context for an
@@ -300,8 +299,8 @@ impl<'t, LLL: RenderLang> Fold<'t> for FoldOn<'_, '_, 't, LLL> {
 ///
 /// The tree's language is not a parameter here: it was erased when the context was
 /// built, which is what lets one handler render trees of every
-/// [`RenderLang`](super::RenderLang) (PLAN.md §11.1). `'t` is the tree's own lifetime —
-/// the one a [`NodeView`] read out of the context keeps.
+/// [`RenderLang`](super::RenderLang). `'t` is the tree's own lifetime — the one a
+/// [`NodeView`] read out of the context keeps.
 ///
 /// ```
 /// use techxt::def::{TextHandler, TextRule};
@@ -368,13 +367,12 @@ impl<'a, 't> RenderCx<'a, 't> {
     ///
     /// When `state` enters math and the construct itself is not in math — `\ensuremath`
     /// is the shipped case — the argument is a complete **math scope**, so its atoms are
-    /// joined and converted to text before the flow is handed back (PLAN.md §9.5). A
-    /// handler therefore never has to know that the math pipeline exists in order to
-    /// render something as a formula, and a
-    /// [`MathAtom`](crate::flow::FlowItem::MathAtom) cannot leak out of one. Rendering an
-    /// argument in the math state the construct is *already* in — what `\frac` and
-    /// `\sqrt` do with their operands — leaves the atoms alone, which is what lets those
-    /// constructs read their operands' classes.
+    /// joined and converted to text before the flow is handed back. A handler therefore
+    /// never has to know that the math pipeline exists in order to render something as a
+    /// formula, and a [`MathAtom`](crate::flow::FlowItem::MathAtom) cannot leak out of
+    /// one. Rendering an argument in the math state the construct is *already* in — what
+    /// `\frac` and `\sqrt` do with their operands — leaves the atoms alone, which is what
+    /// lets those constructs read their operands' classes.
     pub fn arg_with_state(
         &mut self,
         name: &str,
@@ -471,8 +469,8 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// The LaTeX source `node` was parsed from.
     ///
     /// Reassembled from node payloads, never read out of the source buffer, so it works
-    /// on transformed trees too (PLAN.md §1.6). This is what the `KeepSource` policies
-    /// and math's `Source` mode emit.
+    /// on transformed trees too. This is what the `KeepSource` policies and math's
+    /// `Source` mode emit.
     pub fn source_of(&self, node: NodeView<'_>) -> Result<String, RenderError> {
         Ok(node.source())
     }
@@ -482,7 +480,7 @@ impl<'a, 't> RenderCx<'a, 't> {
     /// Report a diagnostic.
     ///
     /// Build it through [`TechxtCondition::diagnose`](crate::diag::TechxtCondition) so
-    /// that the condition keeps the severity PLAN.md §10.6 assigns it.
+    /// that the condition keeps the severity assigned to it.
     pub fn diag(&mut self, diagnostic: Diagnostic<Option<String>>) {
         self.fold.run_mut().diagnostics.push(diagnostic);
     }

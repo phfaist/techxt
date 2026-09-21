@@ -1,5 +1,5 @@
 //! The base category: escapes, spacing, ligatures, and the small text macros every
-//! document uses (PLAN.md §9.3, §9.7, and §9.8's "Misc").
+//! document uses.
 //!
 //! This is the category that makes plain LaTeX *text* work — everything that is not a
 //! symbol, an accent, a font, a heading, a list or a formula. Three groups of it are
@@ -17,7 +17,7 @@
 //!
 //! # Three constructs read the render state
 //!
-//! `&`, `\\` and `\hline` mean different things in different places (PLAN.md §9.7), and
+//! `&`, `\\` and `\hline` mean different things in different places, and
 //! what they mean is decided when they are *rendered*, from
 //! [`RenderState`](crate::render::RenderState), not when they are parsed. Their
 //! definitions live here because they are ordinary base-language constructs; the table
@@ -27,7 +27,7 @@
 //! # Footnotes are collected, not inlined
 //!
 //! `\footnote` renders as a marker at the call site and puts its text at the end of
-//! the document (PLAN.md §9.8). The renderer owns the collection — the numbering has to
+//! the document. The renderer owns the collection — the numbering has to
 //! be in document order across the whole run, which no single construct can see — so
 //! the definition here does one thing: hand the note over and emit the number it was
 //! given.
@@ -37,7 +37,7 @@
 //! The classic text symbols — `\l`, `\ss`, `\ldots`, `\S` and friends — are here rather
 //! than in the generated [`symbols_extra`](super::symbols_extra) long tail, because
 //! text as ordinary as `Sk\l odowska` must convert correctly with `base` alone. They
-//! shadow the generated table, which is pushed first (PLAN.md §12.1).
+//! shadow the generated table, which is pushed first.
 
 use alloc::borrow::Cow;
 use alloc::string::String;
@@ -60,8 +60,8 @@ use crate::render::{math, MathCtx, NodeView, RenderCx, RenderError};
 
 use super::handler;
 
-/// The base category (PLAN.md §12.1): escapes, spacing, ligatures, `~`, `\\`, `\par`,
-/// and the miscellaneous text macros of PLAN.md §9.8.
+/// The base category: escapes, spacing, ligatures, `~`, `\\`, `\par`,
+/// and the miscellaneous text macros.
 pub fn category() -> Category {
     let mut category = Category::new("base");
     escapes(&mut category);
@@ -90,7 +90,7 @@ fn escapes(category: &mut Category) {
 
 // ------------------------------------------------------------------------- spacing
 
-/// The spacing macros of PLAN.md §9.3.
+/// The spacing macros.
 fn spacing(category: &mut Category) {
     // One inter-word space, and a place a line may break. `Literal(" ")` is not a
     // shortcut: rule text goes through the same word/space splitting as document text,
@@ -103,7 +103,7 @@ fn spacing(category: &mut Category) {
     // A measured gap, unlike the glue above: emitted as text so that it survives
     // exactly as written and no line break falls inside it.
     //
-    // U+2003 EM SPACE, not a run of ASCII spaces (DECISIONS.md D14). A quad *is* one em
+    // U+2003 EM SPACE, not a run of ASCII spaces. A quad *is* one em
     // and a qquad two, so this is the typographically exact character; and it keeps
     // `FlowItem::Text`'s contract, which is that a text item holds no whitespace. An
     // ASCII-space item would put real trailing whitespace at the end of a line, which
@@ -118,12 +118,12 @@ fn spacing(category: &mut Category) {
 // -------------------------------------------------------------------------- breaks
 
 /// Paragraph and line breaks, and the two constructs whose meaning depends on where
-/// they occur (PLAN.md §9.7).
+/// they occur.
 fn breaks(category: &mut Category) {
     category.add_macro(MacroDef::new("par").rule(handler(Emit(FlowItem::ParagraphBreak))));
     category.add_macro(MacroDef::new("newline").rule(handler(Emit(FlowItem::HardBreak))));
-    // DECISIONS.md D8: `\\` takes its optional `[len]`, parsed with the adjacency
-    // requirement, and ignores it. Without the requirement `A=0 \\ [C,D]=0` would read
+    // `\\` takes its optional `[len]`, parsed with the adjacency requirement, and
+    // ignores it. Without the requirement `A=0 \\ [C,D]=0` would read
     // `[C,D]` as the length and swallow it.
     category.add_macro(
         MacroDef::new("\\")
@@ -180,7 +180,7 @@ fn optional_length() -> ArgumentSpec<LatexlikeXp> {
 
 // ----------------------------------------------------------------------- ligatures
 
-/// TeX's input ligatures, in text mode only (PLAN.md §9.3).
+/// TeX's input ligatures, in text mode only.
 ///
 /// Mode-restricted because they are a property of the *text* font: `--` in a formula is
 /// two minus signs, and `'` is a prime. techy matches the longest registered trigger,
@@ -206,7 +206,7 @@ fn ligatures(category: &mut Category) {
 
 // ----------------------------------------------------------------------- footnotes
 
-/// `\footnote` (PLAN.md §9.8).
+/// `\footnote`.
 ///
 /// The optional argument is LaTeX's own way of overriding the mark; techxt numbers its
 /// notes itself, in document order, so it is parsed and dropped rather than used — a
@@ -222,7 +222,7 @@ fn footnotes(category: &mut Category) {
 
 // ---------------------------------------------------------------------------- misc
 
-/// PLAN.md §9.8's "Misc": the text macros that are neither symbols nor structure.
+/// The miscellaneous text macros: those that are neither symbols nor structure.
 fn misc(category: &mut Category) {
     category.add_macro(
         MacroDef::new("texorpdfstring")
@@ -308,7 +308,7 @@ fn misc(category: &mut Category) {
 
 // --------------------------------------------------------------------------- boxes
 
-/// The boxes and the case-changing macros of PLAN.md §9.8's "Misc".
+/// The boxes and the case-changing macros.
 ///
 /// A box is a *typesetting* instruction — fix this width, draw a frame, lift this off
 /// the baseline — and plain text can show none of it. What is inside one is ordinary
@@ -367,7 +367,7 @@ fn boxes(category: &mut Category) {
             .rule(TextRule::Skip),
     );
 
-    // Case is content (PLAN.md §9.2): techxt never changes a letter's case, here no
+    // Case is content: techxt never changes a letter's case, here no
     // more than in a heading. The argument is rendered as it was written — which also
     // keeps `\MakeUppercase{\ss}` from producing a letter its author did not write.
     for name in ["uppercase", "lowercase", "MakeUppercase", "MakeLowercase"] {
@@ -423,8 +423,8 @@ fn only_content() -> TextRule {
 ///
 /// `\arabic{section}` and its siblings would print a counter's value, and techxt keeps
 /// no counters other than the heading numbers of [`defs::sectioning`](super::sectioning)
-/// — document numbering is on PLAN.md §17's list — so they render as nothing rather
-/// than as a wrong number.
+/// — document numbering is left for a later version — so they render as nothing
+/// rather than as a wrong number.
 fn typesetting_only(category: &mut Category) {
     for name in [
         // Glue and leaders: horizontal or vertical space, filled or not.
@@ -632,7 +632,7 @@ impl TextHandler for Emit {
     }
 }
 
-/// `\\` (PLAN.md §9.7).
+/// `\\`.
 ///
 /// Four meanings, decided by where it occurs: a row separator in a table body or a
 /// matrix, a new display line in a multi-line formula, nothing much in inline math, and
@@ -661,7 +661,7 @@ impl TextHandler for LineBreak {
     }
 }
 
-/// `&` (PLAN.md §9.7).
+/// `&`.
 ///
 /// A cell separator where there are cells, nothing in a formula that has none (the
 /// joiner spaces the relation the `&` was aligning), and a reported mistake in running
@@ -687,7 +687,7 @@ impl TextHandler for Alignment {
     }
 }
 
-/// `\hline` (PLAN.md §9.7): a rule marker inside a table, and nothing anywhere else.
+/// `\hline`: a rule marker inside a table, and nothing anywhere else.
 #[derive(Debug)]
 struct HorizontalRule;
 
@@ -706,7 +706,7 @@ impl TextHandler for HorizontalRule {
     }
 }
 
-/// `\footnote{…}` (PLAN.md §9.8).
+/// `\footnote{…}`.
 ///
 /// Three [styles](crate::convert::FootnoteStyle), and the default collects: the marker
 /// goes where the note was written and the text goes after the document, which is what

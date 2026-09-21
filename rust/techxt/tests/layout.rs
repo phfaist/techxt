@@ -1,8 +1,8 @@
-//! Layout behaviour that the plan states as law, exercised through the public API.
+//! Layout behaviour that is stated as law, exercised through the public API.
 //!
-//! These are the normative acceptance examples of PLAN.md §15 that the flow and layout
-//! milestone can already answer, with the flows built by hand (no parser needed), plus
-//! the composition scenarios that only show up once several rules meet.
+//! These are the normative acceptance examples that the flow and layout engine can
+//! answer on its own, with the flows built by hand (no parser needed), plus the
+//! composition scenarios that only show up once several rules meet.
 
 use techxt::flow::{BlockKind, Flow, FlowItem, VerbatimProvenance};
 use techxt::layout::{render, render_inline, render_to, LayoutOptions};
@@ -33,14 +33,14 @@ fn no_wrap() -> LayoutOptions {
 }
 
 // ---------------------------------------------------------------------------
-// PLAN.md §15 acceptance examples
+// Acceptance examples
 // ---------------------------------------------------------------------------
 
-/// §15 #2: `one\n\n\n\ntwo` → `one` / blank / `two`.
+/// Example 2: `one\n\n\n\ntwo` → `one` / blank / `two`.
 ///
 /// The source has three blank lines' worth of newlines; the flow records one
-/// paragraph break and layout renders one blank line. (The trailing newline is
-/// §7's "output ends with exactly one `\n`".)
+/// paragraph break and layout renders one blank line. (The trailing newline is the
+/// rule that output ends with exactly one `\n`.)
 #[test]
 fn example_2_blank_lines_normalize() {
     let f = Flow::from_plain_text("one\n\n\n\ntwo");
@@ -48,7 +48,7 @@ fn example_2_blank_lines_normalize() {
     assert_eq!(render(&f, &wrap_at(40)), "one\n\ntwo\n");
 }
 
-/// §15 #4: `\textbf{bold}text` is one unbreakable word.
+/// Example 4: `\textbf{bold}text` is one unbreakable word.
 ///
 /// The bold macro contributes its own `Text` item and the following characters
 /// another; nothing may fall between them, at any width.
@@ -60,8 +60,8 @@ fn example_4_adjacent_text_never_breaks() {
     assert_eq!(render(&f, &wrap_at(1)), "𝐛𝐨𝐥𝐝text\n");
 }
 
-/// §15 #22: nested lists come out tight, with the inner list's markers indented under
-/// the outer item's text.
+/// Example 22: nested lists come out tight, with the inner list's markers indented
+/// under the outer item's text.
 ///
 /// The list environments open a block of their own around their items, which is what
 /// keeps the inner list's first `\item` from auto-closing the outer list's item.
@@ -102,8 +102,8 @@ fn example_22_nested_lists() {
     );
 }
 
-/// §15 #24: a verbatim body survives byte for byte, is blank-line separated from its
-/// surroundings, and is never wrapped.
+/// Example 24: a verbatim body survives byte for byte, is blank-line separated from
+/// its surroundings, and is never wrapped.
 #[test]
 fn example_24_verbatim_is_preserved() {
     let body = "  keep   this\n\n    exactly\n";
@@ -122,8 +122,8 @@ fn example_24_verbatim_is_preserved() {
     assert!(render(&f, &wrap_at(5)).contains(body));
 }
 
-/// §15 #25: `aaa bbb \textbf{ccc ddd} eee` at `wrap_width = 12` wraps *inside* the
-/// macro, because glue decides breaks and item boundaries do not.
+/// Example 25: `aaa bbb \textbf{ccc ddd} eee` at `wrap_width = 12` wraps *inside*
+/// the macro, because glue decides breaks and item boundaries do not.
 #[test]
 fn example_25_wraps_across_a_macro_boundary() {
     let f = flow(vec![

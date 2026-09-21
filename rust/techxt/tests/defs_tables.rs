@@ -1,5 +1,4 @@
-//! `defs::tables`: `tabular` and its relatives, column alignment, rules and spans
-//! (PLAN.md §9.6).
+//! `defs::tables`: `tabular` and its relatives, column alignment, rules and spans.
 
 use techxt::diag::UnsupportedIgnored;
 use techxt::{Conversion, Converter};
@@ -12,7 +11,7 @@ fn text(latex: &str) -> String {
     convert(latex).text
 }
 
-// --------------------------------------------------------- PLAN.md §15 example 21
+// ---------------------------------------------------------------------- example 21
 
 #[test]
 fn example_21_columns_are_padded_to_their_widest_cell() {

@@ -1,5 +1,5 @@
-//! The public conversion API (PLAN.md §11), the dispatch chain (PLAN.md §10.3), the
-//! rule kinds (PLAN.md §10.4) and the unknown-construct policies (PLAN.md §10.6).
+//! The public conversion API, the dispatch chain, the rule kinds and the
+//! unknown-construct policies.
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -27,7 +27,7 @@ fn text(latex: &str) -> String {
 
 /// The shipped library plus two constructs that exist only to be *rule-less*.
 ///
-/// PLAN.md §10.6's policies act on a construct that parses — its arguments are
+/// The unknown-construct policies act on a construct that parses — its arguments are
 /// declared — but carries no text rule anywhere. Every entry `techxt::defs` ships has a
 /// rule, as it should, so the dispatch chain's last step needs a vehicle of its own.
 fn with_ruleless() -> DefinitionSet {
@@ -38,7 +38,7 @@ fn with_ruleless() -> DefinitionSet {
     )
 }
 
-// ------------------------------------------------------------- PLAN.md §11.1
+// ------------------------------------------------------------ the public API
 
 #[test]
 fn a_converter_is_cloneable_and_shareable() {
@@ -83,7 +83,7 @@ fn the_three_layers_agree() {
 fn the_three_layers_agree_on_a_plain_techy_tree_too() {
     // The same agreement one language further away: `tree_to_flow` and `tree_to_text`
     // are one fold, and the tree they are handed is plain techy's — parsed by techy's
-    // own `LatexlikeDriver`, with no techy-xp anywhere (PLAN.md §11.1).
+    // own `LatexlikeDriver`, with no techy-xp anywhere.
     let mut package = Package::<Latexlike>::new("foreign");
     package.insert(
         CallableType::Macro,
@@ -142,7 +142,7 @@ fn the_builder_default_matches_the_options_default() {
 
 #[test]
 fn wrapping_happens_across_macro_boundaries() {
-    // PLAN.md §15 example 25, exactly: the wrap decision sees the styled letters as
+    // Acceptance example 25, exactly: the wrap decision sees the styled letters as
     // ordinary words and breaks at the glue inside the macro's argument.
     let converter = Converter::builder()
         .wrap_width(Some(12))
@@ -157,7 +157,7 @@ fn wrapping_happens_across_macro_boundaries() {
     );
 }
 
-// ------------------------------------------------------------- PLAN.md §10.3
+// -------------------------------------------------------- the dispatch chain
 
 #[test]
 fn the_override_map_beats_the_embedded_rule() {
@@ -239,7 +239,7 @@ fn overrides_are_keyed_by_kind_as_well_as_name() {
     );
 }
 
-// ------------------------------------------------------------- PLAN.md §10.4
+// ---------------------------------------------------------------- rule kinds
 
 #[test]
 fn rule_kind_literal() {
@@ -388,7 +388,7 @@ fn a_handler_can_register_footnotes_and_document_metadata() {
         .override_macro("textbf", TextRule::Handler(Arc::new(Title)))
         .build()
         .expect("builds");
-    // PLAN.md §15 example 18's shape: markers in the text, notes gathered at the end.
+    // Acceptance example 18's shape: markers in the text, notes gathered at the end.
     assert_eq!(
         converter
             .latex_to_text(r"\textbf{T}Fact\emph{Proof sketch.} holds.")
@@ -398,7 +398,7 @@ fn a_handler_can_register_footnotes_and_document_metadata() {
     );
 }
 
-// ------------------------------------------------------------- PLAN.md §10.6
+// -------------------------------------------- the unknown-construct policies
 
 #[test]
 fn every_unknown_macro_policy() {

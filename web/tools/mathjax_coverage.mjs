@@ -2,8 +2,8 @@
 /**
  * Report which constructs techxt defines that MathJax does not understand.
  *
- * web/PLAN.md §9.1. The *Math: MathJax* mode hands the typesetter a
- * formula's own LaTeX, post-expansion (§4.3), so what MathJax has to understand is not
+ * The *Math: MathJax* mode hands the typesetter a
+ * formula's own LaTeX, post-expansion, so what MathJax has to understand is not
  * the user's macros but techxt's: the ~1 400 names `DefinitionSet::symbols()` reports.
  * Nobody had ever compared the two lists, and the answer turned out to be 770 names — so
  * this script exists for the same reason `coverage_check.py` does, and follows the same
@@ -12,14 +12,14 @@
  * Usage:
  *
  *     node web/tools/mathjax_coverage.mjs              # the report, on stdout
- *     node web/tools/mathjax_coverage.mjs --check      # the CI gate (§11)
+ *     node web/tools/mathjax_coverage.mjs --check      # the CI gate
  *     node web/tools/mathjax_coverage.mjs --symbols F  # reuse a dump, skipping cargo
  *
  * # What it does
  *
  * 1. Reads every name the library defines from `cargo run --example symbol_index` in
  *    `web/crate` — `techxt::defs::standard()` through `DefinitionSet::symbols()`, which
- *    is the table the completion row is drawn from as well (§4.9).
+ *    is the table the completion row is drawn from as well.
  * 2. Starts MathJax under Node with **the app's own TeX configuration**, imported from
  *    `src/mathjax.ts` rather than copied: the packages, the `configmacros` definitions
  *    and the scanning settings are one object, and a checker with a list of its own

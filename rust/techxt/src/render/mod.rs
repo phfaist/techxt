@@ -1,4 +1,4 @@
-//! The renderer: techy node trees folded into a [`Flow`] (PLAN.md §8–§10).
+//! The renderer: techy node trees folded into a [`Flow`].
 //!
 //! [`TextRenderer`] is techxt's implementation of techy's [`Recomposer`] trait. techy's
 //! driver walks the tree in document order and asks the renderer, node by node, what to
@@ -15,15 +15,15 @@
 //!   counters, collected footnotes, the document's title. The fold is in document
 //!   order, so counting in `&mut self` is correct.
 //!
-//! # What each kind of node does (PLAN.md §9.1)
+//! # What each kind of node does
 //!
 //! | node | rendering |
 //! |---|---|
 //! | characters | split into words and inter-word spaces; a blank line becomes a paragraph break; in a verbatim context, emitted untouched |
 //! | comment | nothing at all — not even its trailing newline, which is what LaTeX itself does. With [`Options::keep_comments`] it gets a line of its own |
-//! | group | a math group is a whole formula, folded in math mode and joined (§9.5); a `\verb` group emits its raw text; every other group is transparent: `{brave}` renders as `brave`, never as `{brave}` |
+//! | group | a math group is a whole formula, folded in math mode and joined; a `\verb` group emits its raw text; every other group is transparent: `{brave}` renders as `brave`, never as `{brave}` |
 //! | list | transparent |
-//! | callable | the dispatch chain of PLAN.md §10.3, then the rule it found |
+//! | callable | the dispatch chain, then the rule it found |
 //!
 //! Whitespace policy is fixed and has no options: a macro's trailing space is
 //! invocation syntax and is never emitted, source whitespace collapses to one
@@ -61,7 +61,7 @@
 //!
 //! ## One renderer, every language
 //!
-//! A renderer folds a tree of **any** [`RenderLang`] (PLAN.md §11.1) — it implements
+//! A renderer folds a tree of **any** [`RenderLang`] — it implements
 //! [`Recomposer<LLL, ()>`](Recomposer) for every one of them at once — so
 //! [`Converter::renderer`](crate::Converter::renderer) takes no language parameter and
 //! what it hands back is specialized to nothing. Which language a run is over is settled
@@ -95,11 +95,11 @@
 //! construct occurs.
 //!
 //! **A formula is not such a construct.** A math group has to see its whole contents
-//! before any of them can become text — that is what the joiner is for (PLAN.md §9.5) —
-//! but it gets them without folding them itself: it answers with an ordinary
-//! instruction to descend and attaches the joining to it as post-processing
-//! ([`ConcatPieces::map`]). The driver still does the descending, so a wrapper's
-//! overrides reach the `x` inside `$x + y$` exactly as they reach the `x` in `{x}`.
+//! before any of them can become text — that is what the joiner is for — but it gets
+//! them without folding them itself: it answers with an ordinary instruction to descend
+//! and attaches the joining to it as post-processing ([`ConcatPieces::map`]). The
+//! driver still does the descending, so a wrapper's overrides reach the `x` inside
+//! `$x + y$` exactly as they reach the `x` in `{x}`.
 //!
 //! Inside a formula the currency changes, and an override there has to know it: the
 //! pieces are [`MathAtom`](crate::flow::FlowItem::MathAtom)s, and a run of anything
@@ -161,7 +161,7 @@ pub(crate) struct RenderConfig {
     pub(crate) fallback: RuleTable,
 }
 
-/// What a finished run leaves behind (PLAN.md §11.1).
+/// What a finished run leaves behind.
 #[derive(Debug)]
 pub struct RenderFinish {
     /// Content that belongs after the document body: the collected footnote block.
@@ -172,7 +172,7 @@ pub struct RenderFinish {
     pub diagnostics: Diagnostics<Option<String>>,
 }
 
-/// techxt's [`Recomposer`]: folds a techy node tree into a [`Flow`] (PLAN.md §8).
+/// techxt's [`Recomposer`]: folds a techy node tree into a [`Flow`].
 ///
 /// One renderer converts one document — it carries that document's counters,
 /// footnotes and diagnostics — and is made by
@@ -200,7 +200,7 @@ impl<'a> TextRenderer<'a> {
     }
 
     /// Finish the run: hand back what belongs after the document, and everything the
-    /// run reported (PLAN.md §11.1).
+    /// run reported.
     pub fn finish(self) -> RenderFinish {
         let trailing = footnote_block(&self.run.footnotes, &self.config.options);
         RenderFinish {
@@ -219,7 +219,7 @@ impl<'a> TextRenderer<'a> {
     }
 
     /// Report that the fold was abandoned, and hand back the empty output that goes
-    /// with it (PLAN.md §10.4).
+    /// with it.
     pub(crate) fn abort(&mut self, detail: impl Into<String>) {
         if let Some(span) = self.run.document_span.clone() {
             self.run
@@ -230,11 +230,11 @@ impl<'a> TextRenderer<'a> {
 
     // ------------------------------------------------------------------ per kind
 
-    /// Characters (PLAN.md §9.1).
+    /// Characters.
     fn chars<LLL: RenderLang>(&self, node: NodeRef<'_, LLL>, state: &RenderState) -> Flow {
         // `chars()` reads the node's own payload, resolved against the node's own
-        // source: the one text-reading operation that is safe on any tree (PLAN.md
-        // §1.6). `span_content()` would be wrong on a transformed tree, silently.
+        // source: the one text-reading operation that is safe on any tree.
+        // `span_content()` would be wrong on a transformed tree, silently.
         let text = node.chars().unwrap_or("");
 
         if in_verbatim_group(node) {
@@ -256,18 +256,18 @@ impl<'a> TextRenderer<'a> {
 
         if state.in_math() {
             // A formula's own spacing is computed, so the source's is noise: `$4 \pi c$`
-            // and `$4\pi c$` are the same formula and must render alike (PLAN.md §9.1).
+            // and `$4\pi c$` are the same formula and must render alike.
             let stripped: String = text.chars().filter(|c| !c.is_whitespace()).collect();
             if stripped.is_empty() {
                 return Flow::new();
             }
             // These *are* document characters, so the math alphabet applies here — and
-            // only here (DECISIONS.md D6).
+            // only here.
             let styled = self.styled(&stripped, state);
             if math::atoms_in_use(state, &self.config.options) {
-                // DECISIONS.md D4: a run of upright latin letters may be read as a
-                // function name exactly when variables are being styled, so that the
-                // name stands out from them.
+                // A run of upright latin letters may be read as a function name exactly
+                // when variables are being styled, so that the name stands out from
+                // them.
                 return math::segmented(&styled, state.math_font.is_style());
             }
             return Flow::text(&styled);
@@ -281,8 +281,8 @@ impl<'a> TextRenderer<'a> {
 
     /// Apply the font alphabet in effect, if any.
     ///
-    /// Only characters that came from the document are styled (DECISIONS.md D6); text a
-    /// rule produced never passes through here.
+    /// Only characters that came from the document are styled; text a rule produced
+    /// never passes through here.
     fn styled(&self, text: &str, state: &RenderState) -> String {
         let (style, fallback) = if state.in_math() {
             (state.math_font, self.config.options.math_font)
@@ -295,7 +295,7 @@ impl<'a> TextRenderer<'a> {
         }
     }
 
-    /// A comment (PLAN.md §9.1).
+    /// A comment.
     ///
     /// By default a comment renders as *nothing at all* — not even the newline that
     /// ends it, which is exactly what LaTeX does and why `A% note` followed by `B` is
@@ -307,7 +307,7 @@ impl<'a> TextRenderer<'a> {
         let Some(comment) = node.comment() else {
             return Flow::new();
         };
-        // Payload fields, resolved against the node's own source (PLAN.md §1.6).
+        // Payload fields, resolved against the node's own source.
         let source = node.span().source();
         let mut text = String::from(comment.start.resolve(source));
         text.push_str(comment.content.resolve(source));
@@ -321,14 +321,14 @@ impl<'a> TextRenderer<'a> {
         flow
     }
 
-    /// A group (PLAN.md §9.1).
+    /// A group.
     fn group<LLL: RenderLang>(
         &mut self,
         node: NodeRef<'_, LLL>,
         state: &RenderState,
     ) -> Recompose<Flow, RenderState> {
         // Asked through the language's own group-class roles rather than by matching a
-        // concrete enum, so that every latexlike language answers (PLAN.md §11.1).
+        // concrete enum, so that every latexlike language answers.
         if let Some(group_type) = node.group_type() {
             if let Some(form) = group_type.math_form() {
                 return self.math_group(node, state, form);
@@ -350,7 +350,7 @@ impl<'a> TextRenderer<'a> {
         Recompose::Concat(ConcatPieces::children())
     }
 
-    /// A math group — `$…$`, `\(…\)`, `\[…\]`, `$$…$$` (PLAN.md §9.5).
+    /// A math group — `$…$`, `\(…\)`, `\[…\]`, `$$…$$`.
     ///
     /// A math group is a **math scope**: its contents are folded with
     /// [`RenderState::math`] set, and the [`MathAtom`](FlowItem::MathAtom)s they produce
@@ -360,23 +360,22 @@ impl<'a> TextRenderer<'a> {
     ///
     /// The joiner has to see the whole formula at once, but that is *not* a reason to
     /// fold the children here. Doing so would take the driver out of the loop, and with
-    /// it any recomposer wrapping this one — the wrapping contract of PLAN.md §3 would
-    /// stop at the `$`. So the answer is an ordinary instruction to descend, with the
-    /// scope's closing attached to it as post-processing
-    /// ([`ConcatPieces::map`]): the driver folds the children through the run's
-    /// outermost recomposer, and only then is the assembled flow handed to
-    /// [`math::scope_closer`]'s function, which joins it and converts it at the flow
-    /// boundary.
+    /// it any recomposer wrapping this one — the wrapping contract would stop at the
+    /// `$`. So the answer is an ordinary instruction to descend, with the scope's
+    /// closing attached to it as post-processing ([`ConcatPieces::map`]): the driver
+    /// folds the children through the run's outermost recomposer, and only then is the
+    /// assembled flow handed to [`math::scope_closer`]'s function, which joins it and
+    /// converts it at the flow boundary.
     ///
     /// A formula's interior is therefore descended into by the driver like any other
     /// subtree, which also puts it under the run's descent guard — one policy for the
     /// whole document rather than an exception for math.
     ///
     /// In [`Source`](crate::convert::MathMode::Source) mode there is nothing to fold:
-    /// the formula is re-emitted as the LaTeX it was written as, from node payloads
-    /// (PLAN.md §1.6). That is [`math::source_scope`]'s job rather than this method's,
-    /// because a math group is only one of the ways a formula is opened — a math
-    /// environment is another — and all of them have to answer alike.
+    /// the formula is re-emitted as the LaTeX it was written as, from node payloads.
+    /// That is [`math::source_scope`]'s job rather than this method's, because a math
+    /// group is only one of the ways a formula is opened — a math environment is
+    /// another — and all of them have to answer alike.
     fn math_group<LLL: RenderLang>(
         &mut self,
         node: NodeRef<'_, LLL>,
@@ -401,7 +400,7 @@ impl<'a> TextRenderer<'a> {
         )
     }
 
-    /// A callable: find its rule (PLAN.md §10.3), then run it (PLAN.md §10.4).
+    /// A callable: find its rule, then run it.
     fn callable<LLL: RenderLang>(
         &mut self,
         node: NodeRef<'_, LLL>,
@@ -420,8 +419,8 @@ impl<'a> TextRenderer<'a> {
             .or_else(|| embedded_rule(node))
             .or_else(|| kind.and_then(|kind| config.fallback.get(kind, name)));
 
-        // Step 4 (PLAN.md §10.6): no rule, so the unknown-construct policy decides — and
-        // says so, unless the parse has already named this construct better than
+        // Step 4: no rule, so the unknown-construct policy decides — and says so,
+        // unless the parse has already named this construct better than
         // `techxt.unknown-macro` could. A techy-xp refusal is exactly that case.
         let diagnose = !is_refusal(node);
         let mut fold = FoldOn::new(self, cx, node);
@@ -473,7 +472,7 @@ impl<LLL: RenderLang> Recomposer<LLL, ()> for TextRenderer<'_> {
         })
     }
 
-    /// Report that the run is approaching techy's descent limit (DECISIONS.md C3, D12).
+    /// Report that the run is approaching techy's descent limit.
     ///
     /// This is the guard's *early notice*, raised while the fold is going perfectly
     /// well — under the default budget a moderately deep document reaches it and then
@@ -537,13 +536,13 @@ fn in_verbatim_body<LLL: RenderLang>(node: NodeRef<'_, LLL>) -> bool {
 /// so nothing else can be more accurate about it.
 ///
 /// **techy's own is asked second**, and only when the first downcast missed — which is
-/// what a foreign tree looks like (PLAN.md §10.3 step 3). A foreign environment carries
-/// no techxt payload at all, and among everything it *can* carry, techy's
-/// [`VerbatimBehavior`] is the one thing that says *raw body*: it is the behaviour techy
-/// itself registers a `verbatim` environment with, and the parse it produced is exactly
-/// the parse techxt's own verbatim body kind produces. Consulting it is what makes a
-/// foreign `verbatim` render byte for byte as a native one does, instead of having its
-/// body reflowed into running words.
+/// what a foreign tree looks like. A foreign environment carries no techxt payload at
+/// all, and among everything it *can* carry, techy's [`VerbatimBehavior`] is the one
+/// thing that says *raw body*: it is the behaviour techy itself registers a `verbatim`
+/// environment with, and the parse it produced is exactly the parse techxt's own
+/// verbatim body kind produces. Consulting it is what makes a foreign `verbatim` render
+/// byte for byte as a native one does, instead of having its body reflowed into running
+/// words.
 fn is_verbatim_environment<LLL: RenderLang>(environment: NodeRef<'_, LLL>) -> bool {
     if let Some(behavior) = crate::def::TechxtEnvironmentBehavior::of(environment) {
         return behavior.body_kind() == crate::def::EnvBodyKind::Verbatim;
@@ -555,7 +554,7 @@ fn is_verbatim_environment<LLL: RenderLang>(environment: NodeRef<'_, LLL>) -> bo
     })
 }
 
-/// The block of collected footnotes that follows the document (PLAN.md §9.8, §11.1).
+/// The block of collected footnotes that follows the document.
 ///
 /// Numbered in document order — the fold visits nodes in document order — and separated
 /// from the body by a rule, so that a reader can tell the notes from the text.
@@ -669,7 +668,7 @@ mod tests {
     }
 
     /// A consumer's recomposer that overrides one node kind and delegates the rest —
-    /// the wrapping contract of PLAN.md §3.
+    /// the wrapping contract.
     struct ShoutingWrapper<'a> {
         inner: TextRenderer<'a>,
     }
@@ -726,9 +725,9 @@ mod tests {
     #[test]
     fn a_wrappers_override_is_consulted_inside_a_formula() {
         // The whole point of closing a math scope with `ConcatPieces::map` instead of
-        // folding the children here (DECISIONS.md D24): the driver does the descending,
-        // so the wrapper's override applies inside `$…$` and inside `\[…\]` just as it
-        // does in running text — braces in the way included.
+        // folding the children here: the driver does the descending, so the wrapper's
+        // override applies inside `$…$` and inside `\[…\]` just as it does in running
+        // text — braces in the way included.
         let converter = Converter::standard();
         let tree = parse(&converter, r"a ${x} + y$ b \[z\]");
 
@@ -841,10 +840,9 @@ mod tests {
 
     #[test]
     fn a_descent_warning_is_a_warning_and_not_an_abort() {
-        // DECISIONS.md C3 and D12: the warning arrives while there is still output to
-        // save, so it must not claim the run was abandoned. It carries techy's own
-        // approaching-limit condition, at warning severity, exactly as the parse side
-        // of the same guard records it.
+        // The warning arrives while there is still output to save, so it must not claim
+        // the run was abandoned. It carries techy's own approaching-limit condition, at
+        // warning severity, exactly as the parse side of the same guard records it.
         let converter = Converter::standard();
         let tree = parse(&converter, "a");
         let mut renderer = converter.renderer();

@@ -1,4 +1,4 @@
-//! Preamble declarations (PLAN.md §9.8), and the `document` environment that ends the
+//! Preamble declarations, and the `document` environment that ends the
 //! preamble: parsed so that they cannot leak, and silent.
 //!
 //! `\documentclass`, `\usepackage`, `\newcommand` and their relatives contribute
@@ -21,7 +21,7 @@
 //! resolve `\begin{document}` against, and reports an **error**, which would make
 //! every complete LaTeX file a failed conversion however clean it is.
 //!
-//! # The defining commands are honoured (PLAN.md §16 M9)
+//! # The defining commands are honoured
 //!
 //! `\newcommand`, `\renewcommand`, `\providecommand`, `\newenvironment`,
 //! `\renewenvironment`, `\def`, `\gdef`, `\let`, `\edef`, `\xdef` and
@@ -70,7 +70,7 @@
 //! which is what LaTeX means, and which techxt cannot use, because techxt's stack
 //! answers *yes* for every name there is.
 //!
-//! The bottom of that stack is the unknown-command catch-all (PLAN.md §10.6): the
+//! The bottom of that stack is the unknown-command catch-all: the
 //! provider that gives an unclaimed `\foo` a zero-argument spec so that it reaches
 //! [`Options::unknown_macro`](crate::Options::unknown_macro) rather than techy's error
 //! recovery. It answers a *lookup*, so it answers an existence check too. With it
@@ -144,7 +144,7 @@ use techy_xp::presets::ExpandedDefinerSpec;
 use crate::convert::MacroDefinitions;
 use crate::def::{CallableSpecSource, Category, EnvDef, MacroDef, SpecBuildCx, TextRule};
 
-/// The preamble category (PLAN.md §12.1).
+/// The preamble category.
 ///
 /// ```
 /// use techxt::Converter;
@@ -209,7 +209,7 @@ fn raw_group(name: &str) -> ArgumentSpec<LatexlikeXp> {
     ArgumentSpec::new(CharsGroupArgumentParser::new(GroupType::Content), name)
 }
 
-/// Which techy-xp definer a `DEFINERS` entry hands over (PLAN.md §16 M9).
+/// Which techy-xp definer a `DEFINERS` entry hands over.
 ///
 /// One variant per shipped definer rather than one per command, because `\edef` and
 /// `\xdef` are `\def` and `\gdef` under a warning rather than definers of their own.
@@ -266,7 +266,7 @@ impl Definer {
 }
 
 /// Registers techy-xp's definer spec, unless the converter only *declares* the defining
-/// commands (DECISIONS.md D15).
+/// commands.
 ///
 /// Declining is what makes
 /// [`ConverterBuilder::macro_definitions`](crate::ConverterBuilder::macro_definitions) a
@@ -302,11 +302,11 @@ type Definition = (
 
 /// The defining commands, with the shape each falls back to when they are only declared.
 ///
-/// The first six are PLAN.md §9.8's, at the shapes it gives them; the last five are names
-/// techxt never declared at all before the definers arrived, and their fallback shapes are
-/// this table's own. `\let` declares **nothing**: `\let\a=\b` and `\let\a\b` are both
-/// written, no argument code reads the optional `=`, and a shape that read one argument
-/// would leave the other half in the document's text.
+/// The first six are the ones techxt always declared, at their original shapes; the last
+/// five are names techxt never declared at all before the definers arrived, and their
+/// fallback shapes are this table's own. `\let` declares **nothing**: `\let\a=\b` and
+/// `\let\a\b` are both written, no argument code reads the optional `=`, and a shape that
+/// read one argument would leave the other half in the document's text.
 static DEFINERS: &[Definition] = &[
     // `s m o o m`: `\newcommand*{\cmd}[3][default]{body}`.
     (
@@ -386,7 +386,7 @@ static DEFINERS: &[Definition] = &[
 /// wrong is exactly the leak this category exists to prevent.
 type Declaration = (&'static str, &'static [(&'static str, &'static str)]);
 
-/// The declarations of PLAN.md §9.8, in the order the plan lists them.
+/// The preamble declarations techxt knows.
 static DECLARATIONS: &[Declaration] = &[
     ("documentclass", &[("o", "options"), ("m", "class")]),
     ("usepackage", &[("o", "options"), ("m", "packages")]),

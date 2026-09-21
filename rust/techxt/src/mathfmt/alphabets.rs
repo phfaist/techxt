@@ -10,9 +10,9 @@
 //! **Only ASCII letters are mapped.** There is no digit alphabet here: digits, greek
 //! letters and punctuation pass through unchanged, so `\mathbf{123}` gives `123`.
 //! Unicode does have bold and double-struck digits, but adding them would be a new
-//! feature rather than a port, and PLAN.md §9.5 says letters only.
+//! feature rather than a port, so it is letters only.
 //!
-//! **Where the mapping applies (DECISIONS.md D6 — easy to get wrong).** Styling
+//! **Where the mapping applies (easy to get wrong).** Styling
 //! applies to *document character leaves only*: the characters the author typed. It
 //! must never be applied to a string a rule produced — `\sin` → `"sin"`,
 //! `\alpha` → `"α"`, a template's literal text. That is what makes `$\sin x$` come out
@@ -21,8 +21,7 @@
 
 use alloc::string::String;
 
-/// Whether an alphabet applies to a stretch of text, and which one
-/// (PLAN.md §9.5).
+/// Whether an alphabet applies to a stretch of text, and which one.
 ///
 /// The three states are not "bold / italic / none": they are the three answers to
 /// *where does the style come from*.
@@ -47,7 +46,7 @@ impl FontStyle {
     /// [`Style`](FontStyle::Style).
     ///
     /// This is how the caller derives `segment_plain`'s `upright_letters_are_op`
-    /// (DECISIONS.md D4, v3's `bool(math_fontstyle)`): a run of upright latin letters
+    /// (v3's `bool(math_fontstyle)`): a run of upright latin letters
     /// may be read as a function name exactly when variables are being styled, and
     /// therefore stand out from it. Note that
     /// [`Style(Upright)`](FontStyleKind::Upright) counts as a style in effect even
@@ -73,7 +72,7 @@ impl FontStyle {
     }
 }
 
-/// One of the unicode mathematical alphabets (PLAN.md §9.5, DECISIONS.md D7).
+/// One of the unicode mathematical alphabets.
 ///
 /// The thirteen alphabets unicode provides, plus [`Upright`](Self::Upright), which is
 /// the *absence* of an alphabet expressed as one.
@@ -106,7 +105,7 @@ pub enum FontStyleKind {
     SansSerifBoldItalic,
     /// `𝚖𝚘𝚗𝚘𝚜𝚙𝚊𝚌𝚎` — `\mathtt`, `\texttt`.
     Monospace,
-    /// Upright: letters map to themselves (DECISIONS.md D7).
+    /// Upright: letters map to themselves.
     ///
     /// This is what `\mathrm`, `\textrm`, `\textup`, `\textmd` and `\operatorname`
     /// install. It is a *style*, not the absence of one, which is exactly the
@@ -219,7 +218,7 @@ pub fn fmt_style_char(c: char, kind: FontStyleKind) -> char {
 
 /// Style a string, character by character (v3 `fmt_math_text_style`).
 ///
-/// Remember DECISIONS.md D6: call this on document text only, never on a rule's
+/// Remember: call this on document text only, never on a rule's
 /// replacement string.
 ///
 /// ```

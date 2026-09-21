@@ -1,9 +1,9 @@
-//! The normative acceptance examples of PLAN.md §15 that the renderer core covers, and
-//! the node-kind dispatch of PLAN.md §9.1.
+//! The normative acceptance examples that the renderer core covers, and the node-kind
+//! dispatch.
 //!
 //! Expected strings are exact, trailing newline included: the layout engine terminates
 //! non-empty output with exactly one newline, and a test that trims would stop checking
-//! the very thing PLAN.md §7 guarantees.
+//! the very thing layout guarantees.
 
 use techxt::convert::{MathMode, StdDescentGuardInit, UnknownEnvPolicy};
 use techxt::diag::{UnknownEnvironment, UnknownMacro};
@@ -17,7 +17,7 @@ fn text(latex: &str) -> String {
         .text
 }
 
-// ---------------------------------------------------------------- PLAN.md §15
+// ------------------------------------------------------------ acceptance examples
 
 #[test]
 fn example_1_groups_are_transparent_and_spaces_collapse() {
@@ -99,12 +99,12 @@ fn example_26_unknown_environment_renders_its_body_and_warns() {
     assert_eq!(warned[0].name, "myenv");
 }
 
-// ------------------------------------------------------ PLAN.md §9.1 dispatch
+// ---------------------------------------------------------------- dispatch
 
 #[test]
 fn adjacent_text_is_one_unbreakable_word() {
-    // PLAN.md §15 example 4, exactly: the styled argument and the text after it must
-    // not be separated by a space, and (below) must not wrap apart.
+    // Example 4, exactly: the styled argument and the text after it must not be
+    // separated by a space, and (below) must not wrap apart.
     assert_eq!(
         text(r"\textbf{bold}text"),
         "\u{1d41b}\u{1d428}\u{1d425}\u{1d41d}text\n"
@@ -157,7 +157,7 @@ fn a_tie_is_a_space_no_line_may_break_in() {
 
 #[test]
 fn examples_10_and_15_math_renders_as_unicode() {
-    // PLAN.md §15 #10 and #15: a formula in running text becomes unicode math, and
+    // Examples 10 and 15: a formula in running text becomes unicode math, and
     // display math becomes a four-space indented block of its own.
     assert_eq!(text("$x^2$"), "𝑥²\n");
     assert_eq!(text(r"\[ E = mc^2 \]"), "    𝐸 = 𝑚𝑐²\n");
@@ -228,9 +228,9 @@ fn an_unknown_macro_is_a_warning_and_the_policy_decides() {
 fn deeply_nested_input_is_refused_rather_than_overflowing_the_stack() {
     // Recursive-descent parsing spends stack per nesting level; the descent guard is
     // what keeps a pathological document from aborting the process. The limit is
-    // configured explicitly here (DECISIONS.md D9) because the library default is a
-    // *stack budget*, whose reach depends on the build profile; a depth limit is the
-    // deterministic mode and the one techy's documentation recommends for tests.
+    // configured explicitly here because the library default is a *stack budget*, whose
+    // reach depends on the build profile; a depth limit is the deterministic mode and
+    // the one techy's documentation recommends for tests.
     let converter = Converter::builder()
         .descent_guard(StdDescentGuardInit::depth_limit(24))
         .build()

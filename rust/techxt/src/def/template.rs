@@ -1,5 +1,5 @@
-//! The template mini-language (PLAN.md §10.5): its source syntax, its parser, and the
-//! typed form the renderer executes.
+//! The template mini-language: its source syntax, its parser, and the typed form the
+//! renderer executes.
 //!
 //! The public prose lives on [`Template`], because this module is private and its own
 //! documentation is never rendered.
@@ -8,7 +8,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// Replacement text with holes for a construct's arguments (PLAN.md §10.5).
+/// Replacement text with holes for a construct's arguments.
 ///
 /// A template is the data form of "this construct renders as that text, with these
 /// arguments dropped into it": `\href{url}{text}` is `"{text} <{url}>"`. Templates are
@@ -103,7 +103,7 @@ impl Template {
         }
     }
 
-    /// Check this template against the definition it belongs to (PLAN.md §10.5).
+    /// Check this template against the definition it belongs to.
     ///
     /// This is the half of the validation that needs the definition: which argument
     /// names exist, how many arguments there are, and whether there is a body to refer
@@ -244,7 +244,7 @@ pub(crate) enum ArgRef {
     Index(usize),
 }
 
-/// Why a template could not be compiled (PLAN.md §10.5).
+/// Why a template could not be compiled.
 ///
 /// Templates are compiled when they are written and validated when the converter is
 /// built, so these surface as
@@ -839,7 +839,7 @@ mod tests {
     }
 
     /// Template source built from the grammar, so that the round-trip property has
-    /// well-formed input to work on (PLAN.md §14.2).
+    /// well-formed input to work on.
     fn template_source() -> impl Strategy<Value = String> {
         let conditional = ("[a-z]{1,4}", branch_source(), branch_source()).prop_map(
             |(name, then, els): (String, String, String)| {
@@ -854,7 +854,7 @@ mod tests {
     }
 
     proptest! {
-        /// Parsing is stable under writing the parse back out (PLAN.md §14.2).
+        /// Parsing is stable under writing the parse back out.
         #[test]
         fn parsing_round_trips_through_the_source_form(source in template_source()) {
             // The generator escapes nothing, so raw braces in its literals may make a

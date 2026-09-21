@@ -1,4 +1,4 @@
-//! The accent category: `\'e`, `\c c`, `\~n` and the rest (PLAN.md §9.3).
+//! The accent category: `\'e`, `\c c`, `\~n` and the rest.
 //!
 //! An accent macro installs a combining mark, and the mark is applied to the **first
 //! base character** of its rendered argument — the rest of the argument is left exactly
@@ -12,7 +12,7 @@
 //!    become `i` and `j` first, because `\^\i` means "an i with a circumflex", which is
 //!    written `î` — the dotless form exists only so that the accent has somewhere to go.
 //! 2. **The pair is composed.** `('e', ◌́)` becomes `é` through the generated table
-//!    (`ACCENT_COMPOSITIONS`, PLAN.md §12.4) — the precomputed answer of unicode's NFC,
+//!    (`ACCENT_COMPOSITIONS`) — the precomputed answer of unicode's NFC,
 //!    which a `no_std` crate cannot compute for itself.
 //! 3. **What does not compose stays a pair.** The base character followed by the
 //!    combining mark is still correct text; it simply is not a single code point.
@@ -39,7 +39,7 @@ const DOTLESS_I: char = '\u{131}';
 /// `ȷ`, the same for `j`.
 const DOTLESS_J: char = '\u{237}';
 
-/// The accents category (PLAN.md §12.1).
+/// The accents category.
 ///
 /// One entry per row of the generated table, all with the same shape: one mandatory
 /// argument (so that `\c c` works through TeX's single-expression fallback as well as
@@ -101,7 +101,7 @@ fn compose(base: char, mark: char) -> Option<char> {
         .map(|index| ACCENT_COMPOSITIONS[index].2)
 }
 
-/// How an accent with no argument at all renders (PLAN.md §9.3).
+/// How an accent with no argument at all renders.
 fn standalone(mark: char) -> String {
     match ACCENT_SPACING.binary_search_by_key(&mark, |&(mark, _)| mark) {
         Ok(index) => String::from(ACCENT_SPACING[index].1),

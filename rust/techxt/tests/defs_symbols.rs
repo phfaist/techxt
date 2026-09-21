@@ -1,4 +1,4 @@
-//! `defs::symbols_extra`: the generated long tail (PLAN.md §12.1, §12.3, §12.4).
+//! `defs::symbols_extra`: the generated long tail.
 //!
 //! The table has about a thousand rows, and testing a thousand rows one at a time
 //! would test the generator's output against a transcription of the generator's
@@ -21,10 +21,10 @@ fn text(latex: &str) -> String {
 
 /// A converter that knows the generated table and **nothing else**.
 ///
-/// The catch-all fallback is switched off (DECISIONS.md D10), which is what makes a
-/// mode restriction observable: with the catch-all registered, a command no category
-/// resolves still reaches the renderer as a zero-argument callable and finds its rule
-/// in the name-keyed fallback table of PLAN.md §10.3 step 3, which is mode-blind.
+/// The catch-all fallback is switched off, which is what makes a mode restriction
+/// observable: with the catch-all registered, a command no category resolves still
+/// reaches the renderer as a zero-argument callable and finds its rule in the
+/// name-keyed fallback table of dispatch step 3, which is mode-blind.
 fn generated_only() -> Converter {
     Converter::builder()
         .definitions(DefinitionSet::new().with(defs::symbols_extra::category()))
@@ -63,15 +63,15 @@ fn the_cyrillic_transliteration_names() {
     assert_eq!(text(r"\CYRSHCH\cyrshch"), "Щщ\n");
 }
 
-/// A replacement string is never run through the font alphabets (DECISIONS.md D6).
+/// A replacement string is never run through the font alphabets.
 #[test]
 fn a_replacement_is_not_restyled_by_a_surrounding_font() {
     assert_eq!(text(r"$\mathbf{\hbar}$"), "ℏ\n");
     assert_eq!(text(r"$\mathbf{\circledast}$"), "⊛\n");
 }
 
-/// PLAN.md §12.3: a v3 `%`-style replacement becomes a template, not a dropped
-/// argument. Each of these renders one of its arguments and discards the rest.
+/// A v3 `%`-style replacement becomes a template, not a dropped argument. Each of these
+/// renders one of its arguments and discards the rest.
 #[test]
 fn percent_style_replacements_became_templates() {
     assert_eq!(text(r"\colorbox{blue}{visible}"), "visible\n");
@@ -124,8 +124,8 @@ fn a_text_only_symbol_does_not_fire_in_math() {
 /// An entry that takes arguments is deliberately left visible in both modes.
 ///
 /// A mode-invisible macro does not vanish under the default settings — the catch-all
-/// gives it a *zero-argument* spec (DECISIONS.md D16), and its arguments are then read
-/// as ordinary groups and rendered. `$\textcolor{red}{x}$` would print "redx".
+/// gives it a *zero-argument* spec, and its arguments are then read as ordinary groups
+/// and rendered. `$\textcolor{red}{x}$` would print "redx".
 #[test]
 fn an_entry_with_arguments_is_visible_in_both_modes() {
     assert_eq!(text(r"\textcolor{red}{x}"), "x\n");
@@ -134,13 +134,13 @@ fn an_entry_with_arguments_is_visible_in_both_modes() {
 
 // --------------------------------------------------------------- shadowing order
 
-/// PLAN.md §12.1: `symbols_extra` is pushed first, so every curated category corrects
-/// it. Both halves are checked — that the generated entry exists, and that the curated
-/// one is what a standard converter uses.
+/// `symbols_extra` is pushed first, so every curated category corrects it. Both halves
+/// are checked — that the generated entry exists, and that the curated one is what a
+/// standard converter uses.
 #[test]
 fn a_curated_entry_shadows_the_generated_one() {
     // `\quad` is v3's two spaces in the generated table and one EM SPACE in
-    // `defs::base` (DECISIONS.md D14).
+    // `defs::base`.
     assert_eq!(
         generated_only()
             .latex_to_text(r"a\quad b")

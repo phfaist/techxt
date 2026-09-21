@@ -1,4 +1,4 @@
-//! The diagnostic conditions techxt raises (PLAN.md §10.6).
+//! The diagnostic conditions techxt raises.
 //!
 //! techxt's third design rule is *nothing silent*: a construct it does not know, an
 //! effect it cannot reproduce, a handler that failed — each produces a structured
@@ -7,7 +7,7 @@
 //! techy's descent limit *refusing* to go deeper, which aborts the fold and is itself
 //! reported as [`RenderAborted`]; that guard's early warning is a different thing — an
 //! ordinary diagnostic on a run that goes on to finish normally, keeping techy's own
-//! `core.constructs.descent-limit-approaching` identifier (DECISIONS.md D12).
+//! `core.constructs.descent-limit-approaching` identifier.
 //!
 //! # Reading diagnostics
 //!
@@ -75,7 +75,7 @@
 //! was cut off, and the text really is incomplete.
 //!
 //! A refusal also suppresses the [`UnknownMacro`] it would otherwise earn on its way
-//! through the renderer, so one refused command is one diagnostic (PLAN.md §10.6).
+//! through the renderer, so one refused command is one diagnostic.
 
 use alloc::string::String;
 
@@ -84,10 +84,9 @@ use techy::source::SourceSpan;
 
 /// A techxt diagnostic condition, with the severity techxt always raises it at.
 ///
-/// PLAN.md §10.6 fixes one severity per condition. techy takes the severity at the
-/// raise site instead, so this trait is where the table is enforced: raise every
-/// techxt diagnostic through [`diagnose`](Self::diagnose) and the two can never drift
-/// apart.
+/// Each condition has exactly one severity. techy takes the severity at the raise site
+/// instead, so this trait is where that is enforced: raise every techxt diagnostic
+/// through [`diagnose`](Self::diagnose) and the two can never drift apart.
 ///
 /// ```
 /// use techxt::diag::{StrayItem, TechxtCondition};
@@ -102,7 +101,7 @@ pub trait TechxtCondition: DiagnosticInfo + Sized {
     /// Raise this condition as a diagnostic positioned at `span`.
     ///
     /// The span is the offending node's span. Spans are provenance only — techxt never
-    /// reads document content through them (PLAN.md §1.6).
+    /// reads document content through them.
     fn diagnose(self, span: SourceSpan<Option<String>>) -> Diagnostic<Option<String>> {
         Diagnostic::new(Self::SEVERITY, self, span)
     }
@@ -284,10 +283,10 @@ impl TechxtCondition for InputNotResolved {
 /// configured limit. The conversion returns empty text plus this diagnostic.
 ///
 /// The guard's *early warning* — the notice that the limit is getting close — is not
-/// this condition (DECISIONS.md D12). The fold that saw it goes on to produce complete
-/// text, so claiming an abort would make a good conversion look like a failed one; it is
-/// reported instead as techy's own `core.constructs.descent-limit-approaching` at
-/// warning severity, which is what the parse side of the same guard records.
+/// this condition. The fold that saw it goes on to produce complete text, so claiming an
+/// abort would make a good conversion look like a failed one; it is reported instead as
+/// techy's own `core.constructs.descent-limit-approaching` at warning severity, which is
+/// what the parse side of the same guard records.
 #[derive(Debug, Clone, PartialEq, Eq, DiagnosticInfo)]
 #[non_exhaustive]
 #[diagnostic(

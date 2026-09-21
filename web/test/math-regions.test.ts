@@ -1,6 +1,5 @@
 /**
- * `splitMathRuns` — the region → element mapping, minus the elements (web/PLAN.md
- * §4.3, §6.3).
+ * `splitMathRuns` — the region → element mapping, minus the elements.
  *
  * The pane's own half is four lines of `createElement`; this is the half worth
  * testing, and the property every case below re-checks is the one the whole design
@@ -68,7 +67,7 @@ describe('splitMathRuns', () => {
 
   it('keeps a region that spans a line break in one run', () => {
     // An `InlineVerbatim` payload can contain a newline, so a formula is not
-    // guaranteed to sit within one line of the output (§4.3).
+    // guaranteed to sit within one line of the output.
     const text = 'see $a +\nb$ there';
     const runs = splitMathRuns(text, [inline(4, 11)]);
 

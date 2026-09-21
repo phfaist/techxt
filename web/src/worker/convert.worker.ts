@@ -1,10 +1,10 @@
 /**
- * The conversion worker (web/PLAN.md §6.2).
+ * The conversion worker.
  *
  * It owns the wasm instance and does exactly three things: load the module, answer
  * `convert` and `complete` requests from the one `Session` it keeps, and — if anything
  * at all goes wrong — say so once and stop. A panic or a stack overflow leaves a wasm
- * instance unusable (§4.6), so there is no continuing after a `fatal`: the client
+ * instance unusable, so there is no continuing after a `fatal`: the client
  * discards this worker and spawns another.
  *
  * The message handler is installed *before* the module is loaded, because a request
@@ -66,7 +66,7 @@ function handle(request: ConvertRequest): void {
 /**
  * A completion request: the same `Session`, the same one-failure rule, and no queue.
  *
- * The two requests share this worker on purpose (§6.13). Completion is a table lookup —
+ * The two requests share this worker on purpose. Completion is a table lookup —
  * microseconds after the first call, which builds the table — so a second wasm instance
  * to answer it would be a megabyte of memory for a nicety. What they do share is the
  * thread, so a completion issued while a conversion is running waits for it; the client

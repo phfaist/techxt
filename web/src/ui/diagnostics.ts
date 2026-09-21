@@ -1,5 +1,5 @@
 /**
- * The status strip and the diagnostics panel (web/PLAN.md §7, §6.2, §6.9).
+ * The status strip and the diagnostics panel.
  *
  * This is the module that distinguishes techxt from a macro stripper. The library
  * does not merely drop what it cannot render: it says what it dropped, where, and
@@ -12,7 +12,7 @@
  * - `line:column`, and a jump into the textarea for the spans that point at the
  *   document the user typed — including a diagnostic raised inside a macro expansion,
  *   whose position is the *call* and is labelled `via macro` rather than passed off as
- *   the message's own place (§4.5); a row with no position at all says so instead of
+ *   the message's own place; a row with no position at all says so instead of
  *   misleading;
  * - and, behind a per-row expander, techy's own `rendered` text with its caret line
  *   and trace frames: the same thing `techxt-cli` prints, so a screenshot from this
@@ -27,7 +27,7 @@ import type { ConversionResult, Diagnostic, Severity } from '../worker/protocol'
 
 const SEVERITIES: readonly Severity[] = ['error', 'warning', 'note'];
 
-/** The letter each severity chip carries, so hue is never the only signal (§6.9). */
+/** The letter each severity chip carries, so hue is never the only signal. */
 const MARK: Record<Severity, string> = { error: 'E', warning: 'W', note: 'N' };
 
 const PLURAL: Record<Severity, [string, string]> = {
@@ -37,7 +37,7 @@ const PLURAL: Record<Severity, [string, string]> = {
 };
 
 /**
- * Why a row cannot be clicked (§4.5). The binding already substitutes the macro call
+ * Why a row cannot be clicked. The binding already substitutes the macro call
  * for a diagnostic raised inside an expansion, so what is left here is the residue:
  * something with no position in the document at all.
  */
@@ -119,7 +119,7 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
   cancel.hidden = true;
   cancel.addEventListener('click', () => init.onCancel());
 
-  /** Announces counts only, and only when they change (§6.9). */
+  /** Announces counts only, and only when they change. */
   const live = el('span', 'sr-only');
   live.setAttribute('role', 'status');
   live.setAttribute('aria-live', 'polite');
@@ -154,7 +154,7 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
   truncated.hidden = true;
 
   // The list first, the filters that shape it below — the panel opens onto the
-  // report itself rather than onto a row of controls (§7).
+  // report itself rather than onto a row of controls.
   panel.append(list, empty, truncated, filters);
   root.append(strip, panel);
   mount.append(root);
@@ -258,7 +258,7 @@ export function initDiagnostics(init: DiagnosticsInit): DiagnosticsPanel {
     item.dataset.sev = diagnostic.severity;
 
     // An `approx` row is as clickable as any other: it *has* a span — the macro call
-    // the expansion came from — and only the position column says which (§4.5).
+    // the expansion came from — and only the position column says which.
     const jumpable = diagnostic.span !== null;
     const main = document.createElement(jumpable ? 'button' : 'div');
     main.className = jumpable ? 'drow-main' : 'drow-main is-inert';
@@ -406,7 +406,7 @@ function mark(severity: Severity): HTMLSpanElement {
   return chip;
 }
 
-/** The `·` of `2 errors · 3 warnings` (§7). */
+/** The `·` of `2 errors · 3 warnings`. */
 function separator(): HTMLSpanElement {
   const node = el('span', 'status-dot', '·');
   node.setAttribute('aria-hidden', 'true');

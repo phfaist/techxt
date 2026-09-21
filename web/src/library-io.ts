@@ -1,5 +1,5 @@
 /**
- * Library export and import (web/PLAN.md §6.11).
+ * Library export and import.
  *
  * The format is versioned and boring on purpose: a JSON object with a `format` tag, a
  * version, when and by what it was written, and the items. It carries each entry's

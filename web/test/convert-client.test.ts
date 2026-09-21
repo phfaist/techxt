@@ -1,5 +1,5 @@
 /**
- * Worker-protocol sequencing with a mocked worker (web/PLAN.md §6.2, §13).
+ * Worker-protocol sequencing with a mocked worker.
  *
  * The client is the only part of the app that has to be right about *time* — a
  * debounce, two escalations and a respawn — so both the worker and the clock are

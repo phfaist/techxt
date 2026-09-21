@@ -1,5 +1,4 @@
-//! The options DTO and its mapping onto [`techxt::convert::ConverterBuilder`]
-//! (web/PLAN.md §4.2, §5).
+//! The options DTO and its mapping onto [`techxt::convert::ConverterBuilder`].
 //!
 //! The app sends a plain JavaScript object; `serde-wasm-bindgen` deserializes it into
 //! [`OptionsDto`], and [`build`] turns that into a [`Converter`]. The wire form is
@@ -13,13 +12,13 @@
 //!   setting of [`ConverterBuilder`](techxt::convert::ConverterBuilder), which are not
 //!   `Options` fields but change the answer just as surely — is either mapped by
 //!   [`build`] or carries a `// not exposed:` comment there saying why. A setting the
-//!   library gains later has neither, and its reviewer should notice. (M9's
-//!   `macro_definitions` and its two expansion budgets are the reason this rule now
+//!   library gains later has neither, and its reviewer should notice.
+//!   (`macro_definitions` and its two expansion budgets are the reason this rule now
 //!   says "builder" and not only "options": they arrived on the builder alone.)
 //! - **Defaults are the library's.** Every DTO field is an [`Option`], and a `None` one
 //!   never reaches a setter: the library's own default stands. The app sends only what
-//!   the user changed (PLAN §6.4), so a default that changes in techxt is picked up
-//!   rather than frozen into this file.
+//!   the user changed, so a default that changes in techxt is picked up rather than
+//!   frozen into this file.
 //!
 //! Nothing here needs wasm: an `OptionsDto` is ordinary serde, and `build` is ordinary
 //! Rust.
@@ -70,7 +69,7 @@ pub struct OptionsDto {
     #[serde(default)]
     pub footnote_style: Option<FootnoteStyleDto>,
     /// [`techxt::convert::Options::text_font`] — the Unicode alphabet text starts in,
-    /// nothing to do with the display font the page renders with (PLAN §5).
+    /// nothing to do with the display font the page renders with.
     #[serde(default)]
     pub text_font: Option<FontStyleDto>,
     /// [`techxt::convert::Options::math_font`].
@@ -87,27 +86,27 @@ pub struct OptionsDto {
     pub unknown_specials: Option<UnknownSpecialsPolicyDto>,
     /// [`techxt::convert::Options::today`]: what `\today` renders as. Absent and `null`
     /// are the same answer, and it is the library's `<today>` placeholder. The browser
-    /// has a clock, so the app normally sends a real date here (PLAN §5).
+    /// has a clock, so the app normally sends a real date here.
     #[serde(default)]
     pub today: Option<String>,
     /// [`techxt::convert::ConverterBuilder::recovery`] — a parse-time setting rather
-    /// than an [`Options`](techxt::convert::Options) field. `strict` is the "strict"
-    /// checkbox of PLAN §5.
+    /// than an [`Options`](techxt::convert::Options) field. `strict` is the app's
+    /// "strict" checkbox.
     #[serde(default)]
     pub recovery: Option<RecoveryDto>,
-    /// [`techxt::convert::ConverterBuilder::macro_definitions`] — parse-time too, and
-    /// the M9 addition: whether a `\newcommand` in the document defines a macro that
-    /// later uses expand, or is merely read and dropped.
+    /// [`techxt::convert::ConverterBuilder::macro_definitions`] — parse-time too:
+    /// whether a `\newcommand` in the document defines a macro that later uses expand,
+    /// or is merely read and dropped.
     #[serde(default)]
     pub macro_definitions: Option<MacroDefinitionsDto>,
 }
 
-/// The descent limit, in engine *descents* (web/PLAN.md §4.6).
+/// The descent limit, in engine *descents*.
 ///
-/// **A depth limit rather than the byte budget §4.6 first specified.** That section
+/// **A depth limit rather than the byte budget first specified.** The original design
 /// reasoned that techy's `StdDescentGuard` estimates stack use by address distance and
 /// makes no operating-system call, so a fixed byte budget should work in wasm exactly
-/// as it does natively. Calibration in a real browser at W7 showed otherwise, and the
+/// as it does natively. Calibration in a real browser showed otherwise, and the
 /// measurement is the reason this constant is what it is:
 ///
 /// - Address distance measures the **shadow stack** in linear memory — the region
@@ -120,7 +119,7 @@ pub struct OptionsDto {
 ///   budget untouched and the guard silent. It is not that the budget was too
 ///   generous; it was watching the wrong stack.
 ///
-/// Measured in Chromium 140 at W7, the input nesting depth at which a conversion
+/// Measured in Chromium 140, the input nesting depth at which a conversion
 /// killed the instance, per shape (binary-searched, one fresh module instance per
 /// probe because a trap poisons the whole instance and not just the `Session`):
 ///
@@ -142,17 +141,17 @@ pub struct OptionsDto {
 /// | `{…}`, `${…}$` | 149–150 | 2 | 6.6× |
 ///
 /// A margin of nearly 6× under the shallowest engine failure, and roughly an order of
-/// magnitude beyond anything a real document nests. Verified at W7: a document 20 000
-/// levels deep still comes back as this diagnostic rather than a trap, and the same
-/// `Session` converts an ordinary document correctly afterwards. §4.6 says to lower
-/// the limit rather than raise the stack if the margin looks thin; the stack cannot be
-/// raised at all here, so the margin is all there is.
+/// magnitude beyond anything a real document nests. Verified in the browser: a document
+/// 20 000 levels deep still comes back as this diagnostic rather than a trap, and the
+/// same `Session` converts an ordinary document correctly afterwards. If the margin
+/// looks thin, lower the limit rather than raise the stack; the stack cannot be raised
+/// at all here, so the margin is all there is.
 ///
 /// The 8 MiB shadow stack stays: it costs nothing, and address-taken data below the
 /// parse still lives there.
 const DESCENT_LIMIT: usize = 300;
 
-/// The descent guard every converter this binding builds is configured with (§4.6).
+/// The descent guard every converter this binding builds is configured with.
 ///
 /// It is not an option the app can set: it is a safety limit, and a page that could
 /// turn it off would be a page that can lose the user's document to a stack overflow.
@@ -173,7 +172,7 @@ fn descent_guard() -> StdDescentGuardInit {
 /// absent field calls no setter at all, rather than calling one with a value re-typed
 /// from the library's documentation.
 pub fn build(dto: &OptionsDto) -> Result<Converter, String> {
-    // A safety limit, not a preference — hence set here rather than exposed (§4.6).
+    // A safety limit, not a preference — hence set here rather than exposed.
     let mut builder = Converter::builder().descent_guard(descent_guard());
 
     // --- the fourteen `Options` fields, in the order the library declares them ---
@@ -200,7 +199,7 @@ pub fn build(dto: &OptionsDto) -> Result<Converter, String> {
     }
     // not exposed: `list_style` — two arrays of strings (bullet characters and counter
     // formats) are a user interface in themselves, and rarely the thing anyone came to
-    // this page to change (PLAN §5).
+    // this page to change.
     if let Some(value) = dto.text_font {
         builder = builder.text_font(value.into());
     }
@@ -228,22 +227,22 @@ pub fn build(dto: &OptionsDto) -> Result<Converter, String> {
         builder = builder.macro_definitions(value.into());
     }
     // not exposed: `expansion_depth_limit`, `expansion_count_limit` — the same reason
-    // `descent_guard` is set here rather than offered (§4.6): they are safety limits and
+    // `descent_guard` is set here rather than offered: they are safety limits and
     // not preferences, and a page that could raise one would be a page a one-line
     // document can hang. The library's own defaults (64 nested expansions, 2 000
     // expansions per parse) are already the conservative ones — techxt lowers techy-xp's
     // count budget fiftyfold precisely because it converts documents it did not write,
     // which is this page's situation exactly — so there is nothing to re-type here
-    // either (PLAN §4.6, §5).
+    // either.
     // not exposed: `unknown_macro_resolution` — its interaction with `recovery` is
     // subtle (it decouples "unknown command" from "strict"), and the strict checkbox
-    // already covers the observable case (PLAN §5).
+    // already covers the observable case.
     // not exposed: `source_resolver` — there is no filesystem in a browser, and the
     // `techxt.input-not-resolved` note explains that to the reader far better than a
-    // control that cannot work would (PLAN §1 non-goals).
+    // control that cannot work would.
     // not exposed: `definitions`, `override_macro`, `override_environment`,
     // `override_specials` — an extension API, not an option; a definitions playground
-    // is a crate-docs subject (PLAN §16).
+    // is a crate-docs subject.
 
     builder
         .build()
@@ -481,7 +480,7 @@ impl From<MacroDefinitionsDto> for MacroDefinitions {
 /// so `\textbf{a}` renders `a` rather than `𝐚` — and [`Default`](Self::Default) is
 /// `FontStyle::Default`. Everything else is `FontStyle::Style(FontStyleKind::…)`, one
 /// per alphabet, and none of it has anything to do with the display font the page
-/// renders the output in (PLAN §5, §8).
+/// renders the output in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FontStyleDto {

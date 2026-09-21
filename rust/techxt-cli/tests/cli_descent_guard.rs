@@ -1,4 +1,4 @@
-//! The descent guard the CLI configures (DECISIONS.md D9 item 3).
+//! The descent guard the CLI configures.
 //!
 //! techy bounds recursion with a guard so that a document nesting a thousand groups deep
 //! is *refused* rather than overflowing the stack and killing the process. The guard has
@@ -104,7 +104,7 @@ fn the_guard_is_raised_not_removed() {
         stderr.contains("nests too deeply"),
         "the refusal says what happened: {stderr:?}"
     );
-    assert_eq!(code, 2, "PLAN.md §13: a parse that aborts is exit code 2");
+    assert_eq!(code, 2, "a parse that aborts is exit code 2");
 }
 
 #[test]
@@ -112,8 +112,8 @@ fn the_fold_side_of_the_guard_is_raised_too() {
     // `ConverterBuilder::descent_guard` configures the parser *and* the recomposer's
     // fold, and both are on the path from standard input to standard output. A document
     // whose parse succeeds but whose fold aborts would print empty output with an error
-    // diagnostic (PLAN.md §10.4) — exit code 1 with no text. Deep-but-parsable input is
-    // the shape that would expose it.
+    // diagnostic — exit code 1 with no text. Deep-but-parsable input is the shape that
+    // would expose it.
     let depth = depth_the_library_refuses() * 4;
     let (code, stdout, stderr) = convert(&nested(depth));
     assert_eq!(stdout, "deep\n", "the fold ran to completion");

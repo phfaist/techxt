@@ -1,5 +1,5 @@
 /**
- * The state codec (web/PLAN.md §6.4): defaults, validation, what gets stored, and
+ * The state codec: defaults, validation, what gets stored, and
  * where a document and its options come from on load.
  *
  * Everything here runs in vitest's `node` environment, which is the point of taking
@@ -148,7 +148,7 @@ describe('sanitizeOptions', () => {
 
   it('still reads the mathMode a link written by an older build carries', () => {
     // The *Math* control moved up to the app level when it grew a fourth answer, and
-    // the key moved with it; a link sent before that still says `mathMode` (§5).
+    // the key moved with it; a link sent before that still says `mathMode`.
     expect(sanitizeOptions({ mathMode: 'source' })).toEqual({ math: 'source' });
     // `mathjax` was never a `mathMode`, and reading the old key does not invent one.
     expect(sanitizeOptions({ mathMode: 'mathjax' })).toEqual({});
@@ -239,7 +239,7 @@ describe('persistence', () => {
     expect(storage.map.get(STORAGE_KEYS.doc)).toBe('two');
   });
 
-  it('writes the three keys of §6.4 and prunes the options on the way', () => {
+  it('writes the three keys and prunes the options on the way', () => {
     const persistence = createPersistence({ storage, clock });
     persistence.document('\\section{hi}');
     persistence.options({ wrap: 'soft', todayMode: 'browser', math: 'plain' });
@@ -360,7 +360,7 @@ describe('loadState', () => {
       todayMode: 'browser',
       headingStyle: 'plain',
     });
-    // A link reproduces a session, not somebody else's window (§6.4).
+    // A link reproduces a session, not somebody else's window.
     expect(loaded.state.ui.font).toBe('stix');
     expect(loaded.source).toBe('fragment');
   });

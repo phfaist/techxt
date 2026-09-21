@@ -8,17 +8,17 @@
 //! cd web/crate && cargo run --quiet --example symbol_index
 //! ```
 //!
-//! It reads `techxt::defs::standard()` through `DefinitionSet::symbols()` (root PLAN.md
-//! §10.7) — the same table the completion chip row is drawn from (web/PLAN.md §4.9) — so
-//! what the checker measures is exactly what the app offers a user, resolved the way the
-//! converter itself resolves it.
+//! It reads `techxt::defs::standard()` through `DefinitionSet::symbols()` — the same
+//! table the completion chip row is drawn from — so what the checker measures is
+//! exactly what the app offers a user, resolved the way the converter itself resolves
+//! it.
 //!
 //! An example rather than a binary: nothing ships it, `cargo run --example` is the whole
 //! interface, and `web/crate` is a `cdylib` whose only product is the wasm module.
 //!
 //! The JSON is written by hand rather than through serde. This crate does not depend on
 //! `serde_json`, the shape is six fields of a flat array, and a dependency added to a
-//! module that is size-budgeted (web/PLAN.md §4.7) to serve a development tool would be
+//! module that is size-budgeted to serve a development tool would be
 //! the wrong trade even though an example never reaches `dist/`.
 
 use techxt::def::{CallableKind, ModeVisibility};

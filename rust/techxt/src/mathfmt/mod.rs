@@ -16,7 +16,7 @@
 //! rules. Atoms therefore travel through the flow as
 //! [`FlowItem::MathAtom`](crate::flow::FlowItem::MathAtom) and never reach the layout
 //! engine: the math-group handler consumes them and emits ordinary text, glue and
-//! verbatim lines instead (PLAN.md §9.5, "Flow boundary").
+//! verbatim lines instead.
 //!
 //! # The pipeline
 //!
@@ -34,8 +34,8 @@
 //!   [`frac_atom`], [`sqrt_atom`], [`inline_matrix_atom`] and [`display_matrix_atom`].
 //! - [`join_atoms`] assembles them, and a [`MathBox`] comes out: one line for inline
 //!   math, possibly several for a display matrix.
-//! - [`fmt_style`] applies the unicode math alphabets — **to document characters only**
-//!   (DECISIONS.md D6), never to a rule's replacement string.
+//! - [`fmt_style`] applies the unicode math alphabets — **to document characters only**,
+//!   never to a rule's replacement string.
 //!
 //! # Self-contained, and configured by parameter
 //!

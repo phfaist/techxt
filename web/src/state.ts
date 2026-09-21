@@ -1,6 +1,6 @@
 /**
  * The app's state: what it starts from, how it is validated, where it is stored, and
- * how it is written into and read out of a share link (web/PLAN.md §5, §6.4).
+ * how it is written into and read out of a share link.
  *
  * Nothing here touches the DOM. `localStorage` and the URL fragment arrive as
  * parameters, so every function in this file runs unchanged in vitest's `node`
@@ -10,7 +10,7 @@
  *
  * - **Absent means "the library's default".** Only options the user actually changed
  *   are stored or shared, so a link stays short and a future change of a default in
- *   `techxt` is picked up rather than frozen (§6.4). {@link pruneOptions} is the one
+ *   `techxt` is picked up rather than frozen. {@link pruneOptions} is the one
  *   place that decides what "changed" means.
  * - **A read never throws.** Absent, truncated, corrupt and wrong-version data all
  *   fall back to the default. A share link is a string a stranger sent you.
@@ -27,7 +27,7 @@ import type { OptionsPayload } from './worker/protocol';
  * The app's starting options.
  *
  * `wrap: 'soft'` and `todayMode: 'browser'` are the two places the app answers a
- * question the library leaves open (§5). *Soft* keeps the library's own line breaks —
+ * question the library leaves open. *Soft* keeps the library's own line breaks —
  * none — and folds the long lines to the pane for display, so a first-time reader gets
  * the library's text without the sideways scrolling that comes with it, and Copy and
  * Download still hand over exactly what the library produced. A browser has a clock
@@ -80,7 +80,7 @@ const MONTH_NAMES = [
  *
  * The CLI reads the clock in UTC to avoid depending on a time-zone database; a
  * browser already has one, and a person looking at their own screen has no use for
- * that caution, so this uses the **local** date (§5).
+ * that caution, so this uses the **local** date.
  */
 export function formatToday(date: Date): string {
   const month = MONTH_NAMES[date.getMonth()] ?? `${date.getMonth() + 1}`;
@@ -93,7 +93,7 @@ export function formatToday(date: Date): string {
 export const MIN_FIT_COLUMNS = 20;
 
 /**
- * Turn a measured pane width into a column count for `wrapWidth` (§6.5).
+ * Turn a measured pane width into a column count for `wrapWidth`.
  *
  * The 2 % margin plus the pane's horizontal scroll absorb the occasional long line a
  * proportional face produces; for a monospace face the mean advance *is* the advance
@@ -179,7 +179,7 @@ const OPTION_KEYS = Object.keys(OPTION_VALIDATORS) as (keyof AppOptions)[];
  *
  * The *Math* control used to write the library's own key, `mathMode`, because all three
  * of its answers were library values; `mathjax` is a fourth answer that is not, so the
- * whole control moved up to the app level and became `math` (§5). A link somebody sent
+ * whole control moved up to the app level and became `math`. A link somebody sent
  * last week and a `localStorage` entry written by the previous build both still say
  * `mathMode`, and honouring that costs one line here and nothing anywhere else —
  * nothing writes the old key any more.
@@ -212,7 +212,7 @@ export function sanitizeOptions(raw: unknown): AppOptions {
 
 /**
  * Drop every key whose value is the default anyway — absent is how a default is
- * spelled (§6.4), so this is what keeps a share link short.
+ * spelled, so this is what keeps a share link short.
  */
 export function pruneOptions(opts: AppOptions): AppOptions {
   const out: Record<string, unknown> = {};
@@ -259,10 +259,10 @@ export function sanitizeUi(raw: unknown): UiState {
 
 /**
  * Turn the app's settings into the options the worker understands — the one place
- * `wrap`, `math` and `todayMode` stop existing (§5).
+ * `wrap`, `math` and `todayMode` stop existing.
  *
- * `columns` is the fit-to-pane measurement of §6.5; it is ignored unless the user is
- * actually on *Fit*. `now` is a parameter so the date is testable.
+ * `columns` is the fit-to-pane measurement; it is ignored unless the user is actually
+ * on *Fit*. `now` is a parameter so the date is testable.
  */
 export function resolveOptions(
   opts: AppOptions,
@@ -293,7 +293,7 @@ export function resolveOptions(
   // binding must never be handed the word `mathjax` — it is not a `MathMode`, and the
   // whole point of resolving here is that it cannot be. `mathJax` below reads the
   // display half back out. An absent `math` is the library's own default, not the
-  // app's, so it is omitted rather than spelled out (§6.4).
+  // app's, so it is omitted rather than spelled out.
   const math = opts.math;
   if (math === 'mathjax') payload['mathMode'] = 'source';
   else if (math !== undefined) payload['mathMode'] = math;
@@ -310,7 +310,7 @@ export function resolveOptions(
 
 /**
  * Whether the output pane should fold long lines to its own width rather than scroll
- * sideways (§6.3) — the display half of `wrap: 'soft'`, and the only part of a wrap
+ * sideways — the display half of `wrap: 'soft'`, and the only part of a wrap
  * setting `resolveOptions` deliberately drops.
  *
  * Absent reads as the app default, exactly as it does there.
@@ -322,7 +322,7 @@ export function softWraps(opts: AppOptions): boolean {
 /**
  * Whether the output pane should typeset the formulas the binding pointed at — the
  * display half of `math: 'mathjax'`, and the only part of a math setting
- * `resolveOptions` deliberately drops (§5, §6.3).
+ * `resolveOptions` deliberately drops.
  *
  * Absent is the library's default, *Fancy*, which typesets nothing.
  */
@@ -358,7 +358,7 @@ export const STORAGE_KEYS = {
 } as const;
 
 /**
- * The document size beyond which nothing is stored (§6.4).
+ * The document size beyond which nothing is stored.
  *
  * The cap exists so a huge paste cannot exhaust the quota and take the *settings*
  * down with it. Above it the document key is cleared rather than written short: a
@@ -406,7 +406,7 @@ export function browserStorage(): StorageLike | null {
  * which library entry this tab is writing into. It lives here rather than beside the
  * document because it is not true of the origin. Two tabs are two editing sessions,
  * and an origin-wide answer to "which entry am I writing into" makes the second tab
- * adopt the first one's entry and overwrite it (§6.10, "more than one tab").
+ * adopt the first one's entry and overwrite it.
  */
 export function tabStorage(): StorageLike | null {
   return probeStorage(typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
@@ -437,7 +437,7 @@ function write(storage: StorageLike | null, key: string, value: string): boolean
 
 export interface PersistenceInit {
   storage: StorageLike | null;
-  /** Debounce for every write. Default 500 ms (§6.4). */
+  /** Debounce for every write. Default 500 ms. */
   delayMs?: number;
   clock?: Clock;
   /** Called when the document crosses the {@link MAX_STORED_DOC} cap, and back. */
@@ -532,7 +532,7 @@ export function createPersistence(init: PersistenceInit): Persistence {
 /* ---------------------------------------------------------------- library hints */
 
 /**
- * What the app remembers about *introducing* the library (§6.10) — not about the
+ * What the app remembers about *introducing* the library — not about the
  * library itself, which lives in IndexedDB and is none of this file's business.
  *
  * These two counters are the whole of the discoverability machinery: the library only
@@ -583,7 +583,7 @@ export function shouldPulseLibrary(hints: LibraryHints): boolean {
 
 /**
  * Which library entry *this tab's* editing session was writing into, so that a reload
- * continues it rather than logging the same document twice (§6.10).
+ * continues it rather than logging the same document twice.
  *
  * A reload is not "a new document": the pane comes back with the same text in it, and
  * an entry per reload would turn the log into a pile of copies. This is the one fact
@@ -653,7 +653,7 @@ export const SHARE_PREFIX_PLAIN = '#u=';
 
 /**
  * The fragment length past which a link stops surviving chat clients and mail
- * gateways, and the app offers "copy settings only" instead (§6.4).
+ * gateways, and the app offers "copy settings only" instead.
  */
 export const SHARE_LENGTH_LIMIT = 8000;
 
@@ -773,7 +773,7 @@ export interface LoadInit {
   /** `location.hash`, or whatever a test wants to hand over. */
   fragment?: string | null;
   /**
-   * `location.search`. The manifest's `share_target` is a GET target (§9, W8), so
+   * `location.search`. The manifest's `share_target` is a GET target, so
    * Android's share sheet arrives as `?text=…` — an explicit act by the person
    * sharing, and therefore ahead of anything stored, like a fragment.
    */
@@ -803,12 +803,12 @@ export interface LoadedState {
   state: AppState;
   /** Which of the three sources the document and options came from. */
   source: 'share-target' | 'fragment' | 'storage' | 'defaults';
-  /** No fragment and no stored document: the app loads example 1 (§6.7). */
+  /** No fragment and no stored document: the app loads example 1. */
   firstVisit: boolean;
 }
 
 /**
- * Fragment > `localStorage` > defaults (§6.4).
+ * Fragment > `localStorage` > defaults.
  *
  * The `ui` half never comes from a fragment: a link reproduces a *session*, not
  * somebody else's window. The fragment itself is left in place by the caller, so a

@@ -1,4 +1,4 @@
-//! The descent guard relay (DECISIONS.md D9).
+//! The descent guard relay.
 //!
 //! techy has one descent guard and two places that need it: the parser, which spends
 //! stack per syntactic nesting level, and the recomposer's fold, which spends it per
@@ -55,7 +55,7 @@ fn the_guard_reaches_the_fold() {
 
     let renderer = with_guard(StdDescentGuardInit::depth_limit(4));
     let conversion = renderer.tree_to_text(&tree);
-    // PLAN.md §10.4: the one fold abort gives empty output and an error diagnostic.
+    // The one fold abort gives empty output and an error diagnostic.
     assert_eq!(conversion.text, "");
     assert_eq!(
         conversion
@@ -119,11 +119,10 @@ fn the_default_guard_warns_before_it_refuses() {
 
 #[test]
 fn a_fold_that_only_approaches_the_limit_warns_rather_than_aborting() {
-    // DECISIONS.md D12. The fold-side early warning used to be minted as
-    // `techxt.render-aborted` at error severity, so a conversion that produced complete
-    // text still reported a failure — and PLAN.md §13 turns a failure into exit code 1.
-    // The warning must read like the parse side's: same condition, warning severity, and
-    // no error anywhere.
+    // The fold-side early warning used to be minted as `techxt.render-aborted` at error
+    // severity, so a conversion that produced complete text still reported a failure —
+    // and the CLI turns a failure into exit code 1. The warning must read like the parse
+    // side's: same condition, warning severity, and no error anywhere.
     let parser = with_guard(StdDescentGuardInit::depth_limit(2000));
     // The default guard is the one that warns at half its budget; how deep that is
     // depends on the build profile, so the depth is searched for rather than assumed.

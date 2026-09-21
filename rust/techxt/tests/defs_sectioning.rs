@@ -1,5 +1,5 @@
 //! `defs::sectioning`: the seven heading commands, the counter rules, and the four
-//! heading styles (PLAN.md §9.2).
+//! heading styles.
 
 use techxt::convert::HeadingStyle;
 use techxt::Converter;
@@ -60,8 +60,8 @@ fn a_chapter_roots_the_dotted_number_one_level_higher() {
 #[test]
 fn a_chapter_appearing_later_changes_what_a_following_section_number_means() {
     // Before the chapter the run is article-shaped and `\section` is `1`; after it the
-    // run is book-shaped and the same command is `1.1`. This is the `first` rule of
-    // PLAN.md §9.2, and it is a property of the run, not of a document class.
+    // run is book-shaped and the same command is `1.1`. This is the `first` rule, and
+    // it is a property of the run, not of a document class.
     let converted = text(r"\section{Early}\chapter{Ch}\section{Late}");
     assert!(converted.contains("1 Early"), "{converted:?}");
     assert!(converted.contains("1.1 Late"), "{converted:?}");

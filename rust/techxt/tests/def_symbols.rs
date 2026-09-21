@@ -1,4 +1,4 @@
-//! Reading a definition set back (PLAN.md §10.7): the entry accessors on
+//! Reading a definition set back: the entry accessors on
 //! [`Category`](techxt::def::Category) and the [`SymbolIndex`](techxt::def::SymbolIndex)
 //! over a whole [`DefinitionSet`](techxt::def::DefinitionSet).
 //!

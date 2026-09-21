@@ -1,4 +1,4 @@
-//! The wasm binding behind the techxt web app (web/PLAN.md §4).
+//! The wasm binding behind the techxt web app.
 //!
 //! Four exports and no more: a [`Session`], its [`convert`](Session::convert) and
 //! [`complete`](Session::complete) methods, and [`techxt_version`]. Everything else this
@@ -10,7 +10,7 @@
 //! # It is app-private
 //!
 //! This crate is shaped for one user interface and is free to change without a release.
-//! It is deliberately *not* the published `js/` package the root PLAN §17 anticipates;
+//! It is deliberately *not* the published `js/` package the library may one day ship;
 //! if that ever exists, `web/` depends on it and this folder is deleted, which is one
 //! of the reasons the binding surface is kept this small.
 //!
@@ -34,13 +34,13 @@ use techxt::Converter;
 
 use crate::options::OptionsDto;
 
-/// A converter, kept alive across conversions (web/PLAN.md §4.1).
+/// A converter, kept alive across conversions.
 ///
 /// The app creates one at load and converts with it on every keystroke. It holds the
 /// [`Converter`] together with the options it was built from, and rebuilds only when
-/// those change: a rebuild costs 1.2–1.9 ms natively (PLAN §14), so this is a small
-/// optimisation rather than a necessary one — but it makes typing under fixed options
-/// cost exactly one `latex_to_text` call.
+/// those change: a rebuild costs 1.2–1.9 ms natively, so this is a small optimisation
+/// rather than a necessary one — but it makes typing under fixed options cost exactly
+/// one `latex_to_text` call.
 ///
 /// The options are kept in full rather than hashed. They are fifteen small fields, the
 /// comparison is over as soon as one differs, and an exact fingerprint cannot collide —
@@ -65,8 +65,8 @@ impl Session {
     /// Create a session. Installs the panic hook, and builds nothing yet.
     ///
     /// `console_error_panic_hook` is installed in release builds too: a panic leaves
-    /// the wasm instance unusable and the worker respawns it (PLAN §6.2), and a panic
-    /// report from a real user's document is worth the ~10 KB it costs.
+    /// the wasm instance unusable and the worker respawns it, and a panic report from a
+    /// real user's document is worth the ~10 KB it costs.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Session {
         console_error_panic_hook::set_once();
@@ -128,7 +128,7 @@ impl Session {
     }
 
     /// The completions for `prefix`, drawn from techxt's own table and from what `latex`
-    /// defines for itself, already merged and already ranked (web/PLAN.md §4.9).
+    /// defines for itself, already merged and already ranked.
     ///
     /// The answer is an array of `Completion` objects as `protocol.ts` declares them, at
     /// most `limit` long. It cannot fail on the document: a prefix nothing matches, an
@@ -184,9 +184,9 @@ pub fn techxt_version() -> String {
 // `performance.now()`, declared by hand.
 //
 // The obvious `js_sys::Date::now()` would mean a dependency, and the binding's
-// dependency list is a design property rather than an implementation detail (PLAN
-// Appendix D). `wasm-bindgen` can declare the import on its own, and `performance` is a
-// global in a worker as it is in a window.
+// dependency list is a design property rather than an implementation detail.
+// `wasm-bindgen` can declare the import on its own, and `performance` is a global in a
+// worker as it is in a window.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 extern "C" {

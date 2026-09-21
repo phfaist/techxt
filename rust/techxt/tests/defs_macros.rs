@@ -1,4 +1,4 @@
-//! Macro definitions honoured end to end (PLAN.md §16 M9, phases 2 and 3).
+//! Macro definitions honoured end to end.
 //!
 //! techxt parses through techy-xp's expanding token reader and seeds techy-xp's definers
 //! into [`defs::preamble`](techxt::defs::preamble), so a `\newcommand` in a document
@@ -154,7 +154,7 @@ fn a_refused_command_is_diagnosed_by_name_rather_than_left_unknown() {
     // signature and says which feature is missing. The node then reaches the renderer
     // carrying a *foreign* spec, so techxt's dispatch misses at step 2 (downcast) and at
     // step 3 (the name table has no entry for a name techxt never declared), and the
-    // unknown-construct policy of PLAN.md §10.6 decides what it looks like: nothing.
+    // unknown-construct policy decides what it looks like: nothing.
     //
     // It does *not* also report `techxt.unknown-macro`. Step 4 recognizes the refusal
     // spec (`def::is_refusal`) and leaves the reporting to the parse, which named the
@@ -168,10 +168,10 @@ fn a_refused_command_is_diagnosed_by_name_rather_than_left_unknown() {
 
 #[test]
 fn a_refusal_is_reported_as_a_warning_and_does_not_fail_the_conversion() {
-    // PLAN.md §10.6 as amended for M9 phase 3: techxt's severity convention calls a
-    // construct it has never heard of a warning, so a construct it refuses *by name*
-    // cannot rank worse. techy-xp raises these at error severity — it must, since a
-    // strict parse has to abort on one — and techxt restamps them on the way out.
+    // techxt's severity convention calls a construct it has never heard of a warning,
+    // so a construct it refuses *by name* cannot rank worse. techy-xp raises these at
+    // error severity — it must, since a strict parse has to abort on one — and techxt
+    // restamps them on the way out.
     for latex in [r"a\expandafter b", r"\ifx x\fi", r"\noexpand x"] {
         let conversion = Converter::standard().latex_to_text(latex).expect("parses");
         assert!(!conversion.diagnostics.has_errors(), "{latex:?}");

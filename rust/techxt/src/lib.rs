@@ -93,8 +93,7 @@
 //! ## What the layout engine guarantees
 //!
 //! These hold for every conversion, whatever the definitions did — they are properties
-//! of [`layout::render`], the one pass that turns a [`Flow`](flow::Flow) into text
-//! (PLAN.md §7):
+//! of [`layout::render`], the one pass that turns a [`Flow`](flow::Flow) into text:
 //!
 //! - **At most one blank line anywhere**, never at the start, never at the end, and a
 //!   nonempty output always ends with exactly one `\n`. Vertical separation is
@@ -242,15 +241,15 @@
 //!
 //! A converter *parses* with exactly one language — techy-xp's
 //! [`LatexlikeXp`](convert::LatexlikeXp), the latexlike preset carrying the expanding
-//! token reader — but it *renders* a tree of any latexlike language (PLAN.md §16 M10).
+//! token reader — but it *renders* a tree of any latexlike language.
 //! [`Converter::tree_to_text`], [`Converter::tree_to_flow`] and the renderer behind
 //! [`Converter::renderer`] are generic over [`RenderLang`](render::RenderLang), an
 //! auto-implemented bound that both techy-xp's `LatexlikeXp` and techy's own
 //! [`Latexlike`](techy::latexlike::Latexlike) satisfy, and that asks for nothing of
 //! techy-xp's. So a tree parsed by somebody else's plain-techy setup converts through
 //! the same rules, handlers included; what such a tree cannot carry is a techxt rule
-//! *inside* its specs, so its constructs are matched by name instead (dispatch step 3,
-//! PLAN.md §10.3) and fall back to the unknown-construct policies from there.
+//! *inside* its specs, so its constructs are matched by name instead (dispatch step 3)
+//! and fall back to the unknown-construct policies from there.
 //!
 //! ```
 //! use techy::core::specs::Package;
@@ -276,9 +275,9 @@
 //! # Ok::<(), Box<dyn core::error::Error>>(())
 //! ```
 //!
-//! Rendering reads node *payloads* only (PLAN.md §1.6), which is also what makes the
-//! two languages' different span regimes invisible to it. The tree annotation is fixed
-//! to `()`; annotate a tree away with techy's zero-copy `tree.annotate(|_| ())` first.
+//! Rendering reads node *payloads* only, which is also what makes the two languages'
+//! different span regimes invisible to it. The tree annotation is fixed to `()`;
+//! annotate a tree away with techy's zero-copy `tree.annotate(|_| ())` first.
 //!
 //! One thing to know when the definitions are not the ones that parsed the tree: a
 //! rule asks for arguments by the *names its own definition declares* (`text` above),
@@ -297,7 +296,7 @@
 //! program in the `techxt-cli` crate is one such embedder.
 //!
 //! **Minimal dependencies:** the runtime dependencies are exactly [`techy`] (the parser),
-//! [`techy_xp`] (techy's latexlike preset carrying macro expansion, PLAN.md §16 M9) and
+//! [`techy_xp`] (techy's latexlike preset carrying macro expansion) and
 //! [`unicode-width`](https://docs.rs/unicode-width) (display width of the rendered
 //! text, for column accounting in the layout engine). techy-xp adds no crate to the tree
 //! that techy had not already put there. There are no cargo features: the
@@ -337,21 +336,20 @@
 //!
 //! ## Status
 //!
-//! Version 0.1.0, feature-complete against its plan and green under the full gate set
-//! (rustfmt, clippy, an MSRV build, a `no_std` build, and the test suite). Everything
-//! PLAN.md specifies is implemented: the layout engine and the flow model; the
-//! renderer, its state and the diagnostics channel; the definitions model with its
-//! template mini-language; and the whole definitions library — escapes and spacing,
-//! accents, font styles, sectioning, lists, verbatim, tables, theorems and the other
-//! block environments, footnotes, cross-references, citations (including natbib),
-//! links, graphics, titling, the preamble and the `document` environment, `\input` with
-//! a caller-supplied resolver, and the generated ~1000-entry symbol table.
+//! Version 0.1.0, feature-complete and green under the full gate set (rustfmt, clippy,
+//! an MSRV build, a `no_std` build, and the test suite). Implemented are the layout
+//! engine and the flow model; the renderer, its state and the diagnostics channel; the
+//! definitions model with its template mini-language; and the whole definitions
+//! library — escapes and spacing, accents, font styles, sectioning, lists, verbatim,
+//! tables, theorems and the other block environments, footnotes, cross-references,
+//! citations (including natbib), links, graphics, titling, the preamble and the
+//! `document` environment, `\input` with a caller-supplied resolver, and the generated
+//! ~1000-entry symbol table.
 //!
-//! **Macro definitions are honoured** (PLAN.md §16 M9): `\newcommand`, `\renewcommand`,
-//! `\providecommand`, `\newenvironment`, `\renewenvironment`, `\def`, `\gdef`, `\let`,
-//! `\edef`, `\xdef` and `\NewDocumentCommand` define, and a later use of the defined
-//! macro expands, through [`techy_xp`]'s token reader. Definitions are scoped as TeX
-//! scopes them, and
+//! **Macro definitions are honoured**: `\newcommand`, `\renewcommand`, `\providecommand`,
+//! `\newenvironment`, `\renewenvironment`, `\def`, `\gdef`, `\let`, `\edef`, `\xdef` and
+//! `\NewDocumentCommand` define, and a later use of the defined macro expands, through
+//! [`techy_xp`]'s token reader. Definitions are scoped as TeX scopes them, and
 //! [`ConverterBuilder::macro_definitions`](convert::ConverterBuilder::macro_definitions)
 //! turns the whole of it off. See [`defs::preamble`].
 //!
@@ -369,8 +367,8 @@
 //!
 //! ## Deliberate omissions
 //!
-//! Documented rather than half-implemented (PLAN.md §17). Each is noted again where a
-//! reader meets it:
+//! Documented rather than half-implemented. Each is noted again where a reader meets
+//! it:
 //!
 //! - **Label and reference resolution.** `\ref`, `\eqref` and `\cite` render markers
 //!   (`<ref>`, `<cit.>`) rather than numbers: resolving them needs a second pass over

@@ -1,6 +1,5 @@
 /**
- * The editor's lexer, and the chunking that puts its answer on the screen
- * (web/PLAN.md §6.12).
+ * The editor's lexer, and the chunking that puts its answer on the screen.
  *
  * This is a **lexer, not a LaTeX grammar**. It knows five things — a comment, a control
  * sequence, a brace, a math delimiter and the environment name in a `\begin{…}` — and it
@@ -8,12 +7,12 @@
  * `\end` closes which `\begin`, and does not know that the body of a `verbatim` is not
  * markup. That is the deal the highlighting is on: a dumb synchronous pass repaints with
  * the character, where anything that had to ask the parser would trail the cursor by the
- * conversion's debounce and its round trip through the worker (§6.12).
+ * conversion's debounce and its round trip through the worker.
  *
  * The DOM half lives in `ui/panes.ts`; everything that decides *what* is coloured is here,
  * and so is everything that decides *what changed* — {@link textEdit} reads one edit as the
  * single range it replaced, and {@link chunkSplice} turns two paintings into the one splice
- * between them, which is what keeps a keystroke from rebuilding the mirror whole (§6.12).
+ * between them, which is what keeps a keystroke from rebuilding the mirror whole.
  * Both are here because vitest runs in `node` with no DOM, and this is the half worth
  * testing.
  *
@@ -59,7 +58,7 @@ export interface Mark {
  * One run of the mirror: a slice of the text, what the lexer made of it, and whether a
  * diagnostic covers it.
  *
- * The two channels are deliberately independent (§6.12, §7): the token decides the
+ * The two channels are deliberately independent: the token decides the
  * colour of the glyphs, the mark decides the tint behind them and the underline under
  * them, and a chunk can carry one, both or neither. They are cut together rather than
  * nested so that the mirror stays one flat list of spans — nesting would have to answer
@@ -109,7 +108,7 @@ type MathOpener = '$' | '$$' | '\\(' | '\\[';
  * because whether a given `$` opens or closes a formula is a fact about everything before
  * it. Only the *reporting* is windowed: a caller highlighting one screenful of a 200 KB
  * buffer pays a pass over the characters, which is a few milliseconds, and not tens of
- * thousands of objects and DOM nodes it would immediately throw away (§6.12). A token
+ * thousands of objects and DOM nodes it would immediately throw away. A token
  * that straddles a window edge is clipped to it, so the chunks still tile the window
  * exactly.
  *
@@ -288,7 +287,7 @@ function readEnvironmentName(
  * `tokens` are what {@link tokenize} reported for the same window; `marks` are the
  * diagnostics, which are *not* windowed — there are a handful of them and clamping is
  * cheaper than reasoning about which ones are on screen. Where two marks overlap the
- * worse severity wins, which is the rule the panel's own colours follow (§7).
+ * worse severity wins, which is the rule the panel's own colours follow.
  *
  * The runs tile `[from, to)` exactly and in order, so joining their text gives the slice
  * back. Callers render the text before `from` and after `to` as plain nodes.
@@ -363,9 +362,9 @@ export function editorChunks(
  *
  * It is the smallest description of a keystroke that both of the things that track one
  * need: the diagnostics' cached spans, which have to stay on their own characters until
- * the next conversion result arrives (§7), and the highlight window, which has to stay
+ * the next conversion result arrives, and the highlight window, which has to stay
  * over the same characters so that the mirror's rebuild can be a splice rather than a
- * replacement (§6.12).
+ * replacement.
  */
 export interface TextEdit {
   prefix: number;
@@ -391,7 +390,7 @@ export function textEdit(before: string, after: string): TextEdit {
 
 /**
  * The one contiguous stretch of runs in which two chunk lists differ — the whole of the
- * mirror's incremental rebuild (§6.12).
+ * mirror's incremental rebuild.
  *
  * A keystroke changes one run of the document and leaves every other run exactly as it
  * was, so the list the mirror should be holding shares a long head and a long tail with

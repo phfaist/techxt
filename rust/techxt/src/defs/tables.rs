@@ -1,4 +1,4 @@
-//! Tabular material (PLAN.md §9.6): `tabular`, `tabular*`, `tabularx` and the
+//! Tabular material: `tabular`, `tabular*`, `tabularx` and the
 //! constructs that shape their cells.
 //!
 //! A table handler sets [`RenderState::table`](crate::render::RenderState::table) for
@@ -29,7 +29,7 @@
 //! Spans (`\multicolumn`, `\multirow`) are ignored — the cell's contents are rendered
 //! in one column, and one `techxt.unsupported-ignored` per table says so. Cells are not
 //! width-budgeted: a `p{3cm}` column is as wide as its widest line, because plain text
-//! has no notion of a centimetre. Both are on PLAN.md §17's list.
+//! has no notion of a centimetre. Both are left for a later version.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -52,7 +52,7 @@ const MULTICOLUMN: &str = "multicolumn";
 /// a `\multicolumn` belongs to.
 const TABLE_ENVIRONMENTS: [&str; 4] = ["tabular", "tabular*", "tabularx", "longtable"];
 
-/// The tables category (PLAN.md §12.1).
+/// The tables category.
 ///
 /// The three environments differ only in the arguments that precede the column
 /// specification — a target width, a placement — and none of those means anything in
@@ -108,7 +108,7 @@ pub fn category() -> Category {
             .rule(TextRule::Template(Template::new("{content}"))),
     );
     // `\cline{2-3}` rules only some of the columns, which a full-width rule cannot
-    // express; PLAN.md §9.6 renders it as `\hline` rather than dropping the separation
+    // express; it renders as `\hline` rather than dropping the separation
     // it was drawn to show.
     category.add_macro(MacroDef::new("cline").arg("m", "range").rule(handler(Rule)));
     // `booktabs`' three rules, which a great many real papers use instead of `\hline`.
@@ -120,7 +120,7 @@ pub fn category() -> Category {
 
 // --------------------------------------------------------------------------- handlers
 
-/// A `tabular`-shaped environment (PLAN.md §9.6).
+/// A `tabular`-shaped environment.
 #[derive(Debug)]
 struct Tabular;
 
@@ -217,7 +217,7 @@ fn colspec_source(node: NodeView<'_>) -> String {
     node.argument_source("colspec").unwrap_or_default()
 }
 
-/// Read the alignment letters of a column specification (PLAN.md §9.6).
+/// Read the alignment letters of a column specification.
 ///
 /// Everything that does not describe a column of text is skipped: rules (`|`), inserted
 /// material (`@{…}`, `!{…}`) and cell decorations (`>{…}`, `<{…}`) take no column of

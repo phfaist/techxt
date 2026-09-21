@@ -1,4 +1,4 @@
-//! `--input-dir`: `\input` end to end, and the sandbox around it (PLAN.md §13, §14.3).
+//! `--input-dir`: `\input` end to end, and the sandbox around it.
 //!
 //! The interesting cases are all about *paths*, so the documents are generated into a
 //! throwaway tree rather than checked in: a `../` escape, an absolute path and a symlink
@@ -110,8 +110,8 @@ fn with_input_dir(dir: &Path, document: &str) -> Run {
 
 #[test]
 fn an_input_inside_the_directory_is_pulled_in() {
-    // DECISIONS.md D15's end-to-end path: the resolver reaches techy's `\input` spec,
-    // the spec attaches the file's content, and the `inputs` rule renders the slot.
+    // The end-to-end path: the resolver reaches techy's `\input` spec, the spec
+    // attaches the file's content, and the `inputs` rule renders the slot.
     let dir = sandbox("allowed");
     let result = with_input_dir(&dir, r"before \input{intro.tex} after");
     assert_eq!(result.stdout, "before INTRO after\n");
@@ -188,7 +188,7 @@ fn a_parent_directory_escape_is_refused() {
 
 #[test]
 fn a_sibling_sharing_the_directorys_name_prefix_is_refused() {
-    // PLAN.md §14.3's `dir-evil` case, and the reason the containment check compares
+    // The `dir-evil` case, and the reason the containment check compares
     // against the directory *plus a separator*: `<root>/dir-evil/secret.tex` does start
     // with the string `<root>/dir`, and a bare prefix test would let it through.
     let dir = sandbox("escape-sibling");
@@ -269,9 +269,9 @@ fn an_include_cycle_is_broken_rather_than_followed() {
 
 #[test]
 fn without_the_flag_an_input_is_a_note_and_renders_nothing() {
-    // PLAN.md §9.8: with no resolver configured, techxt does not register techy's
-    // inclusion spec at all, so `\input` parses as an ordinary macro whose `attached`
-    // slot is missing — a note, never an error.
+    // With no resolver configured, techxt does not register techy's inclusion spec at
+    // all, so `\input` parses as an ordinary macro whose `attached` slot is missing — a
+    // note, never an error.
     let result = run(&["-v"], r"[\input{intro.tex}]");
     assert_eq!(result.stdout, "[]\n");
     assert!(result.stderr.starts_with("note: "), "{:?}", result.stderr);

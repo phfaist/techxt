@@ -1,5 +1,5 @@
 /**
- * The primary bar and the "More options" disclosure (web/PLAN.md §5, §6.9).
+ * The primary bar and the "More options" disclosure.
  *
  * Two tiers, because three controls change the answer far more often than the other
  * thirteen: wrapping, math rendering and the display font live in a sticky bar that is
@@ -10,12 +10,12 @@
  * - **A default is not a choice.** A control sitting at the library's own default is
  *   deleted from the emitted {@link AppOptions} rather than written into it, which is
  *   what keeps a share link short and lets a future change of a library default be
- *   picked up rather than frozen (§6.4). The field is drawn as *unset* too.
+ *   picked up rather than frozen. The field is drawn as *unset* too.
  * - **Display font ≠ char styles.** `textFont` and `mathFont` choose the Unicode
  *   *alphabet* a letter is mapped into — they change the text. The display font is
- *   CSS and changes nothing. The labels and hints keep them apart (§5).
+ *   CSS and changes nothing. The labels and hints keep them apart.
  * - **Every control is labelled** with a real `<label for>`; nothing here uses a
- *   placeholder as a label (§6.9).
+ *   placeholder as a label.
  */
 
 import { FONTS, MAX_SIZE, MIN_SIZE } from '../fonts';
@@ -32,7 +32,7 @@ type LibKey = Exclude<keyof AppOptions, 'wrap' | 'math' | 'todayMode' | 'todayCu
  * is never emitted: absent *is* the default, and re-typing it here would freeze it.
  *
  * The *Math* control is not in here even though three of its four values are library
- * ones: `math` is app-level (§5), so it is read and written beside `wrap` below, and
+ * ones: `math` is app-level, so it is read and written beside `wrap` below, and
  * {@link MATH_DEFAULT} is its share of this table.
  */
 const DEFAULTS: Record<LibKey, string | boolean> = {
@@ -53,7 +53,7 @@ const DEFAULTS: Record<LibKey, string | boolean> = {
 /** `math_mode`'s own default, which is what an absent `math` means. */
 const MATH_DEFAULT = 'fancy';
 
-/** The rendering options *Math: MathJax* leaves with nothing to do (§5). */
+/** The rendering options *Math: MathJax* leaves with nothing to do. */
 const MATH_RENDERING_KEYS = [
   'mathExpressionIn',
   'matrixDelimiters',
@@ -129,7 +129,7 @@ export function initControls(init: ControlsInit): Controls {
 
   /*
    * Four answers to one question, of which three are the library's and the fourth is
-   * the app's (§5). *MathJax* asks the library for Source and typesets the result in
+   * the app's. *MathJax* asks the library for Source and typesets the result in
    * the pane, so it belongs in this list rather than in a toggle of its own: a reader
    * choosing how their formulas should look is answering one question, and *typeset*
    * is one of the answers to it.
@@ -175,7 +175,7 @@ export function initControls(init: ControlsInit): Controls {
   /* --- Library */
 
   /*
-   * The door to the library (§6.10), and the only one: it is here because this is the
+   * The door to the library, and the only one: it is here because this is the
    * row the user is already looking at, and because an icon, a tooltip and the
    * first-run pulse can say what the sheet holds where a word in a nav of About and
    * Install cannot. The header link that used to sit beside About was the same action
@@ -206,7 +206,7 @@ export function initControls(init: ControlsInit): Controls {
    * Caret, sliders, word — and never all three at once. Wide, the caret leads and
    * rotates, which is what a `<details>` looks like; below 620 px the caret and the
    * word give way to the sliders, because a lone `▸` is a direction and not a door
-   * (§6.6). Both marks are in the DOM at every width; the CSS picks one.
+   *. Both marks are in the DOM at every width; the CSS picks one.
    */
   summary.append(
     glyph('▸'),
@@ -275,7 +275,7 @@ export function initControls(init: ControlsInit): Controls {
    * there is nothing left for a delimiter or a Unicode alphabet to apply to. A control
    * that cannot do anything is worse than no control, so they are disabled while
    * MathJax is selected — and the reason is stated *before* them rather than after,
-   * since a note explaining why three fields are grey is only useful on the way in (§5).
+   * since a note explaining why three fields are grey is only useful on the way in.
    */
   const mathInert = el(
     'p',
@@ -370,7 +370,7 @@ export function initControls(init: ControlsInit): Controls {
   more.append(summary, moreBody);
 
   /*
-   * The two doors travel together (§6.1, §6.6). On a wide screen the wrapper is
+   * The two doors travel together. On a wide screen the wrapper is
    * `display: contents` and they are the same two flex items in the same two places
    * they have always been; on a phone the bar is a two-column grid, and one cell
    * holding both is what keeps the row count at two. Before this they were two cells,
@@ -404,7 +404,7 @@ export function initControls(init: ControlsInit): Controls {
     if (value === 'fit') return 'fit';
     if (value === 'off') return 'off';
     // 'soft' is 'off' as far as the library is concerned; the difference is the CSS
-    // the output pane is shown in, which `main.ts` applies (§6.3).
+    // the output pane is shown in, which `main.ts` applies.
     if (value === 'soft') return 'soft';
     if (value === 'custom') {
       const typed = Math.round(Number(wrapCustom.value));
@@ -420,7 +420,7 @@ export function initControls(init: ControlsInit): Controls {
   function writeWrap(wrap: WrapMode | undefined): void {
     // Absent means the *app's* default, not the library's: `DEFAULT_OPTIONS` in
     // state.ts is `{ wrap: 'soft', todayMode: 'browser' }`, and `resolveOptions` reads
-    // an absent key the same way (§5). Both are emitted explicitly below, so this
+    // an absent key the same way. Both are emitted explicitly below, so this
     // only decides what an empty option object looks like.
     const value: WrapMode = wrap ?? 'soft';
     if (value === 'fit' || value === 'off' || value === 'soft') {
@@ -449,7 +449,7 @@ export function initControls(init: ControlsInit): Controls {
     // default and is deleted rather than written.
     if (mathSelect.value !== MATH_DEFAULT) out.math = mathSelect.value as MathSetting;
 
-    // The two app-level keys (§5) are always explicit: they have no library default to
+    // The two app-level keys are always explicit: they have no library default to
     // fall back to, and `resolveOptions` reads them directly.
     out.wrap = readWrap();
     const mode = todaySel.value as TodayMode;
@@ -715,7 +715,7 @@ export function initControls(init: ControlsInit): Controls {
       note.id = `${id}-hint`;
       const target = control.id === id ? control : control.querySelector(`#${CSS.escape(id)}`);
       target?.setAttribute('aria-describedby', note.id);
-      // The primary bar hides its labels below 700 px (§6.6), so the control carries
+      // The primary bar hides its labels below 700 px, so the control carries
       // the whole story as a tooltip as well.
       if (extra.bar) target?.setAttribute('title', `${label} — ${extra.hint}`);
       wrap.append(note);
@@ -726,7 +726,7 @@ export function initControls(init: ControlsInit): Controls {
   }
 
   /**
-   * The pulse that says the library exists (§6.10). It is a class and one keyframe,
+   * The pulse that says the library exists. It is a class and one keyframe,
    * it runs for the first three sessions, and it stops for good the first time the
    * pane is opened: an animation that never gives up is one people learn to ignore.
    */
@@ -792,7 +792,7 @@ function glyph(mark: string): HTMLSpanElement {
 /**
  * A button's word, in a span of its own — the same treatment the pane headers give
  * theirs (`ui/panes.ts`). Below 620 px the two buttons of the tools row hide these
- * (§6.6), and the hiding is `.sr-only` rather than `display: none`, so the button
+ *, and the hiding is `.sr-only` rather than `display: none`, so the button
  * keeps its accessible name and its 44 px target.
  */
 function label(value: string): HTMLSpanElement {

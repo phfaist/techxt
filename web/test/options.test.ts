@@ -1,6 +1,6 @@
 /**
  * `resolveOptions`, `formatToday` and `columnsFor` — the three pure functions the
- * conversion actually depends on (web/PLAN.md §5, §6.5, §13).
+ * conversion actually depends on.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -23,7 +23,7 @@ const NOON = new Date(2026, 7, 20, 12, 0, 0);
 describe('formatToday', () => {
   it('spells the month out, the way techxt-cli does', () => {
     expect(formatToday(NOON)).toBe('August 20, 2026');
-    // The example web/PLAN.md §5 gives, and the one rust/techxt-cli/src/today.rs tests.
+    // The same example rust/techxt-cli/src/today.rs tests.
     expect(formatToday(new Date(2026, 7, 19))).toBe('August 19, 2026');
   });
 
@@ -35,7 +35,7 @@ describe('formatToday', () => {
 
   it('reads the local date, not the UTC one', () => {
     // Late on the 20th locally is already the 21st in UTC east of Greenwich; the app
-    // shows the date the person's own clock shows (§5).
+    // shows the date the person's own clock shows.
     expect(formatToday(new Date(2026, 7, 20, 23, 30))).toBe('August 20, 2026');
   });
 });
@@ -57,7 +57,7 @@ describe('resolveOptions: wrapping', () => {
   it('treats an absent wrap as the app default, which is Soft', () => {
     expect(DEFAULT_OPTIONS.wrap).toBe('soft');
     // And Soft asks the library for nothing, so the app's own default no longer
-    // changes a byte of the converted text (§5).
+    // changes a byte of the converted text.
     expect('wrapWidth' in resolveOptions({}, 64, NOON)).toBe(false);
   });
 
@@ -67,7 +67,7 @@ describe('resolveOptions: wrapping', () => {
 
   it('sends the library exactly the same thing for Soft as for Off', () => {
     // The whole point of the mode: the *text* is Wrap: Off's text, and only the pane
-    // it is shown in differs (§6.3).
+    // it is shown in differs.
     expect(resolveOptions({ wrap: 'soft' }, 88, NOON)).toEqual(
       resolveOptions({ wrap: 'off' }, 88, NOON),
     );
@@ -97,7 +97,7 @@ describe('resolveOptions: math', () => {
 
   it('turns MathJax into Source, which is the whole of what the library is told', () => {
     // The app typesets what Source re-emits; the library has never heard of MathJax
-    // and this is the one place that stays true (§5).
+    // and this is the one place that stays true.
     expect(resolveOptions({ math: 'mathjax' }, 72, NOON)).toEqual(
       resolveOptions({ math: 'source' }, 72, NOON),
     );
@@ -170,7 +170,7 @@ describe('resolveOptions: what reaches the worker', () => {
   it('passes every library option through unchanged', () => {
     const payload = resolveOptions(everything, 72, NOON);
     expect(payload).toMatchObject({
-      // `math` is app-level, and the library's key for it is `mathMode` (§5).
+      // `math` is app-level, and the library's key for it is `mathMode`.
       mathMode: 'plain',
       mathExpressionIn: 'braces',
       matrixDelimiters: 'ascii',
@@ -196,7 +196,7 @@ describe('resolveOptions: what reaches the worker', () => {
 
   it('never lets the word mathjax reach an OptionsPayload, whatever else is set', () => {
     // The binding deserializes this object into `techxt::convert::Options`, where
-    // `mathjax` is not a `MathMode` and never will be (§5).
+    // `mathjax` is not a `MathMode` and never will be.
     for (const payload of [
       resolveOptions({ math: 'mathjax' }, 72, NOON),
       resolveOptions({ math: 'mathjax', wrap: 'fit', todayMode: 'library' }, 40, NOON),
@@ -211,8 +211,8 @@ describe('resolveOptions: what reaches the worker', () => {
 });
 
 describe('columnsFor', () => {
-  // The measurement itself belongs to ui/panes.ts; this is only the arithmetic of
-  // web/PLAN.md §6.5: max(20, floor(width * 0.98 / advance)).
+  // The measurement itself belongs to ui/panes.ts; this is only the arithmetic:
+  // max(20, floor(width * 0.98 / advance)).
   it('divides the usable width by the mean advance', () => {
     expect(columnsFor(800, 8.4)).toBe(93);
     expect(columnsFor(1000, 10)).toBe(98);

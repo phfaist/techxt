@@ -1,5 +1,5 @@
 //! The document-furniture categories: `refs`, `links`, `graphics`, `titling`,
-//! `preamble` and `inputs` (PLAN.md §9.8), plus the stubs of PLAN.md §12.1.
+//! `preamble` and `inputs`, plus the empty stub categories.
 
 use std::any::Any;
 use std::string::String;
@@ -159,10 +159,10 @@ fn the_title_block_measures_display_columns() {
 
 #[test]
 fn preamble_declarations_consume_their_arguments_and_say_nothing() {
-    // The defining commands are honoured now (PLAN.md §16 M9, and `tests/defs_macros.rs`
-    // for what that means), but *contributing nothing to the text* is unchanged: a
-    // definition renders as nothing whether it defined something or was merely consumed.
-    // Both converters are checked, because the property belongs to both.
+    // The defining commands are honoured (see `tests/defs_macros.rs` for what that
+    // means), but *contributing nothing to the text* is unchanged: a definition renders
+    // as nothing whether it defined something or was merely consumed. Both converters
+    // are checked, because the property belongs to both.
     for converter in [Converter::standard(), declared_only()] {
         for latex in [
             r"\documentclass[12pt,a4paper]{article}",
@@ -215,8 +215,8 @@ fn a_preamble_declaration_does_not_swallow_what_follows_it() {
 
 #[test]
 fn an_unresolved_include_is_a_note_and_not_an_error() {
-    // DECISIONS.md C4: no attached slot means "not resolved", which is an ordinary
-    // configuration and not a failure of anything.
+    // No attached slot means "not resolved", which is an ordinary configuration and not
+    // a failure of anything.
     let conversion = Converter::standard()
         .latex_to_text(r"a\input{chapters/intro.tex}b")
         .expect("parses");
@@ -285,8 +285,8 @@ fn including(entries: &[(&str, &str)]) -> Converter {
 
 #[test]
 fn an_input_pulls_in_the_resolved_content() {
-    // DECISIONS.md D15: `ConverterBuilder::source_resolver` reaches the `\input`
-    // definition, which is what makes inclusion work at all.
+    // `ConverterBuilder::source_resolver` reaches the `\input` definition, which is
+    // what makes inclusion work at all.
     let converter = including(&[
         ("intro.tex", "the beginning"),
         ("both.tex", r"one \input{intro.tex} two"),
@@ -379,9 +379,9 @@ fn the_include_cycle_guard_still_fires() {
 
 #[test]
 fn an_include_the_resolver_cannot_answer_stays_a_note() {
-    // DECISIONS.md C4, with a resolver in place: no attached slot is
-    // `Err(UnknownSlotName)`, which the handler reads as "not resolved" and reports as
-    // a note. techxt itself raises no error either way.
+    // With a resolver in place, no attached slot is `Err(UnknownSlotName)`, which the
+    // handler reads as "not resolved" and reports as a note. techxt itself raises no
+    // error either way.
     let conversion = including(&[("known.tex", "here")])
         .latex_to_text(r"\input{missing.tex}")
         .expect("parses");
@@ -426,11 +426,11 @@ fn a_converter_without_a_resolver_does_not_even_try_to_resolve() {
 
 #[test]
 fn the_foreign_input_spec_resolves_its_rule_at_dispatch_step_3() {
-    // DECISIONS.md D15: techy's inclusion spec is not a `TechxtMacroSpec`, so the rule
-    // cannot ride inside it and step 2's downcast misses. The rule is found at step 3,
-    // in the name-keyed fallback table — which the rendered output above proves, and
-    // this test pins the mechanism so that a future "why is this spec not ours?" does
-    // not get answered by breaking it.
+    // techy's inclusion spec is not a `TechxtMacroSpec`, so the rule cannot ride inside
+    // it and step 2's downcast misses. The rule is found at step 3, in the name-keyed
+    // fallback table — which the rendered output above proves, and this test pins the
+    // mechanism so that a future "why is this spec not ours?" does not get answered by
+    // breaking it.
     let converter = including(&[("intro.tex", "included")]);
     let parsed = converter
         .language()
@@ -457,8 +457,8 @@ fn the_foreign_input_spec_resolves_its_rule_at_dispatch_step_3() {
 
 #[test]
 fn every_stub_category_is_present_and_empty() {
-    // PLAN.md §12.1 fixes the category list; the ones later milestones fill are still
-    // part of `standard()` so that the order cannot drift while they are written.
+    // The category list is fixed; the ones still to be filled are nonetheless part of
+    // `standard()` so that the order cannot drift while they are written.
     let empty = |category: techxt::def::Category| {
         let converter = Converter::builder()
             .definitions(DefinitionSet::new().with(category))
@@ -488,11 +488,11 @@ fn every_stub_category_is_present_and_empty() {
 
 #[test]
 fn a_complete_latex_file_converts_silently() {
-    // PLAN.md §12.2: nothing standard reaches the unknown policy out of the box. The
-    // `document` environment is what makes that true of a *file* rather than of a
-    // fragment — without it techy has no definition to resolve `\begin{document}`
-    // against and reports an error, and every complete document is a failed
-    // conversion however clean it is.
+    // Nothing standard reaches the unknown policy out of the box. The `document`
+    // environment is what makes that true of a *file* rather than of a fragment —
+    // without it techy has no definition to resolve `\begin{document}` against and
+    // reports an error, and every complete document is a failed conversion however
+    // clean it is.
     let converted = Converter::standard()
         .latex_to_text(
             "\\documentclass[11pt]{article}\n\

@@ -1,9 +1,9 @@
-//! The downward render state (PLAN.md §8).
+//! The downward render state.
 
 use crate::convert::Options;
 use crate::mathfmt::FontStyle;
 
-/// Everything a node needs to know about where it sits in the document (PLAN.md §8).
+/// Everything a node needs to know about where it sits in the document.
 ///
 /// This is the recomposition fold's *downward* state: a handler receives the state its
 /// parent derived, and passes a modified copy to whatever it renders below it. techy
@@ -82,7 +82,7 @@ impl Default for RenderState {
     }
 }
 
-/// Where in a formula a node sits (PLAN.md §8).
+/// Where in a formula a node sits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MathCtx {
     /// Whether this is display math (`\[…\]`, an `equation` body) rather than inline
@@ -93,7 +93,7 @@ pub struct MathCtx {
     pub matrix: bool,
 }
 
-/// The innermost enclosing list (PLAN.md §8, §9.4).
+/// The innermost enclosing list.
 ///
 /// Both depths are needed and they differ: the *marker* cycles with
 /// [`same_kind_depth`](Self::same_kind_depth), so an `enumerate` nested directly in an
@@ -109,7 +109,7 @@ pub struct ListCtx {
     pub depth: usize,
 }
 
-/// The three kinds of list environment (PLAN.md §9.4).
+/// The three kinds of list environment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ListKind {
     /// A bulleted list (`itemize`): markers cycle through a fixed set of bullets.
@@ -121,7 +121,7 @@ pub enum ListKind {
     Description,
 }
 
-/// Which kind of float encloses a node, for `\caption` (PLAN.md §8).
+/// Which kind of float encloses a node, for `\caption`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FloatKind {
     /// A `figure` environment.
@@ -130,7 +130,7 @@ pub enum FloatKind {
     Table,
 }
 
-/// Marker for "inside a table body" (PLAN.md §8).
+/// Marker for "inside a table body".
 ///
 /// It carries nothing yet: what the alignment and row separators must *do* is decided
 /// by the enclosing table handler, which reads the cell and row markers back out of the

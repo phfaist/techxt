@@ -1,4 +1,4 @@
-//! The two ends of the math pipeline (PLAN.md §9.5).
+//! The two ends of the math pipeline.
 //!
 //! [`mathfmt`](crate::mathfmt) knows how to segment, join and lay out a formula, but it
 //! knows nothing of trees, states or options. This module is the seam between it and
@@ -55,7 +55,7 @@ pub(crate) fn atoms_in_use(state: &RenderState, options: &Options) -> bool {
 }
 
 /// A math scope in [`Source`](MathMode::Source) mode: the formula as the LaTeX it was
-/// written as, rather than a rendering of it (PLAN.md §9.5).
+/// written as, rather than a rendering of it.
 ///
 /// Answers `None` in the two modes that render — there is a formula to fold, and the
 /// caller goes on and folds it — and `Some` in `Source`, where the subtree is re-emitted
@@ -96,12 +96,12 @@ pub(crate) fn source_scope(node: NodeView<'_>, display: bool, options: &Options)
     Some(flow)
 }
 
-/// Split a plain string into atoms and put them into the flow (PLAN.md §9.5).
+/// Split a plain string into atoms and put them into the flow.
 ///
 /// This is what a characters node and a rule's replacement text become inside fancy
-/// math. Note what does *not* happen here: the font alphabet is not applied
-/// (DECISIONS.md D6) — the caller styles document characters before calling, and rule
-/// output is never styled at all.
+/// math. Note what does *not* happen here: the font alphabet is not applied — the
+/// caller styles document characters before calling, and rule output is never styled at
+/// all.
 pub(crate) fn segmented(text: &str, upright_letters_are_op: bool) -> Flow {
     let mut flow = Flow::new();
     for atom in segment_plain(text, upright_letters_are_op) {
@@ -158,8 +158,7 @@ pub(crate) fn inline_text(flow: &Flow, state: &RenderState, options: &Options) -
     }
 }
 
-/// Close a math scope: turn its folded contents into ordinary flow (PLAN.md §9.5,
-/// "Flow boundary").
+/// Close a math scope: turn its folded contents into ordinary flow.
 ///
 /// `display` says which of the two shapes comes out:
 ///
@@ -240,10 +239,9 @@ fn finish_with(body: Flow, display: bool, mode: MathMode, wrap: &MathWrapDelims)
 
 /// [`finish`] for the modes that never built an atom.
 ///
-/// `Plain` concatenates its pieces directly (PLAN.md §9.5), so the folded flow is
-/// already the answer and only display's indent block has to be added. Stray atoms are
-/// flattened rather than dropped: a handler that built one anyway must still show its
-/// content.
+/// `Plain` concatenates its pieces directly, so the folded flow is already the answer
+/// and only display's indent block has to be added. Stray atoms are flattened rather
+/// than dropped: a handler that built one anyway must still show its content.
 fn finish_plain(body: Flow, display: bool, wrap: &MathWrapDelims) -> Flow {
     let mut flow = Flow::new();
     if display {
@@ -389,7 +387,7 @@ fn flush_text(run: &mut String, atoms: &mut Vec<Atom>) {
     run.clear();
 }
 
-/// Split a folded matrix body into rows of rendered cells (PLAN.md §9.5).
+/// Split a folded matrix body into rows of rendered cells.
 ///
 /// The body was folded with [`MathCtx::matrix`](super::MathCtx::matrix) set, so `&` and
 /// `\\` arrived as [`CellSep`](FlowItem::CellSep) and [`RowSep`](FlowItem::RowSep);

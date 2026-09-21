@@ -1,4 +1,4 @@
-//! Included graphics (PLAN.md §9.8).
+//! Included graphics.
 //!
 //! An image has no plain-text rendering, and the file name is not one: it is a path
 //! into a directory the reader does not have. techxt writes a placeholder block instead
@@ -17,7 +17,7 @@ use super::handler;
 /// The indent a placeholder block sits in.
 const INDENT: &str = "    ";
 
-/// The graphics category (PLAN.md §12.1).
+/// The graphics category.
 pub fn category() -> Category {
     Category::new("graphics").with_macro(
         MacroDef::new("includegraphics")

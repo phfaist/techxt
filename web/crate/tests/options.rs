@@ -1,5 +1,4 @@
-//! The options DTO: what the wire form deserializes into, and what reaches the builder
-//! (web/PLAN.md §4.2, §4.8).
+//! The options DTO: what the wire form deserializes into, and what reaches the builder.
 //!
 //! The documents under test are serde *data*, not JSON text: there is no JSON parser in
 //! this crate's dependency list and no reason to add one, since what these tests are
@@ -286,7 +285,7 @@ fn an_unknown_field_is_rejected() {
     // snake_case is the Rust spelling, not the wire spelling.
     assert!(dto([("math_mode", "plain")]).is_err());
     assert!(dto([("macro_definitions", "declared")]).is_err());
-    // Neither expansion budget is exposed (§4.6), so neither is a field the app can send.
+    // Neither expansion budget is exposed, so neither is a field the app can send.
     assert!(dto([("expansionDepthLimit", 8usize)]).is_err());
     assert!(dto([("expansionCountLimit", 8usize)]).is_err());
 }

@@ -1,4 +1,4 @@
-//! Byte offsets to UTF-16 offsets, lines and columns (web/PLAN.md §4.4, §4.8).
+//! Byte offsets to UTF-16 offsets, lines and columns.
 //!
 //! The property under test is the one the diagnostics panel depends on: for every
 //! `char` boundary of a document, the offset the binding reports is the offset
@@ -7,9 +7,9 @@
 //! the wrong text, one surrogate pair at a time.
 //!
 //! The generator is a small LCG over a fixed alphabet rather than `proptest`: this
-//! crate's dependency list is a design property (PLAN Appendix D), and a deterministic
-//! generator has the nicer failure mode anyway — a failing seed is reproducible without
-//! a regression file.
+//! crate's dependency list is a design property, and a deterministic generator has the
+//! nicer failure mode anyway — a failing seed is reproducible without a regression
+//! file.
 
 use techxt_web::diag::{OffsetMap, Position};
 
@@ -65,7 +65,7 @@ fn check_every_boundary(latex: &str) {
     }
 }
 
-/// The property of §4.4, over documents built from astral characters, combining marks
+/// The property above, over documents built from astral characters, combining marks
 /// and every line ending.
 #[test]
 fn every_char_boundary_maps_to_the_offset_javascript_computes() {

@@ -3,7 +3,7 @@
 // Source: pylatexenc `latex2text/_defaultspecs.py`, `unicode_accents_list`,
 // plus the composition and spacing-clone facts of the unicode database.
 
-//! The accent tables (PLAN.md §9.3, §12.4).
+//! The accent tables.
 //!
 //! Three tables, all sorted so that they can be searched by bisection, and all
 //! written with escaped characters so that a combining mark cannot be mangled
@@ -46,7 +46,7 @@ pub(crate) static ACCENTS: &[(&str, char)] = &[
 /// The standalone (spacing) form of a combining mark, where unicode has one.
 ///
 /// Sorted by the combining mark. A mark that is missing here has no standalone
-/// form, and PLAN.md §9.3's fallback — a space followed by the mark — applies.
+/// form, and the fallback — a space followed by the mark — applies.
 pub(crate) static ACCENT_SPACING: &[(char, char)] = &[
     ('\u{0300}', '\u{0060}'), // COMBINING GRAVE ACCENT → GRAVE ACCENT
     ('\u{0301}', '\u{00b4}'), // COMBINING ACUTE ACCENT → ACUTE ACCENT

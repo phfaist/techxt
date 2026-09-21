@@ -1,5 +1,5 @@
 //! Output regions: the side table naming the runs of a conversion that are not
-//! converted text (root PLAN.md §7.1).
+//! converted text.
 //!
 //! What is under test is an *offset*, so nearly every assertion here slices the
 //! conversion's own text with the region it reported and compares the substring. That is
@@ -337,10 +337,10 @@ fn an_inline_matrix_is_reported_where_its_columns_are() {
 
 #[test]
 fn a_source_formula_is_reported_after_expansion() {
-    // A document's own macro is gone by the time the source is reassembled (§9.5 leaves
-    // expansion to techy-xp, at token-reading time), so what the region names is
-    // primitives — which is what makes the
-    // reported range meaningful to anything that only understands LaTeX's own commands.
+    // A document's own macro is gone by the time the source is reassembled (expansion
+    // is left to techy-xp, at token-reading time), so what the region names is
+    // primitives — which is what makes the reported range meaningful to anything that
+    // only understands LaTeX's own commands.
     let conversion = source_mode(
         "\\newcommand{\\ket}[1]{\\lvert #1 \\rangle}\nA state $\\ket{\\psi}$.",
         None,

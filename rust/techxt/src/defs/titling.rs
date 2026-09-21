@@ -1,4 +1,4 @@
-//! The document's title block (PLAN.md §9.8).
+//! The document's title block.
 //!
 //! `\title`, `\author` and `\date` do not print anything where they are written; they
 //! record a value that `\maketitle` prints later, usually from a different part of the
@@ -38,7 +38,7 @@ use super::handler;
 /// The indent under the title line, on the author and date lines.
 const INDENT: &str = "    ";
 
-/// The titling category (PLAN.md §12.1).
+/// The titling category.
 ///
 /// The three field macros are declared with a leading optional argument, which is the
 /// "short" form the AMS classes and beamer accept; the field itself is the mandatory
@@ -54,7 +54,7 @@ pub fn category() -> Category {
         // in columns; a title block in plain text is one line per field, so the
         // separator is the word the macro is named after — an English word, like the
         // "Abstract" and "Theorem" the other categories generate, and localizing those
-        // is on PLAN.md §17's list. Written with its spaces, so that it separates two
+        // is left for a later version. Written with its spaces, so that it separates two
         // names whether or not the source put spaces around it: a literal's text goes
         // through the same word-and-glue splitting as document text, and the layout
         // engine collapses the glue against whatever is next to it.
@@ -103,7 +103,7 @@ impl TextHandler for SetField {
     }
 }
 
-/// `\today` (PLAN.md §9.8).
+/// `\today`.
 ///
 /// techxt is `no_std` and has no clock; a caller who wants a date knows which one, and
 /// says so through [`Options::today`](crate::Options::today).
@@ -124,7 +124,7 @@ fn today(cx: &RenderCx<'_, '_>) -> String {
     }
 }
 
-/// `\maketitle` (PLAN.md §9.8).
+/// `\maketitle`.
 #[derive(Debug)]
 struct MakeTitle;
 

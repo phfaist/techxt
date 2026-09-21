@@ -1,4 +1,4 @@
-//! Executing a [`TextRule`], and deciding what to do without one (PLAN.md §10.4, §10.6).
+//! Executing a [`TextRule`], and deciding what to do without one.
 
 use alloc::string::String;
 
@@ -10,7 +10,7 @@ use crate::flow::{Flow, FlowItem, VerbatimProvenance};
 use super::cx::{RenderCx, RenderError};
 use super::math;
 
-/// Render the callable `cx` is positioned on through `rule` (PLAN.md §10.4).
+/// Render the callable `cx` is positioned on through `rule`.
 ///
 /// Never fails: a rule that cannot do its job costs its construct the output and raises
 /// a `techxt.handler-failed` diagnostic, and the conversion continues. Losing one macro
@@ -34,13 +34,12 @@ pub(crate) fn execute(rule: &TextRule, cx: &mut RenderCx<'_, '_>) -> Flow {
     }
 }
 
-/// Replacement text produced by a rule (PLAN.md §10.4).
+/// Replacement text produced by a rule.
 ///
 /// It is treated exactly like document text — words and inter-word spaces — but it is
-/// *not* document text in one respect: font styling never applies to it (DECISIONS.md
-/// D6). `\sin` must come out as an upright `sin` next to an italic variable, and
-/// running rule output through the math alphabets would italicize every operator name
-/// in the document.
+/// *not* document text in one respect: font styling never applies to it. `\sin` must
+/// come out as an upright `sin` next to an italic variable, and running rule output
+/// through the math alphabets would italicize every operator name in the document.
 ///
 /// Inside fancy math it is segmented into atoms instead of into words, exactly as v3
 /// segments its replacement strings: that is how `\leq` → `"≤"` becomes a relation the
@@ -49,14 +48,13 @@ pub(crate) fn execute(rule: &TextRule, cx: &mut RenderCx<'_, '_>) -> Flow {
 /// [`defs::mathcore`](crate::defs::mathcore)'s operator names.
 fn literal(text: &str, cx: &mut RenderCx<'_, '_>) -> Flow {
     if math::atoms_in_use(cx.state(), cx.options()) {
-        // DECISIONS.md D4, as in `TextRenderer::chars`.
+        // Segmented as in `TextRenderer::chars`.
         return math::segmented(text, cx.state().math_font.is_style());
     }
     Flow::from_plain_text(text)
 }
 
-/// Substitute a template's argument references and treat the result as literal text
-/// (PLAN.md §10.5).
+/// Substitute a template's argument references and treat the result as literal text.
 fn template_flow(template: &Template, cx: &mut RenderCx<'_, '_>) -> Flow {
     let mut flow = Flow::new();
     render_segments(template.segments(), cx, &mut flow);
@@ -77,9 +75,9 @@ fn render_segments(segments: &[Seg], cx: &mut RenderCx<'_, '_>, flow: &mut Flow)
                 Ok(body) => flow.extend(body),
                 Err(error) => fail(cx, &error),
             },
-            // `{?name:then|else}` (PLAN.md §10.5): which branch runs depends only on
-            // whether the argument was *written*, never on what it rendered to — an
-            // argument that renders as nothing is still present.
+            // `{?name:then|else}`: which branch runs depends only on whether the
+            // argument was *written*, never on what it rendered to — an argument that
+            // renders as nothing is still present.
             Seg::IfPresent { arg, then, els } => {
                 let branch = if arg_present(arg, cx) { then } else { els };
                 render_segments(branch, cx, flow);
@@ -106,7 +104,7 @@ fn arg_present(reference: &ArgRef, cx: &RenderCx<'_, '_>) -> bool {
 fn arg_ref(reference: &ArgRef, cx: &mut RenderCx<'_, '_>) -> Option<Flow> {
     let rendered = match reference {
         ArgRef::Name(name) => cx.arg(name),
-        // Template indices are 1-based (PLAN.md §10.5); `arg_at` counts from zero.
+        // Template indices are 1-based; `arg_at` counts from zero.
         ArgRef::Index(index) => match index.checked_sub(1) {
             Some(zero_based) => cx.arg_at(zero_based),
             None => Err(RenderError::region_detail(
@@ -123,7 +121,7 @@ fn arg_ref(reference: &ArgRef, cx: &mut RenderCx<'_, '_>) -> Option<Flow> {
     }
 }
 
-/// Render a construct's own content (PLAN.md §10.4, `TextRule::Content`).
+/// Render a construct's own content (`TextRule::Content`).
 ///
 /// For a macro that is every *provided* argument's content in declaration order, with
 /// nothing inserted between them — `\emph{a}` renders `a`, and `\textcolor{red}{text}`
@@ -163,7 +161,7 @@ fn arguments_in_order(cx: &mut RenderCx<'_, '_>) -> Flow {
     flow
 }
 
-/// Render a callable no rule was found for, per the configured policy (PLAN.md §10.6).
+/// Render a callable no rule was found for, per the configured policy.
 ///
 /// The diagnostic is raised whatever the policy says: the policy decides what the
 /// reader sees, not whether the problem is reported.

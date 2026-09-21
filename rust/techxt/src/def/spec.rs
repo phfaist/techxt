@@ -1,6 +1,6 @@
 //! The techy spec types that carry a techxt [`TextRule`] into the parsed tree.
 //!
-//! This is what PLAN.md §1's second design rule — *one definition, both sides* — comes
+//! This is what techxt's second design rule — *one definition, both sides* — comes
 //! down to in code. A techxt definition is registered with techy as a spec object that
 //! declares the construct's arguments (so the parser shapes the invocation correctly)
 //! *and* carries the text rule (so the renderer knows what to do with it). Parser and
@@ -10,8 +10,7 @@
 //! techy's [`CallableSpec`] has [`Any`](core::any::Any) as a supertrait, so the
 //! renderer recovers the concrete type by downcasting the node's spec. That is the
 //! sanctioned identity mechanism (techy's own `\begin` composition uses it to find an
-//! environment's behaviour), and it is step 2 of techxt's dispatch chain (PLAN.md
-//! §10.3).
+//! environment's behaviour), and it is step 2 of techxt's dispatch chain.
 //!
 //! Environments are different, and it matters: see [`TechxtEnvironmentBehavior`].
 
@@ -76,7 +75,7 @@ impl TechxtMacroSpec {
 }
 
 // The `SerializableObject` supertrait of `CallableSpec` is fully defaulted; an empty
-// impl opts out of serialization, which techxt does not offer in v1 (PLAN.md §2).
+// impl opts out of serialization, which techxt does not offer in v1.
 impl SerializableObject<LatexlikeXp> for TechxtMacroSpec {}
 
 impl CallableSpec<LatexlikeXp> for TechxtMacroSpec {
@@ -85,8 +84,7 @@ impl CallableSpec<LatexlikeXp> for TechxtMacroSpec {
     }
 }
 
-/// Supplies a techy [`CallableSpec`] that techxt's own declarations cannot express
-/// (DECISIONS.md D15).
+/// Supplies a techy [`CallableSpec`] that techxt's own declarations cannot express.
 ///
 /// [`MacroDef::arg_spec`](super::MacroDef::arg_spec) is the same escape hatch one level
 /// down: it takes over one *argument* when a code cannot describe it. This one takes
@@ -105,7 +103,7 @@ impl CallableSpec<LatexlikeXp> for TechxtMacroSpec {
 /// # A foreign spec carries no rule
 ///
 /// techxt's own specs carry the construct's [`TextRule`] into the tree, and the
-/// renderer recovers it by downcasting (dispatch step 2, PLAN.md §10.3). A foreign spec
+/// renderer recovers it by downcasting (dispatch step 2). A foreign spec
 /// cannot: it is not a [`TechxtMacroSpec`], so the downcast misses and the rule is found
 /// at step 3 instead, in the name-keyed fallback table that
 /// [`DefinitionSet`](super::DefinitionSet) builds from every entry that declares one.
@@ -140,8 +138,7 @@ pub trait CallableSpecSource: Send + Sync + core::fmt::Debug {
     fn callable_spec(&self, cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<LatexlikeXp>>>;
 }
 
-/// What a [`CallableSpecSource`] may read about the converter being built
-/// (DECISIONS.md D15).
+/// What a [`CallableSpecSource`] may read about the converter being built.
 ///
 /// Definitions are compiled once, when the converter is built, so this is where a spec
 /// that depends on the converter's own configuration — rather than only on what the
@@ -288,8 +285,8 @@ impl CallableSpec<LatexlikeXp> for TechxtSpecialsSpec {
 /// What an environment's body is, syntactically.
 ///
 /// Recording this in the definition is what keeps the renderer from having to guess:
-/// PLAN.md §9.1's rule "characters in a verbatim body are emitted verbatim" is answered
-/// by asking the environment, not by inspecting the text.
+/// the rule "characters in a verbatim body are emitted verbatim" is answered by asking
+/// the environment, not by inspecting the text.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EnvBodyKind {
@@ -300,8 +297,8 @@ pub enum EnvBodyKind {
     /// A raw body: one characters node, no markup (`verbatim`).
     Verbatim,
     /// A list body (`itemize`, `enumerate`, `description`): parsed in the enclosing
-    /// mode, but with the provider defining `\item` pushed for its extent (PLAN.md
-    /// §9.4). Attach that provider with
+    /// mode, but with the provider defining `\item` pushed for its extent. Attach that
+    /// provider with
     /// [`with_body_provider`](TechxtEnvironmentBehavior::with_body_provider).
     List(ListKind),
 }
@@ -379,10 +376,10 @@ impl TechxtEnvironmentBehavior {
 
     /// Push `provider` onto the scope stack for the extent of this environment's body.
     ///
-    /// This is how a list environment brings `\item` into scope (PLAN.md §9.4): one
-    /// shared package, pushed by every list environment's body delta, so that `\item`
-    /// is defined exactly where it means something. Scope reversion is structural —
-    /// nothing has to pop it when the body ends.
+    /// This is how a list environment brings `\item` into scope: one shared package,
+    /// pushed by every list environment's body delta, so that `\item` is defined exactly
+    /// where it means something. Scope reversion is structural — nothing has to pop it
+    /// when the body ends.
     pub fn with_body_provider(
         mut self,
         provider: Arc<dyn SpecsProvider<LatexlikeXp>>,
@@ -421,7 +418,7 @@ impl TechxtEnvironmentBehavior {
     /// type, which is the whole design: on a foreign tree — a plain-techy
     /// [`Latexlike`](techy::latexlike::Latexlike) parse, say — the downcast simply
     /// misses, and the environment's rule is found one step later, in the name fallback
-    /// table (PLAN.md §10.3 step 3). The bound is [`LatexlikeLang`] rather than
+    /// table. The bound is [`LatexlikeLang`] rather than
     /// [`RenderLang`](crate::render::RenderLang): asking a node for its spec needs
     /// nothing of the tree's slots or of how its sources are tagged.
     pub fn of<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> Option<&TechxtEnvironmentBehavior> {
@@ -467,7 +464,7 @@ impl EnvironmentBehavior<LatexlikeXp> for TechxtEnvironmentBehavior {
 }
 
 /// Whether this node is one of techy-xp's **refusals** — `\expandafter`, `\ifx`,
-/// `\catcode`, `\setcounter` and the rest of `techy-xp.refusals` (PLAN.md §16 M9).
+/// `\catcode`, `\setcounter` and the rest of `techy-xp.refusals`.
 ///
 /// The same downcast as [`embedded_rule`] above, asking the opposite question: not
 /// *"does this spec carry a techxt rule?"* but *"is this spec techy-xp's answer for a
@@ -481,8 +478,7 @@ pub(crate) fn is_refusal<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> bool {
         .is_some_and(|spec| (&**spec as &dyn Any).is::<RefusalSpec<LatexlikeXp>>())
 }
 
-/// The techxt rule embedded in a callable node's spec, if it has one (PLAN.md §10.3
-/// step 2).
+/// The techxt rule embedded in a callable node's spec, if it has one (dispatch step 2).
 pub(crate) fn embedded_rule<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> Option<&TextRule> {
     let spec = node.spec()?;
     let object = &**spec as &dyn Any;

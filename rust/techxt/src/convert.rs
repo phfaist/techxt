@@ -1,5 +1,4 @@
-//! The public conversion API (PLAN.md §11): [`Converter`], its builder, and its
-//! [`Options`].
+//! The public conversion API: [`Converter`], its builder, and its [`Options`].
 //!
 //! A [`Converter`] holds a parsing language and a set of definitions, and converts as
 //! many documents as you like. It is immutable, `Clone + Send + Sync`, and cheap to
@@ -29,8 +28,8 @@
 //!
 //! There is deliberately **no fourth layer converting a subtree**: techy's recomposer
 //! takes a whole [`NodeTree`] and its context has no public constructor, so a
-//! `node_to_text(NodeSlice)` cannot be built on the public API (PLAN.md §11.1 and §17
-//! anticipate this). Convert the tree, or drive the renderer yourself as above.
+//! `node_to_text(NodeSlice)` cannot be built on the public API. Convert the tree, or
+//! drive the renderer yourself as above.
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -59,10 +58,10 @@ pub use crate::mathfmt::{FontStyle, FontStyleKind, MathWrapDelims, MatrixDelims}
 // --------------------------------------------------- techy and techy-xp, re-exported
 //
 // Every techy (and techy-xp) type that appears in techxt's own public API is
-// re-exported here, so that using techxt takes one dependency and not three (PLAN.md
-// §2). They are the upstream types, not aliases: a `SourceResolver` implemented
-// against `techxt::convert` is the very trait techy's parser calls, and a
-// `Diagnostics` returned by a conversion is the one techy built. Naming `techy` or
+// re-exported here, so that using techxt takes one dependency and not three. They are
+// the upstream types, not aliases: a `SourceResolver` implemented against
+// `techxt::convert` is the very trait techy's parser calls, and a `Diagnostics`
+// returned by a conversion is the one techy built. Naming `techy` or
 // `techy_xp` directly keeps working and is exactly equivalent — this is a convenience
 // and a semver statement, not an abstraction layer.
 
@@ -80,9 +79,9 @@ pub use techy::core::{StdDescentGuard, StdDescentGuardInit};
 /// not count a node twice keys on.
 pub use techy::core::node::{NodeId, NodeRef, NodeSlice, NodeTree};
 
-/// The bound [`Converter::tree_to_text`] takes its tree under (PLAN.md §11.1): any
-/// latexlike language whose sources are origin-tagged and whose body slots are marked,
-/// not only the [`LatexlikeXp`] this converter parses with.
+/// The bound [`Converter::tree_to_text`] takes its tree under: any latexlike language
+/// whose sources are origin-tagged and whose body slots are marked, not only the
+/// [`LatexlikeXp`] this converter parses with.
 ///
 /// It is auto-implemented — see [`RenderLang`] for what those two facts are, and why
 /// they are the only ones techxt's render side is concrete about.
@@ -97,9 +96,9 @@ pub use techy::latexlike::LatexlikeLang;
 pub use techy::core::specs::{ArgumentSpec, CallableSpec};
 /// See [`ArgumentSpec`].
 pub use techy::latexlike::EnvironmentSpec;
-/// The parsing language every techxt type is concrete over (PLAN.md §11.1): techy's
-/// latexlike preset carrying techy-xp's expanding token reader, which is what
-/// `\newcommand` and `\def` are honored through (PLAN.md §16 M9).
+/// The parsing language every techxt type is concrete over: techy's latexlike preset
+/// carrying techy-xp's expanding token reader, which is what `\newcommand` and `\def`
+/// are honored through.
 ///
 /// The reader expands only what a *definer* has written into a definition scope, and
 /// [`defs::preamble`](crate::defs::preamble) seeds techy-xp's definers into one — so a
@@ -115,9 +114,9 @@ pub use techy_xp::lang::LatexlikeXp;
 /// [`Recovery`] is what [`ConverterBuilder::recovery`] takes.
 pub use techy::error::{Diagnostic, Diagnostics, ParseError, Recovery, Severity};
 
-/// Source resolution for `\input` (PLAN.md §9.8): the trait
-/// [`ConverterBuilder::source_resolver`] accepts, what an implementation answers with,
-/// and the cycle guard a resolver should run.
+/// Source resolution for `\input`: the trait [`ConverterBuilder::source_resolver`]
+/// accepts, what an implementation answers with, and the cycle guard a resolver should
+/// run.
 pub use techy::source::{
     check_include_chain, MapResolver, ResolveError, ResolvedContent, Source, SourceResolver,
     SourceSpan,
@@ -147,7 +146,7 @@ pub use techy::source::IntoSourceResolver;
 /// embedder reading a [`Conversion`] stays at one import.
 pub use crate::{flow::VerbatimProvenance, layout::OutputRegion};
 
-/// The result of a conversion (PLAN.md §11.1).
+/// The result of a conversion.
 #[derive(Clone, Debug)]
 pub struct Conversion {
     /// The converted text. Ends with exactly one newline unless it is empty.
@@ -187,7 +186,7 @@ pub struct Conversion {
     pub regions: Vec<OutputRegion>,
 }
 
-/// Converts LaTeX-like markup to plain text (PLAN.md §11.1).
+/// Converts LaTeX-like markup to plain text.
 ///
 /// Build one with [`standard`](Self::standard) for the shipped definitions and default
 /// options, or with [`builder`](Self::builder) to choose both. A converter is immutable
@@ -201,9 +200,9 @@ pub struct Converter {
 struct Inner {
     language: Language<LatexlikeXp>,
     config: RenderConfig,
-    /// The fold side of the descent guard (DECISIONS.md D9). The parse side lives on
-    /// the `Language`; both come from the same `ConverterBuilder::descent_guard` call,
-    /// because a document that is too deep to parse is too deep to render as well.
+    /// The fold side of the descent guard. The parse side lives on the `Language`; both
+    /// come from the same `ConverterBuilder::descent_guard` call, because a document
+    /// that is too deep to parse is too deep to render as well.
     descent_guard: StdDescentGuardInit,
 }
 
@@ -225,7 +224,7 @@ impl Converter {
     pub fn standard() -> Converter {
         // The only inputs are techxt's own tables, so a failure here is a bug in this
         // crate rather than anything a caller did — there is no error for a caller to
-        // handle, which is why the plan makes this constructor infallible.
+        // handle, which is why this constructor is infallible.
         Converter::builder()
             .build()
             .expect("techxt's own definitions are well-formed")
@@ -258,12 +257,11 @@ impl Converter {
     /// The tree's language is whatever parsed it: any [`RenderLang`], which is every
     /// latexlike language whose sources are origin-tagged and whose body slots are
     /// marked. A converter's own [`language`](Self::language) is [`LatexlikeXp`], and a
-    /// tree it parsed is the inferred case; but rendering reads *payloads* (PLAN.md
-    /// §1.6) and no techy-xp facility, so a tree parsed by anybody's latexlike language
-    /// — plain techy's [`Latexlike`](techy::latexlike::Latexlike), a language of your
-    /// own — converts through the same rules. What such a tree cannot carry is techxt's
-    /// rules *inside* its specs, so its constructs are matched by name instead (PLAN.md
-    /// §10.3 step 3).
+    /// tree it parsed is the inferred case; but rendering reads *payloads* and no
+    /// techy-xp facility, so a tree parsed by anybody's latexlike language — plain
+    /// techy's [`Latexlike`](techy::latexlike::Latexlike), a language of your own —
+    /// converts through the same rules. What such a tree cannot carry is techxt's rules
+    /// *inside* its specs, so its constructs are matched by name instead.
     pub fn tree_to_text<LLL: RenderLang>(&self, tree: &NodeTree<LLL>) -> Conversion {
         let (flow, diagnostics) = self.tree_to_flow(tree);
         let (text, regions) = self.lay_out(&flow);
@@ -295,7 +293,7 @@ impl Converter {
         let mut flow = match result {
             Ok(flow) => flow,
             // The fold's only abort is the descent guard's refusal (the recomposer
-            // itself cannot fail). PLAN.md §10.4: empty output plus an error diagnostic.
+            // itself cannot fail): empty output plus an error diagnostic.
             Err(error) => {
                 renderer.abort(alloc::format!("{error}"));
                 Flow::new()
@@ -433,8 +431,7 @@ fn merge(
 }
 
 /// A parse diagnostic as techxt reports it: techy-xp's **refusals** demoted from error
-/// severity to warning, everything else exactly as techy raised it (PLAN.md §10.6, as
-/// amended for M9 phase 3).
+/// severity to warning, everything else exactly as techy raised it.
 ///
 /// # Why techxt overrules the severity techy-xp chose
 ///
@@ -516,7 +513,7 @@ impl techy::error::DiagnosticInfo for SuppressedSurplus {
     const IDENTIFIER: &'static str = "techxt.diagnostics.suppressed-surplus";
 }
 
-/// Builds a [`Converter`] (PLAN.md §11.2).
+/// Builds a [`Converter`].
 ///
 /// Every [`Options`] field has a setter here, so the common case never needs to name
 /// the options struct:
@@ -590,7 +587,7 @@ impl ConverterBuilder {
         }
     }
 
-    /// Use these definitions instead of the shipped ones (PLAN.md §11.2).
+    /// Use these definitions instead of the shipped ones.
     ///
     /// Everything the converter knows about macros, environments and specials comes
     /// from here — both how they parse and how they render. Categories shadow in push
@@ -604,7 +601,7 @@ impl ConverterBuilder {
     }
 
     /// Configure techy's descent guard, which is what keeps a pathologically nested
-    /// document from costing the process its stack (DECISIONS.md D9).
+    /// document from costing the process its stack.
     ///
     /// The choice is relayed to **both** sides: the parser, which spends stack per
     /// syntactic nesting level, and the renderer's fold, which spends it per tree
@@ -644,8 +641,8 @@ impl ConverterBuilder {
         self
     }
 
-    /// Render a macro with `rule` instead of whatever its definition says (PLAN.md
-    /// §10.3 step 1). The name carries no escape character.
+    /// Render a macro with `rule` instead of whatever its definition says. The name
+    /// carries no escape character.
     pub fn override_macro(mut self, name: impl Into<Box<str>>, rule: TextRule) -> ConverterBuilder {
         self.overrides
             .push((CallableKind::Macro, name.into(), rule));
@@ -694,9 +691,9 @@ impl ConverterBuilder {
     /// # It decides the fate of an unknown command too
     ///
     /// A command no definition claims cannot be shaped into an invocation by the parser,
-    /// so what happens to it is a *parsing* question (DECISIONS.md D10). Under the
-    /// default [`Tolerant`](Recovery::Tolerant) techxt registers a catch-all provider
-    /// that resolves every command as an argument-less callable, and `\foo` converts to
+    /// so what happens to it is a *parsing* question. Under the default
+    /// [`Tolerant`](Recovery::Tolerant) techxt registers a catch-all provider that
+    /// resolves every command as an argument-less callable, and `\foo` converts to
     /// whatever [`Options::unknown_macro`] says, with a `techxt.unknown-macro` warning.
     /// Under [`Strict`](Recovery::Strict) the catch-all is *not* registered, so an
     /// unknown command is a hard parse error and
@@ -710,7 +707,7 @@ impl ConverterBuilder {
     }
 
     /// Decide the fate of a command no definition claims, independently of
-    /// [`recovery`](Self::recovery) (DECISIONS.md D10).
+    /// [`recovery`](Self::recovery).
     ///
     /// The default, [`UnknownMacroResolution::FollowRecovery`], pairs the two: tolerant
     /// parses accept unknown commands and strict ones refuse them.
@@ -743,8 +740,7 @@ impl ConverterBuilder {
         self
     }
 
-    /// Decide whether the macro-defining commands are *honoured* or only *declared*
-    /// (PLAN.md §16 M9).
+    /// Decide whether the macro-defining commands are *honoured* or only *declared*.
     ///
     /// The default, [`MacroDefinitions::Honored`], makes `\newcommand`, `\def` and their
     /// relatives define macros that later uses expand — and registers techy-xp's
@@ -783,9 +779,8 @@ impl ConverterBuilder {
         self
     }
 
-    /// How deeply one expansion may nest inside another before the reader refuses
-    /// (PLAN.md §16 M9). Default
-    /// [`DEFAULT_EXPANSION_DEPTH_LIMIT`](Self::DEFAULT_EXPANSION_DEPTH_LIMIT), 64.
+    /// How deeply one expansion may nest inside another before the reader refuses.
+    /// Default [`DEFAULT_EXPANSION_DEPTH_LIMIT`](Self::DEFAULT_EXPANSION_DEPTH_LIMIT), 64.
     ///
     /// A macro whose body invokes a macro whose body invokes a macro is three frames
     /// deep. Reaching the limit costs *that* expansion and nothing else: the reader
@@ -812,8 +807,7 @@ impl ConverterBuilder {
         self
     }
 
-    /// How many expansions one parse may start before the reader refuses (PLAN.md §16
-    /// M9). Default
+    /// How many expansions one parse may start before the reader refuses. Default
     /// [`DEFAULT_EXPANSION_COUNT_LIMIT`](Self::DEFAULT_EXPANSION_COUNT_LIMIT), 2 000.
     ///
     /// One macro invocation is one expansion, so this is a ceiling on how much expanded
@@ -870,7 +864,7 @@ impl ConverterBuilder {
         self
     }
 
-    /// Build the converter, validating the definitions (PLAN.md §10.2).
+    /// Build the converter, validating the definitions.
     pub fn build(self) -> Result<Converter, BuildError> {
         let ConverterBuilder {
             options,
@@ -887,7 +881,7 @@ impl ConverterBuilder {
 
         let definitions = definitions.unwrap_or_else(crate::defs::standard);
         // The definitions never see the recovery mode: what they need is the answer,
-        // and resolving `FollowRecovery` is the builder's job (DECISIONS.md D10).
+        // and resolving `FollowRecovery` is the builder's job.
         let unknown_macro_fallback = match unknown_macro_resolution {
             UnknownMacroResolution::FollowRecovery => recovery == Recovery::Tolerant,
             UnknownMacroResolution::Accept => true,
@@ -905,13 +899,12 @@ impl ConverterBuilder {
         //
         // The latexlike driver carries the parse-time behavior; wrapping it in
         // `XpDriver` is what installs the expanding token reader macro definitions are
-        // honored through (PLAN.md §16 M9), and it does so whichever way
-        // `macro_definitions` went: with no definer seeded the reader has nothing to
-        // expand and parses byte for byte as the bare `LatexlikeDriver` did — techy-xp's
-        // lockstep property. The two expansion budgets are techxt's own, lower than
-        // techy-xp's defaults for the reason `expansion_count_limit` gives. The
-        // resolver is handed to the wrapper, not the inner driver: the wrapper decides
-        // where it is needed.
+        // honored through, and it does so whichever way `macro_definitions` went: with
+        // no definer seeded the reader has nothing to expand and parses byte for byte as
+        // the bare `LatexlikeDriver` did — techy-xp's lockstep property. The two
+        // expansion budgets are techxt's own, lower than techy-xp's defaults for the
+        // reason `expansion_count_limit` gives. The resolver is handed to the wrapper,
+        // not the inner driver: the wrapper decides where it is needed.
         let mut driver = XpDriver::wrapping(LatexlikeDriver::new(recovery))
             .with_expansion_depth_limit(expansion_depth_limit)
             .with_expansion_count_limit(expansion_count_limit);
@@ -966,7 +959,7 @@ impl ConverterBuilder {
     }
 }
 
-/// Per-option setters, one per [`Options`] field (PLAN.md §11.2).
+/// Per-option setters, one per [`Options`] field.
 impl ConverterBuilder {
     /// See [`Options::math_mode`].
     pub fn math_mode(mut self, math_mode: MathMode) -> ConverterBuilder {
@@ -1053,7 +1046,7 @@ impl ConverterBuilder {
     }
 }
 
-/// Why a converter could not be built (PLAN.md §10.2).
+/// Why a converter could not be built.
 ///
 /// Every definition is validated once, here, rather than failing halfway through a
 /// document: a template that names an argument the definition does not declare is a
@@ -1123,7 +1116,7 @@ impl From<FinalizeError> for BuildError {
     }
 }
 
-/// Everything a conversion can be told to do differently (PLAN.md §11.3).
+/// Everything a conversion can be told to do differently.
 ///
 /// Deliberately *not* here: whitespace behaviour. LaTeX's whitespace semantics are
 /// exact, techxt implements them, and a knob would only ever make the output less
@@ -1208,7 +1201,7 @@ impl Default for Options {
     }
 }
 
-/// How formulas are rendered (PLAN.md §9.5).
+/// How formulas are rendered.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MathMode {
     /// Unicode symbols, unicode scripts, font alphabets — *and* the joiner, which
@@ -1225,7 +1218,7 @@ pub enum MathMode {
     Source,
 }
 
-/// How headings are rendered (PLAN.md §9.2).
+/// How headings are rendered.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum HeadingStyle {
     /// A section number, then the title, then a rule of underline characters. The
@@ -1240,7 +1233,7 @@ pub enum HeadingStyle {
     Plain,
 }
 
-/// Where a footnote's text goes (PLAN.md §9.8).
+/// Where a footnote's text goes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum FootnoteStyle {
     /// A marker in the text, and the notes gathered into a block at the end. The
@@ -1253,7 +1246,7 @@ pub enum FootnoteStyle {
     Skip,
 }
 
-/// The markers lists number and bullet themselves with (PLAN.md §9.4).
+/// The markers lists number and bullet themselves with.
 ///
 /// Both arrays *cycle*: a list nested deeper than the array is long starts over at the
 /// beginning, so no nesting depth is ever without a marker.
@@ -1301,7 +1294,7 @@ pub struct EnumFormat {
     pub wrap: CounterWrap,
 }
 
-/// What an `enumerate` counter counts in (PLAN.md §9.4).
+/// What an `enumerate` counter counts in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CounterStyle {
     /// `1`, `2`, `3`.
@@ -1316,7 +1309,7 @@ pub enum CounterStyle {
     UpperRoman,
 }
 
-/// What punctuates an `enumerate` counter (PLAN.md §9.4).
+/// What punctuates an `enumerate` counter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CounterWrap {
     /// `1.`
@@ -1325,8 +1318,7 @@ pub enum CounterWrap {
     Parens,
 }
 
-/// How the definitions decide the fate of a command no category defines
-/// (DECISIONS.md D10).
+/// How the definitions decide the fate of a command no category defines.
 ///
 /// This is a *parsing* setting, chosen with
 /// [`ConverterBuilder::unknown_macro_resolution`] alongside
@@ -1357,7 +1349,7 @@ pub enum UnknownMacroResolution {
     Reject,
 }
 
-/// Whether the macro-defining commands are honoured or only declared (PLAN.md §16 M9).
+/// Whether the macro-defining commands are honoured or only declared.
 ///
 /// This is a *parsing* setting, chosen with
 /// [`ConverterBuilder::macro_definitions`]: whether `\newcommand\greet{Hi}` installs a
@@ -1378,7 +1370,7 @@ pub enum UnknownMacroResolution {
 /// techxt reports each of them as a **warning**, and reports it once — in place of the
 /// `techxt.unknown-macro` the same construct would otherwise also earn, since the refusal
 /// names the missing feature and the unknown-macro warning would only say that techxt has
-/// no rule for it (PLAN.md §10.6).
+/// no rule for it.
 ///
 /// # What stays out either way
 ///
@@ -1400,7 +1392,7 @@ pub enum MacroDefinitions {
     Declared,
 }
 
-/// What to do with a macro no rule renders (PLAN.md §10.6).
+/// What to do with a macro no rule renders.
 ///
 /// Whichever it is, a `techxt.unknown-macro` diagnostic is raised — a warning, not an
 /// error: the document converted, one construct in it did not.
@@ -1436,7 +1428,7 @@ pub enum UnknownMacroPolicy {
     Placeholder,
 }
 
-/// What to do with an environment no rule renders (PLAN.md §10.6).
+/// What to do with an environment no rule renders.
 ///
 /// Whichever it is, a `techxt.unknown-environment` diagnostic is raised.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1451,7 +1443,7 @@ pub enum UnknownEnvPolicy {
     KeepSource,
 }
 
-/// What to do with a specials construct no rule renders (PLAN.md §10.6).
+/// What to do with a specials construct no rule renders.
 ///
 /// Whichever it is, a `techxt.unknown-specials` diagnostic is raised.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

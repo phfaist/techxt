@@ -1,4 +1,4 @@
-//! The font category: `\textbf`, `\mathbb`, `\emph`, `\operatorname` (PLAN.md §9.5).
+//! The font category: `\textbf`, `\mathbb`, `\emph`, `\operatorname`.
 //!
 //! Unicode has thirteen mathematical alphabets, and techxt uses them to show a font
 //! change in plain text: `\textbf{bold}` really does come out as `𝐛𝐨𝐥𝐝`. What is
@@ -13,7 +13,7 @@
 //! has already become `𝑥`, which is outside the range the bold mapping knows, and the
 //! bold would silently vanish.
 //!
-//! And the mapping applies to **document characters only** (DECISIONS.md D6). Text a
+//! And the mapping applies to **document characters only**. Text a
 //! rule produced — `\sin` → `sin`, `\alpha` → `α` — never passes through an alphabet,
 //! so an operator name stays upright next to an italic variable.
 //!
@@ -31,10 +31,9 @@
 //!
 //! # Upright is a style
 //!
-//! `\textrm`, `\mathrm` and `\operatorname` install
-//! [`FontStyleKind::Upright`] (DECISIONS.md
-//! D7), which maps letters to themselves but is still a style: a nested `\mathbf`
-//! overrides it normally, so `\mathrm{a\mathbf{b}}` renders the `b` in bold.
+//! `\textrm`, `\mathrm` and `\operatorname` install [`FontStyleKind::Upright`], which
+//! maps letters to themselves but is still a style: a nested `\mathbf` overrides it
+//! normally, so `\mathrm{a\mathbf{b}}` renders the `b` in bold.
 //!
 //! LaTeX varies family, weight and shape independently; unicode's alphabets do not, so
 //! each entry here selects a whole font. `\textmd` — which in LaTeX only takes the
@@ -48,7 +47,7 @@ use crate::render::{NodeView, RenderCx, RenderError};
 
 use super::handler;
 
-/// The font category (PLAN.md §12.1).
+/// The font category.
 pub fn category() -> Category {
     let mut category = Category::new("fontstyles");
 
@@ -73,7 +72,7 @@ pub fn category() -> Category {
         );
     }
     // Small capitals have no alphabet of their own, and techxt never changes a
-    // letter's case (PLAN.md §9.2 says so for headings and the rule holds here too),
+    // letter's case (not in headings, and not here either),
     // so the argument is rendered as it stands.
     category.add_macro(
         MacroDef::new("textsc")

@@ -19,8 +19,7 @@ use super::boxes::{baseline_join, MathBox};
 use super::segment::classify_plain;
 
 /// The delimiters a sub-expression is wrapped in when its extent would otherwise be
-/// unclear ([`Options::math_expression_in`](crate::Options::math_expression_in),
-/// PLAN.md §11.3).
+/// unclear ([`Options::math_expression_in`](crate::Options::math_expression_in)).
 ///
 /// It lives here, next to the joiner that acts on it, and reaches the joiner as a
 /// parameter ([`join_atoms_with`]) because this module reads no options of its own.
@@ -191,7 +190,7 @@ fn separator(left: AtomClass, right: AtomClass, text_left: &str, text_right: &st
 /// 1. Another **script attaches to the same base** — `x_{abc}^2`, where a space would
 ///    not tell the subscript and the superscript apart.
 /// 2. The contents **contain a space**, so a space around them would not be seen.
-/// 3. The contents are themselves **open-ended**. Per DECISIONS.md D5 the inner class
+/// 3. The contents are themselves **open-ended**. The inner class
 ///    is computed here rather than carried on the atom, by classifying the inner text;
 ///    a plain classification never yields `OpenEnd`, so in practice this arm is the
 ///    seam a future non-default inner class would use, exactly as in v3 where no call
@@ -235,7 +234,7 @@ fn realize(
                 let mut text = String::from(&**prefix);
                 text.push_str(&wrapped);
                 // The wrapped class pair defaults to (cls.0, Close): a closing
-                // delimiter is now the last thing in the rendering (DECISIONS.md D5).
+                // delimiter is now the last thing in the rendering.
                 (MathBox::single_line(text), atom.cls.0, AtomClass::Close)
             } else {
                 let mut text = String::from(&**prefix);
@@ -297,7 +296,7 @@ fn reorder_scripts(atoms: &mut [Atom]) {
     }
 }
 
-/// Join a sequence of atoms into a finished formula (PLAN.md §9.5).
+/// Join a sequence of atoms into a finished formula.
 ///
 /// The default [`MathWrapDelims::Parens`] are used for sub-expressions that need
 /// delimiters; call [`join_atoms_with`] to choose others, and to obtain the class pair

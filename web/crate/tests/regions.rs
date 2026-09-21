@@ -1,4 +1,4 @@
-//! Math regions as the app receives them (web/PLAN.md §4.3, §4.8).
+//! Math regions as the app receives them.
 //!
 //! The library reports *every* preformatted run of its output — a `verbatim` body, a
 //! construct kept as source, a rendered display formula, a source-mode formula — and

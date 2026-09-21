@@ -1,6 +1,5 @@
 /**
- * The library: an automatic log of the documents that have been through the app
- * (web/PLAN.md §6.10).
+ * The library: an automatic log of the documents that have been through the app.
  *
  * This file is the model and the policy — the shape of an entry, what a read of an
  * untrusted one is allowed to produce, when a new entry begins, and what the app is
@@ -64,7 +63,7 @@ export const MAX_ENTRY_SOURCE = 512 * 1024;
 export const PREVIEW_MAX_LINES = 6;
 export const PREVIEW_MAX_CHARS = 400;
 
-/** A gap this long between conversions ends the editing session (§6.10). */
+/** A gap this long between conversions ends the editing session. */
 export const IDLE_GAP_MS = 30 * 60 * 1000;
 
 /** How long the current entry waits after a keystroke before it is written. */
@@ -77,7 +76,7 @@ export const QUOTA_WARN_RATIO = 0.8;
 
 /**
  * How much of the document one input event may remove before it is read as a
- * *replacement* rather than an edit, and the draft forks into a new entry (§6.10).
+ * *replacement* rather than an edit, and the draft forks into a new entry.
  *
  * Low on purpose. A wrong fork costs one extra entry in a log that is filterable and
  * is only ever pruned deliberately; a wrong non-fork overwrites the document the user
@@ -126,7 +125,7 @@ export function removedByEdit(before: string, after: string): number {
 
 /**
  * Whether one input event replaced the document rather than edited it — the safety
- * net under the explicit verbs (§6.10).
+ * net under the explicit verbs.
  *
  * It is deliberately per *event*: the comparison is against the text as it was an
  * instant ago, never cumulatively against what the entry holds. A cumulative rule
@@ -165,7 +164,7 @@ export function titleIsAutomatic(entry: LibraryEntry): boolean {
   return entry.title === entryTitle(entry.source, new Date(entry.createdAt));
 }
 
-/** A few lines of rendered output, for the card and the export (§6.10). */
+/** A few lines of rendered output, for the card and the export. */
 export function makePreview(text: string): string {
   const lines = text.split('\n').slice(0, PREVIEW_MAX_LINES).join('\n');
   const clipped = lines.length > PREVIEW_MAX_CHARS ? lines.slice(0, PREVIEW_MAX_CHARS) : lines;
@@ -331,7 +330,7 @@ export function byRecency(entries: readonly LibraryEntry[]): LibraryEntry[] {
   return [...entries].sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt);
 }
 
-/** The all/starred filter and the text search, over title and source (§6.10). */
+/** The all/starred filter and the text search, over title and source. */
 export function filterEntries(
   entries: readonly LibraryEntry[],
   query: string,
@@ -497,7 +496,7 @@ function failureOf(error: unknown): WriteFailure {
 /* ------------------------------------------------------- sealing an entry */
 
 /**
- * Where the document on screen stands in the log (§6.10).
+ * Where the document on screen stands in the log.
  *
  * *Sealing* is the one primitive under New, Save and ★: a sealed entry stops absorbing
  * edits, and the next change to the document starts a new one. It is a fact about the
@@ -513,7 +512,7 @@ export interface SessionState {
 }
 
 /**
- * What one input event did to the session (§6.10).
+ * What one input event did to the session.
  *
  * `from` is always an entry the document has just *left*, and is what the app offers
  * to go back to: for a fork, {@link Library.mergeBack} folds the new draft into it;
@@ -525,7 +524,7 @@ export type EditOutcome =
   | { kind: 'forked'; from: string };
 
 /**
- * What opening `entryId` from the pane does to the session (§6.10).
+ * What opening `entryId` from the pane does to the session.
  *
  * Everything in the log is sealed except the entry the session is writing into, so
  * opening one is only *not* a seal when it is that entry: looking at the draft you are
@@ -543,7 +542,7 @@ export function adoptionOnOpen(state: SessionState, entryId: string): 'open' | '
   return state.entryId === entryId && !state.sealed ? 'open' : 'sealed';
 }
 
-/** What the input pane's header says about {@link SessionState}, in words (§6.10). */
+/** What the input pane's header says about {@link SessionState}, in words. */
 export interface SessionLabel {
   /** The short form, beside the pane's title. */
   label: string;
@@ -600,10 +599,10 @@ export interface LibraryInit {
    * entry, an idle gap. The app puts it in the input pane's header, so that the entry
    * being written to is visible rather than guessed at, and keeps the unsealed half of
    * it in `localStorage` so a reload continues the session rather than starting a
-   * second entry for the same document (§6.10).
+   * second entry for the same document.
    */
   onSession?(state: SessionState): void;
-  /** A write failed and the entry was not stored. The app says so, loudly (§6.10). */
+  /** A write failed and the entry was not stored. The app says so, loudly. */
   onWriteFailure?(failure: WriteFailure): void;
   /** The document crossed {@link MAX_ENTRY_SOURCE}, and back. */
   onOversize?(oversize: boolean): void;
@@ -614,7 +613,7 @@ export interface LibraryInit {
 export interface Library {
   /** Whether there is anywhere to log to at all. */
   readonly available: boolean;
-  /** Whether the user asked the app to stop logging (a declined prune, §6.10). */
+  /** Whether the user asked the app to stop logging (a declined prune). */
   readonly paused: boolean;
   /** The entry this editing session is writing into, if it has one and it is open. */
   readonly currentId: string | null;
@@ -627,7 +626,7 @@ export interface Library {
   /** The document was replaced wholesale: the next `record` starts a new entry. */
   beginNewEntry(): void;
   /**
-   * Another tab is writing into this entry now, so this one stops (§6.10).
+   * Another tab is writing into this entry now, so this one stops.
    *
    * The same primitive as {@link beginNewEntry} for a different reason, and the
    * reasoning behind it is the reasoning behind every other fork in this file: what
@@ -657,7 +656,7 @@ export interface Library {
   adoptSealed(entry: LibraryEntry): void;
   /**
    * Stop this entry absorbing edits, and hand it back: what New, Save and ★ all do
-   * first (§6.10).
+   * first.
    *
    * Whatever is pending is written into it now, so the entry holds the document as it
    * was when the button was pressed. The *next* entry is not created here — it is
@@ -696,7 +695,7 @@ export interface Library {
   apply(put: readonly LibraryEntry[], remove: readonly string[]): Promise<boolean>;
   list(): Promise<LibraryEntry[]>;
   get(id: string): Promise<LibraryEntry | null>;
-  /** Stop logging, because the user declined to give anything up (§6.10). */
+  /** Stop logging, because the user declined to give anything up. */
   pause(): void;
   resume(): void;
   dispose(): void;
@@ -1000,7 +999,7 @@ export function createLibrary(init: LibraryInit): Library {
     record(source, options, preview) {
       if (!backend || paused) return;
       // An empty document is not a document: the log starts at the first conversion
-      // of something (§6.10).
+      // of something.
       if (source.trim() === '') return;
       if (sealed !== null) {
         // The kept version, still on screen: there is nothing to write, and writing
@@ -1122,7 +1121,7 @@ export function createLibrary(init: LibraryInit): Library {
         if (stray !== null && stray !== id) {
           const written = await read(stray);
           // Never a starred entry, whatever else is true: starring is the user saying
-          // this one matters, and no automatic mechanism may override it (§6.10).
+          // this one matters, and no automatic mechanism may override it.
           if (written && !written.starred) {
             try {
               await backend.remove([stray]);
@@ -1139,7 +1138,7 @@ export function createLibrary(init: LibraryInit): Library {
     async starCurrent(source, options, preview) {
       if (!backend) return null;
       // ★ seals as well as stars — but only once: on an entry that is already sealed
-      // it is the flag and nothing else (§6.10).
+      // it is the flag and nothing else.
       const entry = sealed !== null ? await read(sealed.id) : await sealDraft(source, options, preview);
       if (!entry) return null;
       const updated = await serialise(() =>

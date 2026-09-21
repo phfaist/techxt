@@ -1,4 +1,4 @@
-# Continuous integration — the gates every push has to clear (PLAN.md §16 M0).
+# Continuous integration — the gates every push has to clear.
 #
 # The toolchain is set up with the rustup that GitHub's runner images already ship,
 # rather than a third-party setup action: the whole toolchain story is then three
@@ -22,8 +22,8 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
-# The cargo workspace is `rust/`, a sibling of the future `python/` and `js/` roots
-# (PLAN.md §2), so every cargo invocation runs from there.
+# The cargo workspace is `rust/`, a sibling of the future `python/` and `js/` roots,
+# so every cargo invocation runs from there.
 defaults:
   run:
     working-directory: rust
@@ -82,7 +82,7 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
           restore-keys: cargo-${{ runner.os }}-
       # Unit tests, the integration tests under techxt/tests/, and the doctests —
-      # every public API example in the docs is executed here (PLAN.md §14.4).
+      # every public API example in the docs is executed here.
       - name: Test the workspace
         run: cargo test --workspace
 
@@ -154,7 +154,7 @@ jobs:
             ~/.cargo/git/db
           key: cargo-nostd-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
           restore-keys: cargo-nostd-${{ runner.os }}-
-      # The library is `#![no_std]` outside of `cfg(test)` (PLAN.md §2). This target
+      # The library is `#![no_std]` outside of `cfg(test)`. This target
       # has no std at all, so any `std::` path or std-linking dependency fails the
       # build here; it also supports atomics, which techy's `Arc`-shared objects need.
       # Only the library: `techxt-cli` is a std program by design.

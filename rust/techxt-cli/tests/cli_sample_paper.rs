@@ -1,4 +1,4 @@
-//! The CLI over a realistic paper, with its output frozen (PLAN.md §16, M7).
+//! The CLI over a realistic paper, with its output frozen.
 //!
 //! `tests/fixtures/paper.tex` is a small but complete article: `\documentclass` and
 //! preamble, `\maketitle`, an abstract, numbered sections and a subsection, inline and
@@ -87,10 +87,10 @@ fn the_sample_paper_converts_without_a_single_diagnostic() {
     // Frozen deliberately, and worth stating plainly: a complete, ordinary LaTeX file
     // converts **silently** and exits 0. Everything this paper uses — `document`
     // included, and `\and` between its two authors — is in `techxt::defs`, so nothing
-    // reaches the unknown policy (PLAN.md §12.2) and nothing reaches techy's own
-    // unknown-environment error. This is the property that makes the exit code worth
-    // reading: a non-zero one means the document really did have something wrong with
-    // it, not that techxt has a gap.
+    // reaches the unknown policy and nothing reaches techy's own unknown-environment
+    // error. This is the property that makes the exit code worth reading: a non-zero one
+    // means the document really did have something wrong with it, not that techxt has a
+    // gap.
     let output = Command::new(env!("CARGO_BIN_EXE_techxt"))
         .arg("--wrap")
         .arg("78")

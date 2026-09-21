@@ -1,5 +1,4 @@
-//! Completion: the shipped symbol table, the document scan, and the merged answer
-//! (web/PLAN.md §4.9).
+//! Completion: the shipped symbol table, the document scan, and the merged answer.
 //!
 //! [`complete_native`] is the whole of it. Like [`crate::diag::convert_native`] it takes
 //! and returns ordinary Rust, so everything interesting here is testable without wasm;
@@ -131,7 +130,7 @@ impl From<CallableKind> for CompletionKindDto {
     }
 }
 
-/// Every name techxt ships, read out of its definitions once and kept (web/PLAN.md §4.9).
+/// Every name techxt ships, read out of its definitions once and kept.
 ///
 /// # Why this is not a `SymbolIndex`
 ///
@@ -242,8 +241,7 @@ impl Symbol {
     }
 }
 
-/// What `latex` defines for itself: the names of its own macros and environments
-/// (web/PLAN.md §4.9).
+/// What `latex` defines for itself: the names of its own macros and environments.
 ///
 /// The entries come back in document order, with `from_document: true` and
 /// `replacement: None` — the scan recognizes a definition, it does not evaluate one —
@@ -280,7 +278,7 @@ pub fn document_definitions(latex: &str) -> Vec<CompletionDto> {
     found
 }
 
-/// The suggestions for `prefix`, merged from both sources and ranked (web/PLAN.md §4.9).
+/// The suggestions for `prefix`, merged from both sources and ranked.
 ///
 /// `prefix` is the name being typed, without the escape character; one leading `\` is
 /// accepted and ignored, because the app slices the prefix out of its own buffer and the
@@ -376,8 +374,7 @@ fn curated_rank(entry: &CompletionDto) -> usize {
         .unwrap_or(usize::MAX)
 }
 
-/// The macros people actually type, in the order a chip row should prefer them
-/// (web/PLAN.md §4.9).
+/// The macros people actually type, in the order a chip row should prefer them.
 ///
 /// **A ranking overlay, never a source of entries.** Nothing is offered because it
 /// appears here: every suggestion still comes out of the [`SymbolTable`] or the
@@ -519,7 +516,7 @@ static CURATED: [&str; 99] = [
     "newcommand",
 ];
 
-/// The curated names, in the curated order (web/PLAN.md §4.9).
+/// The curated names, in the curated order.
 ///
 /// This is a ranking overlay and never a source of entries: a name here is offered only
 /// if techxt defines it, and one that techxt does not define simply never appears. That

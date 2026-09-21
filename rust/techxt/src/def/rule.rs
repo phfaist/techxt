@@ -46,9 +46,9 @@ impl CallableKind {
     ///
     /// Read through the language's own callable-type roles
     /// ([`LatexlikeCallableType`]) rather than by matching techy's concrete
-    /// [`CallableType`], so that a tree of any latexlike language answers (PLAN.md
-    /// §11.1). A callable playing none of the three roles is one techxt has no
-    /// vocabulary for, and answers `None` exactly as an unknown [`CallableType`] does.
+    /// [`CallableType`], so that a tree of any latexlike language answers. A callable
+    /// playing none of the three roles is one techxt has no vocabulary for, and answers
+    /// `None` exactly as an unknown [`CallableType`] does.
     pub fn of<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> Option<CallableKind> {
         let callable_type = node.callable_type()?;
         if callable_type.is_macro() {
@@ -73,7 +73,7 @@ impl CallableKind {
     }
 }
 
-/// What one construct renders to (PLAN.md §10.4).
+/// What one construct renders to.
 ///
 /// Four of the five variants are data, so that the overwhelming majority of a
 /// definitions database is a table rather than code: `\alpha` is a
@@ -102,7 +102,7 @@ impl CallableKind {
 pub enum TextRule {
     /// Fixed replacement text: `\alpha` → `α`, `\LaTeX` → `LaTeX`.
     Literal(Cow<'static, str>),
-    /// Replacement text built from the construct's arguments (PLAN.md §10.5).
+    /// Replacement text built from the construct's arguments.
     Template(Template),
     /// Render nothing, and do not descend into the construct.
     Skip,
@@ -112,7 +112,7 @@ pub enum TextRule {
     Handler(Arc<dyn TextHandler>),
 }
 
-/// Rendering code for one construct (PLAN.md §10.4).
+/// Rendering code for one construct.
 ///
 /// A handler is called with a [`NodeView`] of the node it is rendering and a
 /// [`RenderCx`], which is its whole interface to the fold: it reads arguments through the context (which folds

@@ -1,4 +1,4 @@
-//! `defs::verbatim`: the `verbatim` environment family and `\verb` (PLAN.md §9.8).
+//! `defs::verbatim`: the `verbatim` environment family and `\verb`.
 //!
 //! What these are about is that raw content survives *exactly*: the layout engine never
 //! wraps it, never trims it, never collapses its spaces and never styles its letters.
@@ -58,8 +58,8 @@ fn verb_is_one_unbreakable_word() {
 
 #[test]
 fn verb_keeps_the_spaces_at_its_edges() {
-    // DECISIONS.md D13: raw content is exactly the case where a line legitimately ends
-    // in a space, because that space is content and not collapsible whitespace.
+    // Raw content is exactly the case where a line legitimately ends in a space,
+    // because that space is content and not collapsible whitespace.
     assert_eq!(text(r"a\verb| x |b"), "a x b\n");
 }
 
@@ -103,7 +103,7 @@ fn a_listing_line_that_starts_with_a_bracket_is_not_an_option_list() {
     // Everything after `\begin{lstlisting}` is raw listing text, so the option list is
     // only an option list when it comes *immediately* — otherwise this first line would
     // be parsed as options and silently eaten (pylatexenc's `allow_pre_space=False`,
-    // DECISIONS.md D8's `require_adjacent`).
+    // techxt's `require_adjacent`).
     assert_eq!(
         text("\\begin{lstlisting}\n[1, 2, 3]\nrest\n\\end{lstlisting}"),
         "[1, 2, 3]\nrest\n"

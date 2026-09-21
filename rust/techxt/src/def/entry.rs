@@ -1,4 +1,4 @@
-//! The entry builders (PLAN.md §10.1): one definition, both sides.
+//! The entry builders: one definition, both sides.
 //!
 //! The public prose lives on [`MacroDef`], because this module is private and its own
 //! documentation is never rendered.
@@ -106,7 +106,7 @@ impl Args {
 /// fire in math.
 type Modes = Option<Vec<Mode>>;
 
-/// A macro definition (PLAN.md §10.1).
+/// A macro definition.
 ///
 /// One entry describes a construct completely — how it parses *and* how it renders —
 /// and reads as one line of a table:
@@ -198,8 +198,7 @@ impl MacroDef {
     }
 
     /// Register a techy [`CallableSpec`](techy::core::specs::CallableSpec) of `source`'s
-    /// making instead of the one techxt builds from this entry's arguments
-    /// (DECISIONS.md D15).
+    /// making instead of the one techxt builds from this entry's arguments.
     ///
     /// This is [`arg_spec`](Self::arg_spec)'s hatch one level up: it hands the *whole*
     /// spec to a construct techy itself implements, which is what `\input` needs —
@@ -210,10 +209,10 @@ impl MacroDef {
     /// [`CallableSpecSource`]), in which case this entry registers exactly what it would
     /// have without the hatch. Either way the entry's [`rule`](Self::rule) still applies:
     /// a foreign spec cannot carry a rule into the tree, so the rule is found by name at
-    /// dispatch step 3 instead of by downcast at step 2 (PLAN.md §10.3). The arguments
-    /// declared with [`arg`](Self::arg) still name what the foreign spec parses, for the
-    /// templates and handlers that read them — a foreign spec whose argument names
-    /// differ is why a handler should tolerate both spellings.
+    /// dispatch step 3 instead of by downcast at step 2. The arguments declared with
+    /// [`arg`](Self::arg) still name what the foreign spec parses, for the templates and
+    /// handlers that read them — a foreign spec whose argument names differ is why a
+    /// handler should tolerate both spellings.
     pub fn spec(mut self, source: impl CallableSpecSource + 'static) -> MacroDef {
         self.spec = Some(Arc::new(source));
         self
@@ -252,9 +251,9 @@ impl MacroDef {
     /// it decides. With the catch-all fallback registered — the default under
     /// [`Recovery::Tolerant`](crate::convert::Recovery) — a name this definition hides
     /// still resolves, as an argument-less callable, and reaches the renderer; the
-    /// renderer then finds this entry's rule in the name-keyed fallback table of
-    /// PLAN.md §10.3 step 3, which records no modes (it exists to work on trees parsed
-    /// by someone else's definitions). So a math-only symbol still renders in a
+    /// renderer then finds this entry's rule in the name-keyed fallback table (dispatch
+    /// step 3), which records no modes (it exists to work on trees parsed by someone
+    /// else's definitions). So a math-only symbol still renders in a
     /// paragraph unless the catch-all is off, which is what
     /// [`UnknownMacroResolution::Reject`](crate::convert::UnknownMacroResolution::Reject)
     /// and [`Recovery::Strict`](crate::convert::Recovery) do.
@@ -312,7 +311,7 @@ impl MacroDef {
     }
 }
 
-/// An environment definition (PLAN.md §10.1).
+/// An environment definition.
 ///
 /// Beyond arguments and a rule, an environment declares what its *body* is, which is
 /// what keeps the renderer from having to guess and what gives the parser the state it
@@ -370,8 +369,7 @@ impl EnvDef {
         self
     }
 
-    /// Parse the body as a list of `kind`, with `\item` in scope for its extent
-    /// (PLAN.md §9.4).
+    /// Parse the body as a list of `kind`, with `\item` in scope for its extent.
     ///
     /// The `\item` brought into scope is the one the definition set itself defines, so
     /// a library that customizes `\item` customizes it inside every list too.
@@ -413,8 +411,8 @@ impl EnvDef {
     }
 }
 
-/// A specials definition (PLAN.md §10.1): a construct triggered by the characters
-/// themselves — `~`, `&`, `---`, `^`, `_`.
+/// A specials definition: a construct triggered by the characters themselves — `~`,
+/// `&`, `---`, `^`, `_`.
 ///
 /// techy matches the **longest** registered trigger, and mode visibility is what keeps
 /// `---` out of math and `^` out of text.

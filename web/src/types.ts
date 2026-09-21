@@ -2,7 +2,7 @@
  * The app-level types shared by the state codec, the wiring and the UI modules.
  *
  * Three settings live here rather than in {@link OptionsPayload} because they are the
- * *app* being helpful rather than the library offering a choice (web/PLAN.md §5):
+ * *app* being helpful rather than the library offering a choice:
  * `wrap: 'fit'` measures the output pane and sends the resulting column count,
  * `math: 'mathjax'` asks the library for the formulas' source and typesets it in the
  * pane, and `todayMode: 'browser'` sends the date the browser knows where the `no_std`
@@ -14,10 +14,10 @@ import type { FontId } from './fonts';
 import type { MathMode, OptionsPayload } from './worker/protocol';
 
 /**
- * `'fit'` measures the pane (§6.5), `'off'` and `'soft'` are both the library's own
+ * `'fit'` measures the pane, `'off'` and `'soft'` are both the library's own
  * default (no wrapping at all) and differ only in what the *pane* does with the long
  * lines that result — `'off'` scrolls sideways, `'soft'` folds them to the pane's
- * width for display only (§6.3) — and a number is an explicit column count.
+ * width for display only — and a number is an explicit column count.
  *
  * `'soft'` is the one wrap value that never reaches the library: it is a property of
  * the HTML the answer is shown in, not of the answer. Copy and Download hand over the
@@ -35,9 +35,9 @@ export const WRAP_PRESETS: readonly number[] = [40, 60, 72, 80, 100, 120];
  * `'mathjax'` is to `math` what `'fit'` is to `wrap`: a value of the same control that
  * the library has never heard of. It resolves to `mathMode: 'source'`, so the library
  * re-emits each formula's own post-expansion LaTeX, and the app typesets those runs in
- * the output pane from the region table the binding reports beside the text (§4.3,
- * §6.3). The *text* is the source either way, which is why Copy and Download hand over
- * `$…$` in this mode and the control's hint says so.
+ * the output pane from the region table the binding reports beside the text. The
+ * *text* is the source either way, which is why Copy and Download hand over `$…$` in
+ * this mode and the control's hint says so.
  */
 export type MathSetting = MathMode | 'mathjax';
 
@@ -48,7 +48,7 @@ export type TodayMode = 'browser' | 'library' | 'custom';
  * Everything that changes the converted text: the library options the user changed,
  * plus the three app-level settings above. Absent means "the library's default" for
  * every {@link OptionsPayload} key, which is what keeps a share link short and lets a
- * future change of a library default be picked up rather than frozen (§6.4).
+ * future change of a library default be picked up rather than frozen.
  *
  * `wrapWidth`, `mathMode` and `today` are deliberately **not** set here — they are
  * computed from `wrap`, `math`, `todayMode` and `todayCustom` at conversion time.
@@ -76,12 +76,12 @@ export interface UiState {
   diagnosticsOpen: boolean;
   /** Which pane the mobile ⇅ Focus button maximises; `null` shows both. */
   focus: 'input' | 'output' | null;
-  /** Whether the user asked for every face to be fetched (§8.3). */
+  /** Whether the user asked for every face to be fetched. */
   keepFontsOffline: boolean;
 }
 
 /**
- * The one versioned object (§6.4). `ui` is persisted but never shared: a link
+ * The one versioned object. `ui` is persisted but never shared: a link
  * reproduces a *session*, not somebody else's window.
  */
 export interface AppState {
@@ -98,7 +98,7 @@ export interface SharedState {
   opts: AppOptions;
 }
 
-/** One of the five inlined sample documents (§6.7). */
+/** One of the five inlined sample documents. */
 export interface ExampleDoc {
   id: string;
   /** Menu entry, e.g. "A paper fragment". */

@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 """Report which codepoints of techxt's own output each display face is missing.
 
-web/PLAN.md §8.5.  With whole fonts (§8.4) and the fallback chain of §8.2 a gap is a
-cosmetic mix of faces rather than a box, so this is not a safety net: it is the
-evidence behind §8.1's selection criterion, and the one hard gate on the default face.
+With whole fonts and a CSS fallback chain behind them, a gap is a cosmetic mix of
+faces rather than a box, so this is not a safety net: it is the evidence behind the
+choice of display faces, and the one hard gate on the default face.
 
 Usage::
 
     python3 web/tools/coverage_check.py            # the report, on stdout
-    python3 web/tools/coverage_check.py --check    # the CI gate (§11 step 5)
+    python3 web/tools/coverage_check.py --check    # the CI gate
     python3 web/tools/coverage_check.py --keep DIR # also leave the generated document
 
 What it does
@@ -29,7 +29,7 @@ What it does
 `src/fonts.ts` — is missing any of them, and **warns** for the other four, writing
 their gap lists to ``$GITHUB_STEP_SUMMARY`` when that variable is set and to stdout
 otherwise.  A handful of gaps filled by the fallback chain is a documented fact about
-a face, not a bug; only a face with a large or ugly gap comes off the list of §8.1.
+a face, not a bug; only a face with a large or ugly gap comes off the list of faces.
 
 The default face has exactly two gaps today, named and justified one by one in
 ``KNOWN_DEFAULT_GAPS``, and the gate is on anything *beyond* them — which is what "not
@@ -71,7 +71,7 @@ FONTS = WEB / "fonts"
 #: The face `src/fonts.ts` names as `DEFAULT_FONT`, and the only hard gate here.
 DEFAULT_FACE = "JuliaMono-Regular.woff2"
 
-#: The interface face of web/PLAN.md §8.7 sits in the same directory and is not a
+#: The app's interface face sits in the same directory and is not a
 #: display face: it sets the app's own chrome and never renders converted text, so
 #: what it does with a fraktur alphabet is nobody's business.
 SKIP_FACES = frozenset({"Commissioner-Variable.woff2"})
@@ -281,7 +281,7 @@ def build_document() -> str:
         for base in ("a", "A", "e", "o", "n", "u", "y"):
             lines.append("\\" + name + "{" + base + "}")
         # An accent with an empty argument renders as the mark's spacing clone, which
-        # is a different codepoint again (PLAN.md §9.3).
+        # is a different codepoint again.
         lines.append("\\" + name + "{}")
 
     lines += ["", r"\section{Font styles}", ""]
@@ -400,13 +400,13 @@ def convert(document: Path) -> str:
 INVISIBLE_CATEGORIES = frozenset(("Cc", "Cf", "Zl", "Zp"))
 
 #: The gaps the default face is known and accepted to have, so that this check gates
-#: on *new* ones — which is what "not allowed to regress" means in §8.5.
+#: on *new* ones — which is what "not allowed to regress" means here.
 #:
 #: U+301A and U+301B are what `\openbracketleft` and `\openbracketright` render as:
 #: pylatexenc maps them into CJK Symbols and Punctuation rather than to the
 #: mathematical U+27E6 ⟦ and U+27E7 ⟧, which JuliaMono does have.  Two macros nobody
 #: writes, rendering to two characters a monospace face reasonably leaves to a CJK
-#: font, and the chain of §8.2 supplies them.  Every entry here has to earn its place
+#: font, and the fallback chain supplies them.  Every entry here has to earn its place
 #: in a sentence like that one; the list is not a place to put a real gap.
 KNOWN_DEFAULT_GAPS = frozenset({0x301A, 0x301B})
 

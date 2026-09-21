@@ -1,4 +1,4 @@
-//! Verbatim text (PLAN.md §9.8): the `verbatim` environment family and `\verb`.
+//! Verbatim text: the `verbatim` environment family and `\verb`.
 //!
 //! Verbatim content reaches the flow as [`Verbatim`](crate::flow::FlowItem::Verbatim)
 //! and [`InlineVerbatim`](crate::flow::FlowItem::InlineVerbatim) items, which the
@@ -9,7 +9,7 @@
 //! There is no verbatim *handler* here, and that is the point of declaring a construct
 //! once for both sides. An environment declared with
 //! [`verbatim_body`](crate::def::EnvDef::verbatim_body) parses its body as a single run
-//! of raw characters (techy's `VerbatimBehavior`, DECISIONS.md C6), and the renderer
+//! of raw characters (techy's `VerbatimBehavior`), and the renderer
 //! asks the same declaration what kind of body it is before deciding how to emit the
 //! characters it finds — so a rule of [`Content`](crate::def::TextRule::Content) is
 //! enough, and nothing has to guess from the text whether markup in it was meant
@@ -37,7 +37,7 @@ use techy_xp::lang::LatexlikeXp;
 
 use crate::def::{Category, EnvDef, MacroDef, Template, TextRule};
 
-/// The verbatim category (PLAN.md §12.1).
+/// The verbatim category.
 pub fn category() -> Category {
     let mut category = Category::new("verbatim");
     for name in ["verbatim", "verbatim*", "alltt"] {
@@ -78,7 +78,7 @@ pub fn category() -> Category {
 /// arguments is raw listing text, so a listing whose first line begins with `[` —
 /// an array literal, a Markdown link, a BibTeX-ish record — would otherwise have that
 /// line parsed as the option list and silently eaten. techy's
-/// [`require_adjacent`](OptionalGroupArgumentParser::require_adjacent) (DECISIONS.md D8)
+/// [`require_adjacent`](OptionalGroupArgumentParser::require_adjacent)
 /// says what LaTeX means here: `\begin{lstlisting}[language=C]` has options,
 /// `\begin{lstlisting}` followed by a newline and a `[` does not. pylatexenc spells the
 /// same requirement `allow_pre_space=False`, for the same reason.

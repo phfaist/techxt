@@ -1,6 +1,5 @@
 /**
- * When the completion row fires, what it offers, and where the Tab cycle goes next
- * (web/PLAN.md §6.13).
+ * When the completion row fires, what it offers, and where the Tab cycle goes next.
  *
  * Everything here is a pure function of the buffer and the caret, for the usual reason:
  * vitest runs in `node` with no DOM, and the rules a chip row is judged by — that it
@@ -10,7 +9,7 @@
  *
  * **What is deliberately *not* here: matching, merging and ranking.** The binding answers
  * with one list, already merged from both its sources and already in the order the chips
- * appear in (§4.9), and the app renders it in that order. The two exceptions below are
+ * appear in, and the app renders it in that order. The two exceptions below are
  * exceptions to that rule and are named as such, because each one exists only where the
  * binding cannot answer at all: `\begin` and `\end` are not definitions techxt has, and
  * `complete()` has no way to be asked for environments alone.
@@ -60,7 +59,7 @@ function startsControlSequence(text: string, at: number): boolean {
 /**
  * What, if anything, the caret is asking to complete.
  *
- * Two triggers, one row (§6.13). A `\` followed by **at least one letter** is the first;
+ * Two triggers, one row. A `\` followed by **at least one letter** is the first;
  * the second is the same idea one level in, inside `\begin{`, where what follows is an
  * environment name and not a macro. Neither fires in the middle of a word — if the
  * character after the caret continues the name, the user is editing it rather than
@@ -106,7 +105,7 @@ export function completionTrigger(
  *
  * They are structure the parser handles itself rather than entries in a `DefinitionSet`,
  * so `complete()` answers `\begi` with nothing at all however it is ranked — which is
- * arguably the most useful completion in LaTeX missing (§4.9). They are therefore the
+ * arguably the most useful completion in LaTeX missing. They are therefore the
  * app's own literals, and the *only* names it invents: everything else in the row still
  * comes out of the table or the document.
  */

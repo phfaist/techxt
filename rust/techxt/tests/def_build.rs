@@ -1,5 +1,5 @@
-//! Building a definition set (PLAN.md §10.2): shadowing order, argument codes, mode
-//! visibility, and every way a build can be refused.
+//! Building a definition set: shadowing order, argument codes, mode visibility, and
+//! every way a build can be refused.
 
 use std::borrow::Cow;
 

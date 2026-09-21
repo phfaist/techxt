@@ -4,15 +4,14 @@
 //! techy [`NodeRef`], and the difference is the whole point: a `NodeRef` names the
 //! language its tree was parsed with, so a handler written against one language cannot
 //! be called on a tree of another. techxt renders the tree of *any*
-//! [`RenderLang`](super::RenderLang) (PLAN.md §11.1), so the language is erased here —
-//! behind [`TreeView`], one object-safe trait implemented for every such tree — and a
-//! handler compiled once runs on all of them.
+//! [`RenderLang`](super::RenderLang), so the language is erased here — behind
+//! [`TreeView`], one object-safe trait implemented for every such tree — and a handler
+//! compiled once runs on all of them.
 //!
-//! What the view offers is deliberately small and payload-only (PLAN.md §1.6): the
-//! node's own payload, the tree's shape, and the reassembled LaTeX source of a subtree.
-//! There is no way back to a `NodeRef`, and no span-content read anywhere: a handler
-//! that wants content asks the [`RenderCx`](super::RenderCx) for it, which folds it
-//! through the renderer.
+//! What the view offers is deliberately small and payload-only: the node's own payload,
+//! the tree's shape, and the reassembled LaTeX source of a subtree. There is no way
+//! back to a `NodeRef`, and no span-content read anywhere: a handler that wants content
+//! asks the [`RenderCx`](super::RenderCx) for it, which folds it through the renderer.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -103,12 +102,12 @@ impl<LLL: RenderLang> TreeView for NodeTree<LLL, ()> {
     }
 }
 
-/// A node of the tree being converted, with its language erased (PLAN.md §10.4).
+/// A node of the tree being converted, with its language erased.
 ///
 /// This is what a [`TextHandler`](crate::def::TextHandler) is handed. It is `Copy`, it
 /// borrows the tree for as long as the fold does, and everything it answers is *payload*
-/// (PLAN.md §1.6) — nothing here reads the source buffer behind a span, so a view works
-/// on a transformed tree exactly as it does on a freshly parsed one.
+/// — nothing here reads the source buffer behind a span, so a view works on a
+/// transformed tree exactly as it does on a freshly parsed one.
 ///
 /// A handler that wants the *rendering* of something — an argument, a body — asks the
 /// [`RenderCx`](super::RenderCx) rather than this: the context folds the region through
@@ -154,7 +153,7 @@ impl<'t> NodeView<'t> {
     }
 
     /// Which of the three kinds of callable this is, or `None` when it is not a
-    /// callable at all (PLAN.md §10.3).
+    /// callable at all.
     pub fn callable_kind(&self) -> Option<CallableKind> {
         self.tree.callable_kind(self.id)
     }
@@ -162,14 +161,14 @@ impl<'t> NodeView<'t> {
     /// The text of a characters node, and `None` for every other kind of node.
     ///
     /// The node's own payload, resolved against the node's own source: the one
-    /// text-reading operation PLAN.md §1.6 permits.
+    /// text-reading operation that is permitted.
     pub fn chars(&self) -> Option<&'t str> {
         let tree: &'t dyn TreeView = self.tree;
         tree.chars(self.id)
     }
 
     /// Where in the source this node came from — for a diagnostic's position, which is
-    /// the only thing a span may be used for (PLAN.md §1.6).
+    /// the only thing a span may be used for.
     pub fn span(&self) -> &'t SourceSpan<Option<String>> {
         let tree: &'t dyn TreeView = self.tree;
         tree.span(self.id)
@@ -211,9 +210,9 @@ impl<'t> NodeView<'t> {
 
     /// The LaTeX source this subtree was parsed from, reassembled from node payloads.
     ///
-    /// Never read out of the source buffer, so it works on transformed trees too
-    /// (PLAN.md §1.6); on a tree that was synthesized or transformed it reproduces what
-    /// the nodes now *say*, which is the only answer that is meaningful there.
+    /// Never read out of the source buffer, so it works on transformed trees too; on a
+    /// tree that was synthesized or transformed it reproduces what the nodes now *say*,
+    /// which is the only answer that is meaningful there.
     pub fn source(&self) -> String {
         self.tree.source(self.id)
     }

@@ -1,5 +1,5 @@
 /**
- * When the chip row fires, what it offers, and where Tab goes next (web/PLAN.md §6.13).
+ * When the chip row fires, what it offers, and where Tab goes next.
  *
  * The row itself is elements and a keyboard handler in `ui/panes.ts`; the rules it is
  * judged by are here, because they are rules about strings and indices. Three of them
@@ -110,7 +110,7 @@ describe('completionTrigger', () => {
 describe('withLiterals', () => {
   it('offers `\\begin` and `\\end`, which the binding cannot', () => {
     // techxt defines neither: they are parser structure, not entries in a
-    // `DefinitionSet`, so `\begi` comes back from `complete()` empty (§4.9).
+    // `DefinitionSet`, so `\begi` comes back from `complete()` empty.
     expect(withLiterals([], 'begi').map((item) => item.name)).toEqual(['begin']);
     expect(withLiterals([], 'e').map((item) => item.name)).toEqual(['end']);
     expect(withLiterals([], 'b').map((item) => item.name)).toEqual(['begin']);
@@ -128,7 +128,7 @@ describe('withLiterals', () => {
 
   it('keeps the binding’s first rule intact: an exact match outranks a literal', () => {
     // A name typed in full is not a request to be shown something longer, and that rule
-    // is the binding's own — folding two names in must not move it (§4.9).
+    // is the binding's own — folding two names in must not move it.
     const items = [entry('e'), entry('emph')];
     expect(withLiterals(items, 'e').map((item) => item.name)).toEqual(['e', 'end', 'emph']);
   });

@@ -380,11 +380,11 @@ pub enum VerbatimProvenance {
 
 /// The display width of a string, in terminal columns.
 ///
-/// **This is the only place in techxt where a width is computed** (PLAN.md §6). Line
-/// wrapping, table column alignment, matrix padding, heading underlines and the
-/// `\maketitle` rule all call it, so that they agree exactly on what a wide CJK
-/// character, a combining accent or a zero-width joiner costs. Anything that reaches
-/// for `str::len` or `chars().count()` instead is a bug.
+/// **This is the only place in techxt where a width is computed.** Line wrapping, table
+/// column alignment, matrix padding, heading underlines and the `\maketitle` rule all
+/// call it, so that they agree exactly on what a wide CJK character, a combining accent
+/// or a zero-width joiner costs. Anything that reaches for `str::len` or
+/// `chars().count()` instead is a bug.
 pub(crate) fn display_width(text: &str) -> usize {
     unicode_width::UnicodeWidthStr::width(text)
 }

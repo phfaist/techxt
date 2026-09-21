@@ -1,4 +1,4 @@
-//! Sub- and superscripts (PLAN.md §9.5): `^` and `_`.
+//! Sub- and superscripts: `^` and `_`.
 //!
 //! Both are specials taking one expression argument, registered **math mode only**, so
 //! that `a_b` in running text stays the characters it was written as. The mode
@@ -25,7 +25,7 @@ use super::handler;
 /// The name both specials give their one argument.
 const SCRIPT: &str = "script";
 
-/// The subsuperscripts category (PLAN.md §12.1).
+/// The subsuperscripts category.
 ///
 /// ```
 /// use techxt::Converter;
@@ -57,7 +57,7 @@ fn script_rule(kind: ScriptKind) -> TextRule {
     handler(Script(kind))
 }
 
-/// `^{…}` and `_{…}` (PLAN.md §9.5).
+/// `^{…}` and `_{…}`.
 #[derive(Debug)]
 struct Script(ScriptKind);
 

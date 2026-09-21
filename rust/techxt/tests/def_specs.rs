@@ -1,5 +1,5 @@
-//! The techy spec types techxt registers (PLAN.md §10.2), and the render-side downcast
-//! that recovers a rule from a parsed node (PLAN.md §10.3 step 2).
+//! The techy spec types techxt registers, and the render-side downcast that recovers a
+//! rule from a parsed node.
 //!
 //! The environment case is the delicate one. techy's `\begin` composition reaches an
 //! environment's behaviour by downcasting the spec to its own concrete

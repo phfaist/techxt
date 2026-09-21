@@ -1,5 +1,5 @@
-//! The normative acceptance examples of PLAN.md §15 that the definitions library
-//! covers, end to end through `Converter::standard()`.
+//! The normative acceptance examples that the definitions library covers, end to end
+//! through `Converter::standard()`.
 //!
 //! Expected strings are exact, trailing newline included. These are behaviour law: an
 //! example that changes is a design change, not a test that needs updating.

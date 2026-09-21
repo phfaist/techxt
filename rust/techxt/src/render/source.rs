@@ -1,9 +1,9 @@
 //! Re-emitting a subtree as LaTeX source, from payloads only.
 //!
 //! Two features need the source text a node was parsed from: the `KeepSource` policies
-//! for unknown constructs (PLAN.md §10.6) and math's `Source` mode (PLAN.md §9.5).
+//! for unknown constructs and math's `Source` mode.
 //!
-//! Neither may reach for the source *bytes*. PLAN.md §1.6 is a hard rule, not a style
+//! Neither may reach for the source *bytes*. That is a hard rule, not a style
 //! preference: on a tree that has been transformed, `span_content()` returns the
 //! *pre-transform* text, `NodeSlice::source_text()` answers `None` across a run that
 //! spans two sources — which a plain parse already produces at an `\input` boundary —
@@ -219,7 +219,7 @@ fn emit_subtree<'t, LLL: LatexlikeLang>(node: NodeRef<'t, LLL>, emitter: &mut Em
 /// character is always a new token. The rules are read off the node's parsing state
 /// rather than assumed, so a language that spells its commands its own way — a
 /// different escape character, digits in names — is answered in its own terms, and
-/// payload is all that is consulted (PLAN.md §1.6).
+/// payload is all that is consulted.
 fn name_extenders<'t, LLL: LatexlikeLang>(
     node: NodeRef<'t, LLL>,
     escape_char: char,
@@ -286,9 +286,9 @@ mod tests {
 
     /// The LaTeX source of the whole document, reassembled from payloads.
     ///
-    /// The descent guard is configured explicitly (DECISIONS.md D9): techy's default is
-    /// a *stack budget*, so how deep a document may nest depends on the build profile,
-    /// and the deep-nesting test below needs a limit that does not.
+    /// The descent guard is configured explicitly: techy's default is a *stack budget*,
+    /// so how deep a document may nest depends on the build profile, and the
+    /// deep-nesting test below needs a limit that does not.
     fn round_trip(latex: &str) -> String {
         let converter = Converter::builder()
             .descent_guard(StdDescentGuardInit::depth_limit(200))

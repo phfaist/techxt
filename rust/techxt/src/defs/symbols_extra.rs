@@ -1,4 +1,4 @@
-//! The generated long tail of symbol definitions (PLAN.md §12.1, §12.3, §12.4).
+//! The generated long tail of symbol definitions.
 //!
 //! About a thousand macros: everything pylatexenc's two default-spec tables know, ported
 //! mechanically. Roughly half of it is the tail no curated category of this library
@@ -6,7 +6,7 @@
 //! several hundred mathematical relations and arrows nobody writes by hand but every
 //! third paper contains one of — and the other half is names a curated category also
 //! defines, better. This category is pushed **first** of all of them precisely so that
-//! every curated definition after it wins (PLAN.md §12.1); carrying the overlap costs
+//! every curated definition after it wins; carrying the overlap costs
 //! nothing and means the table can be regenerated without re-deriving what to leave out.
 //!
 //! # It is data, not code
@@ -42,7 +42,7 @@
 //! restriction is only safe on an entry with nothing to leak.
 //!
 //! And a restriction is a **parse-side** gate. When a rule-less callable does reach the
-//! renderer, its rule is looked up by name (PLAN.md §10.3 step 3) from a table that
+//! renderer, its rule is looked up by name from a table that
 //! does not record modes, because that table exists to work on trees parsed by someone
 //! else's definitions. So with the catch-all registered, `\lessapprox` in a paragraph
 //! still renders `⪅`; it is under
@@ -68,9 +68,9 @@
 //! # Replacement text is never styled
 //!
 //! Every replacement here reaches the renderer as a [`TextRule::Literal`] or a
-//! [`TextRule::Template`], and rule output is exempt from the font alphabets
-//! (DECISIONS.md D6). That is why `\hbar` stays `ℏ` inside a `\mathbf{…}` instead of
-//! being mapped through the bold alphabet and lost.
+//! [`TextRule::Template`], and rule output is exempt from the font alphabets. That is
+//! why `\hbar` stays `ℏ` inside a `\mathbf{…}` instead of being mapped through the bold
+//! alphabet and lost.
 
 use alloc::borrow::Cow;
 
@@ -93,7 +93,7 @@ type Symbol = (
 
 /// What a generated entry renders as.
 ///
-/// The three shapes PLAN.md §12.3 allows a ported v3 `simplify_repl` to take. It is a
+/// The three shapes a ported v3 `simplify_repl` is allowed to take. It is a
 /// narrower type than [`TextRule`] on purpose: a generated entry can never carry a
 /// handler, so the data file cannot smuggle behavior past review.
 enum SymbolRule {
@@ -101,7 +101,7 @@ enum SymbolRule {
     Skip,
     /// Renders as fixed text.
     Literal(&'static str),
-    /// Renders through a template over the entry's arguments (PLAN.md §10.5).
+    /// Renders through a template over the entry's arguments.
     Template(&'static str),
 }
 
@@ -116,7 +116,7 @@ enum SymbolMode {
     Text,
 }
 
-/// The symbols_extra category (PLAN.md §12.1).
+/// The symbols_extra category.
 ///
 /// ```
 /// use techxt::Converter;

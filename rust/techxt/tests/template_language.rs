@@ -1,5 +1,5 @@
-//! The template mini-language end to end (PLAN.md §10.5): what a template renders to,
-//! and what a malformed one costs.
+//! The template mini-language end to end: what a template renders to, and what a
+//! malformed one costs.
 //!
 //! The parser's own unit tests live next to it; these exercise it through the public
 //! surface — a definition carrying a template, built into a converter and run over a

@@ -1,11 +1,11 @@
 /**
- * The dynamic half of the below-the-fold section (web/PLAN.md §6.8).
+ * The dynamic half of the below-the-fold section.
  *
  * The prose, the snippets and the links are static and live in `index.html`. Three
  * things cannot: the embedded techxt version, which only the worker knows; the font
  * credits, which are a function of the registry in `fonts.ts` and would rot the
  * moment a face was added or removed; and the update control, which is a button
- * whose whole text is a report on something only the service worker knows (§9).
+ * whose whole text is a report on something only the service worker knows.
  *
  * Everything here is built with `createElement` and `textContent`. The page never
  * assigns `innerHTML`, and a credit line is not the place to make an exception.
@@ -14,7 +14,7 @@
 import { FONTS, INTERFACE_FONT } from './fonts';
 
 /**
- * What one press of **Check for updates** found (§9).
+ * What one press of **Check for updates** found.
  *
  * `main.ts` owns the service worker and answers this; this module only says it. The
  * two middle answers are different facts and are worth different words: `'ready'` is
@@ -38,7 +38,7 @@ export interface AboutInit {
 }
 
 export interface AboutSection {
-  /** Fill in the version the worker reported (§6.2's `ready` message). */
+  /** Fill in the version the worker reported (its `ready` message). */
   setVersion(version: string): void;
   /**
    * There is a service worker, so there is something to ask: show the section.
@@ -61,7 +61,7 @@ const UPDATE_WORDS: Record<UpdateCheck, string> = {
   failed: 'Could not check just now — this device may be offline.',
 };
 
-/** Where the licence files the packaging script copies verbatim end up (§8.4). */
+/** Where the licence files the packaging script copies verbatim end up. */
 const LICENCE_PATH = 'fonts/licences/';
 
 function baseUrl(): string {
@@ -89,7 +89,7 @@ function creditItem(credit: string, licence: string, licenceFile: string | null)
 /* ----------------------------------------------------------------- the updates */
 
 /**
- * Wire `#update-check`: one button, one line of fine print beside it (§9).
+ * Wire `#update-check`: one button, one line of fine print beside it.
  *
  * The button has two jobs and is only ever doing one of them — it asks the question
  * until the answer is yes, and from then on it *is* the answer, because a note saying
@@ -175,7 +175,7 @@ export function initAbout(init: AboutInit, root: ParentNode = document): AboutSe
   }
 
   // The interface face is credited beside them, in its own line: it is not one of the
-  // five, and putting it in the same list would say it was (§8.7).
+  // five, and putting it in the same list would say it was.
   const uiCredit = root.querySelector('#ui-font-credit');
   if (uiCredit) {
     uiCredit.replaceChildren(

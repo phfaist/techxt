@@ -1,5 +1,4 @@
-//! `defs::lists`: the five list environments, `\item`, and the markers they generate
-//! (PLAN.md §9.4).
+//! `defs::lists`: the five list environments, `\item`, and the markers they generate.
 
 use techxt::convert::{CounterStyle, CounterWrap, EnumFormat, ListStyle};
 use techxt::diag::{StrayItem, UnsupportedIgnored};
@@ -13,13 +12,12 @@ fn text(latex: &str) -> String {
     convert(latex).text
 }
 
-// --------------------------------------------------------- PLAN.md §15 example 22
+// ---------------------------------------------------------------------- example 22
 
 #[test]
 fn example_22_nested_lists() {
-    // The inner `enumerate` is a different kind, so it starts at first-level numbering
-    // (PLAN.md §15's note), and its markers sit under the outer item's text rather than
-    // closing it.
+    // The inner `enumerate` is a different kind, so it starts at first-level numbering,
+    // and its markers sit under the outer item's text rather than closing it.
     assert_eq!(
         text(
             r"\begin{itemize}\item one \begin{enumerate}\item x\item y\end{enumerate}\item two\end{itemize}"
@@ -88,7 +86,7 @@ fn enumerate_formats_cycle_through_the_configured_array() {
 #[test]
 fn a_list_of_another_kind_starts_its_own_marker_sequence() {
     // The `enumerate` has no enclosing enumerate, so it numbers from `1.` rather than
-    // carrying on from the bullets — PLAN.md §15 example 22's semantics.
+    // carrying on from the bullets — example 22's semantics.
     assert_eq!(
         text(r"\begin{itemize}\item a\begin{enumerate}\item b\end{enumerate}\end{itemize}"),
         "  • a\n    1. b\n"
@@ -97,7 +95,7 @@ fn a_list_of_another_kind_starts_its_own_marker_sequence() {
 
 #[test]
 fn a_list_of_another_kind_in_between_does_not_reset_the_marker_depth() {
-    // PLAN.md §9.4 counts *all* the enclosing lists of the same kind, wherever they
+    // The marker depth counts *all* the enclosing lists of the same kind, wherever they
     // sit, exactly as LaTeX's own itemize and enumerate depth counters do. The
     // innermost itemize here has one enclosing itemize, so it is a second-level itemize
     // and takes the second bullet: the `enumerate` in between resets nothing.

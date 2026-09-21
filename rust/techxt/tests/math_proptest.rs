@@ -1,6 +1,6 @@
-//! Property tests for the joiner invariants of PLAN.md §14.2.
+//! Property tests for the joiner invariants.
 //!
-//! The plan asks for three guarantees, for *every* sequence of atoms:
+//! There are three guarantees, for *every* sequence of atoms:
 //!
 //! 1. the joiner never produces a doubled space — it inserts a separator only where
 //!    neither side already carries one;

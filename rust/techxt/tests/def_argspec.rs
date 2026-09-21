@@ -1,8 +1,8 @@
 //! Arguments a code cannot describe (`MacroDef::arg_spec`).
 //!
-//! Two definitions in PLAN.md §9 need more than an argument code: `\text{…}`, whose
-//! argument leaves math for its own extent, and `\\`, whose optional `[len]` must not be
-//! found across a space. Both are built as techy `ArgumentSpec`s and handed to the entry
+//! Two shipped definitions need more than an argument code: `\text{…}`, whose argument
+//! leaves math for its own extent, and `\\`, whose optional `[len]` must not be found
+//! across a space. Both are built as techy `ArgumentSpec`s and handed to the entry
 //! builder directly, in declaration order with the coded arguments.
 
 use std::sync::Arc;

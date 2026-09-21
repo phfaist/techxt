@@ -1,4 +1,4 @@
-//! Completion as the app receives it (web/PLAN.md §4.9).
+//! Completion as the app receives it.
 //!
 //! What is under test is the shape *and the order* of the answer. The order is the part
 //! worth testing hardest: the JavaScript side does no ranking of its own, so a chip row
@@ -224,9 +224,9 @@ fn a_commented_out_definer_is_not_offered_and_an_escaped_percent_is_not_a_commen
 ///
 /// Recognizing the body would mean tracking `\begin`/`\end` pairs, `\verb` with its
 /// arbitrary delimiter, and every listing package a document might use, which is the
-/// parse the design declined (web/PLAN.md §4.9). Comments are filtered
-/// because `%` is one unambiguous character and the scan is already walking escapes;
-/// verbatim is not, because it is not. The cost is one chip offering a name that will not
+/// parse the design declined. Comments are filtered because `%` is one unambiguous
+/// character and the scan is already walking escapes; verbatim is not, because it is
+/// not. The cost is one chip offering a name that will not
 /// fire, and this test is here so that the day someone decides that is too high, they
 /// change a test that says what it is doing rather than one that looks like a bug.
 #[test]

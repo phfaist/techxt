@@ -1,4 +1,4 @@
-//! Display-math environments and matrices (PLAN.md §9.5).
+//! Display-math environments and matrices.
 //!
 //! `equation`, `align`, `gather`, `multline`, `eqnarray`, `split` and `dmath` (with
 //! their starred forms), `subequations`, and the matrix family — `matrix`, `pmatrix`,
@@ -23,7 +23,7 @@
 //! # Two separators, three meanings
 //!
 //! The `&` and `\\` that [`defs::base`](super::base) defines read
-//! [`RenderState`](crate::render::RenderState) to decide what they are (PLAN.md §9.7),
+//! [`RenderState`](crate::render::RenderState) to decide what they are,
 //! and these environments are what sets it. In a matrix body
 //! [`MathCtx::matrix`](crate::render::MathCtx::matrix) is set, so they become cell and
 //! row separators that the matrix handler splits at. In an `align` body it is not, so
@@ -38,7 +38,7 @@ use crate::render::{math, MathCtx, NodeView, RenderCx, RenderError};
 
 use super::handler;
 
-/// The mathenvs category (PLAN.md §12.1).
+/// The mathenvs category.
 ///
 /// ```
 /// use techxt::Converter;
@@ -119,7 +119,7 @@ fn display_environments(category: &mut Category) {
 
 // ------------------------------------------------------------------ matrices
 
-/// The matrix family, plus `array` (PLAN.md §9.5, DECISIONS.md D3).
+/// The matrix family, plus `array`.
 ///
 /// The environment's *name* is what says which delimiters it draws — that is how LaTeX
 /// spells them — so one handler serves them all and asks
@@ -188,7 +188,7 @@ struct Formula {
 impl TextHandler for Formula {
     fn render(&self, node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let enclosing = cx.state().math;
-        // A math environment *is* display math (PLAN.md §9.5) — unless it is written
+        // A math environment *is* display math — unless it is written
         // inside an inline formula, where there is no second line to display it on.
         let display = self.display && enclosing.is_none_or(|math| math.display);
 
@@ -219,7 +219,7 @@ impl TextHandler for Formula {
     }
 }
 
-/// One matrix (PLAN.md §9.5).
+/// One matrix.
 ///
 /// Inline, a matrix is a single-line `[ 1  2; 30  4 ]`; displayed, it is one line per
 /// row between delimiters drawn as tall as it is. Either way it is **one atom**, opaque

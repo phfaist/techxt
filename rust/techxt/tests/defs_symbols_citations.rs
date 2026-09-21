@@ -1,4 +1,4 @@
-//! `defs::natbib`: the citation family (PLAN.md §9.8, §12.1).
+//! `defs::natbib`: the citation family.
 //!
 //! Two things are being tested. The obvious one is that every command renders
 //! `<cit.>`. The one that matters is that none of them *leaks*: natbib's shapes carry a
@@ -88,8 +88,8 @@ fn the_declarations_print_nothing() {
     assert_eq!(text(r"\shortcites{knuth1984}A"), "A\n");
 }
 
-/// PLAN.md §12.1: `natbib` is pushed last, so its `\cite` shadows the plain one in
-/// [`defs::refs`], which declares only `[m]` and would spill the second note.
+/// `natbib` is pushed last, so its `\cite` shadows the plain one in [`defs::refs`],
+/// which declares only `[m]` and would spill the second note.
 #[test]
 fn natbib_shadows_the_plain_cite_of_refs() {
     assert_eq!(text(r"\cite[see][p.~5]{knuth1984}."), "<cit.>.\n");

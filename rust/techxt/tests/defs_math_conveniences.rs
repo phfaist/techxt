@@ -1,5 +1,4 @@
-//! `\abs`, `\norm` and `\coloneqq`: three curated conveniences in `defs::mathcore`
-//! (root PLAN.md §9.5).
+//! `\abs`, `\norm` and `\coloneqq`: three curated conveniences in `defs::mathcore`.
 //!
 //! The library has defined `\ket`, `\bra`, `\braket` and `\ketbra` since it ported v3's
 //! table, and defined none of these three. That is the bug under test — not that any
@@ -165,8 +164,8 @@ fn none_of_the_three_is_restricted_to_math_mode() {
 /// The `braket` LaTeX package writes `\braket{\phi|\psi}` — one argument with the bar
 /// inside it — and techxt takes `\braket{\phi}{\psi}`. Both spellings are in the wild
 /// and the two cannot both be `\braket` without looking inside an argument for a bar,
-/// so the library keeps the two-argument form (root PLAN.md §9.5) and a document
-/// written for the package gets a diagnostic rather than a guess.
+/// so the library keeps the two-argument form and a document written for the package
+/// gets a diagnostic rather than a guess.
 ///
 /// This is pinned because it can regress *silently* in two directions at once.
 /// `\braket` is a row of the **generated** table, so regenerating it from a pylatexenc

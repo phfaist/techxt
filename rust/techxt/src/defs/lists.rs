@@ -1,4 +1,4 @@
-//! List environments (PLAN.md §9.4): `itemize`, `enumerate`, `description`, `list` and
+//! List environments: `itemize`, `enumerate`, `description`, `list` and
 //! `trivlist`, and the `\item` that lives inside them.
 //!
 //! `\item` is brought into scope by each list environment's body rather than defined
@@ -8,13 +8,13 @@
 //! # How a list becomes text
 //!
 //! Two nesting depths decide what a list looks like, and they are deliberately
-//! different (PLAN.md §8's [`ListCtx`]):
+//! different ([`ListCtx`]):
 //!
 //! - [`same_kind_depth`](ListCtx::same_kind_depth) picks the *marker*, cycling through
 //!   the arrays in [`Options::list_style`](crate::Options::list_style). It counts only
 //!   the enclosing lists of the **same kind**, exactly as LaTeX's own `\@itemdepth` and
 //!   `\@enumdepth` do: an `enumerate` directly inside an `itemize` numbers from `1.`
-//!   rather than continuing into `(a)` (PLAN.md §15 example 22), while an `itemize`
+//!   rather than continuing into `(a)`, while an `itemize`
 //!   inside an `enumerate` inside an `itemize` is a *second*-level itemize, because the
 //!   list of another kind in between does not reset anything.
 //! - [`depth`](ListCtx::depth) decides the indentation. Only the outermost list indents
@@ -58,7 +58,7 @@ const STRAY_MARKER: &str = "- ";
 /// the time), and one space would read as part of the sentence after it.
 const LABEL_GAP: &str = "  ";
 
-/// The lists category (PLAN.md §12.1).
+/// The lists category.
 ///
 /// Five environments, all sharing one handler, plus the `\item` their bodies bring into
 /// scope. The optional argument every one of them accepts is `enumitem`'s key-value
@@ -155,7 +155,7 @@ impl TextHandler for ListEnv {
 }
 
 impl ListEnv {
-    /// The context this list's body is rendered in (PLAN.md §9.4).
+    /// The context this list's body is rendered in.
     ///
     /// The total depth comes from the enclosing list's own context, and the marker
     /// depth from the run's stack of open list kinds: it is `1 +` the number of
@@ -203,7 +203,7 @@ fn open_blocks(flow: &Flow) -> usize {
     open.len()
 }
 
-/// `\item` (PLAN.md §9.4).
+/// `\item`.
 ///
 /// It renders as the opening of a hanging-indent block and nothing else: what follows
 /// it in the document *is* the item's text, and the block ends when the next item

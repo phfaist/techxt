@@ -1,5 +1,5 @@
 /**
- * The worker's lifecycle and the request discipline (web/PLAN.md §6.2).
+ * The worker's lifecycle and the request discipline.
  *
  * This file knows nothing about the DOM: it is handed a factory that makes a worker
  * and a set of callbacks, and everything it decides — when to convert, which answer
@@ -15,15 +15,14 @@
  *   cancellation in wasm, so a superseded conversion runs to completion and its
  *   result is discarded.
  * - Completions run the same discipline on a counter of their own, so that a keystroke
- *   asking what `\alp` could be never invalidates the conversion in flight beside it
- *   (§6.13).
+ *   asking what `\alp` could be never invalidates the conversion in flight beside it.
  * - {@link DEBOUNCE_MS} after the last keystroke; immediately on an option change, a
  *   paste, or Ctrl/Cmd+Enter.
  * - {@link CONVERTING_MS} in, the caller is told the conversion is slow;
  *   {@link CANCELLABLE_MS} in, that it can be cancelled. Cancelling is terminating —
  *   the only cancellation wasm offers — followed by a respawn.
  * - A `fatal` message takes the same respawn path and is surfaced, because a panic is
- *   a techxt bug and the caller has the reproduction (§6.4).
+ *   a techxt bug and the caller has the reproduction.
  */
 
 import { systemClock } from './state';
@@ -55,7 +54,7 @@ export interface ConvertClientInit {
   onResult(result: ConversionResult): void;
   /** `'idle'` → `'converting'` → `'cancellable'`, and back to `'idle'` on an answer. */
   onBusy(state: BusyState): void;
-  /** The worker is up; carries the embedded techxt version (§6.8). */
+  /** The worker is up; carries the embedded techxt version. */
   onReady?(version: string): void;
   /** A panic, a trap, or a worker that failed to start. The instance is gone. */
   onFatal(message: string): void;
@@ -111,7 +110,7 @@ export class ConvertClient {
 
   /**
    * Ask for a conversion. `'debounced'` is what a keystroke wants; `'immediate'` is
-   * what an option change, a paste and Ctrl/Cmd+Enter want (§6.2).
+   * what an option change, a paste and Ctrl/Cmd+Enter want.
    */
   convert(text: string, options: OptionsPayload, mode: RequestMode = 'debounced'): void {
     if (this.disposed) return;
@@ -150,7 +149,7 @@ export class ConvertClient {
   }
 
   /**
-   * Ask what `prefix` could be, for the editor's chip row (§6.13).
+   * Ask what `prefix` could be, for the editor's chip row.
    *
    * Never debounced: this answers a keystroke that has already happened and the answer
    * is a table lookup, so waiting would only make the row late. Only the latest request

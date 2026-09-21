@@ -1,7 +1,7 @@
 //! Two-dimensional math: [`MathBox`], the baseline join, and matrix rendering.
 //!
 //! Everything in this file that concerns *display* matrices — multi-row delimiter
-//! pieces and the baseline join — is new in techxt (PLAN.md §9.5); pylatexenc v3
+//! pieces and the baseline join — is new in techxt; pylatexenc v3
 //! renders a matrix the same way inline and in display and has no box model at all.
 //! The inline rendering, by contrast, is v3's `[ 1 2; 3 4 ]` shape with the plan's
 //! corrections: per-column widths, a two-space cell separator, and the environment's
@@ -25,7 +25,7 @@ pub struct MathBox {
     /// Lines are not padded to a common width: a box produced by this module carries
     /// no trailing spaces, because [`baseline_join`] re-pads every piece to its own
     /// width as it composes, and the layout engine must never be handed a line that
-    /// ends in whitespace (PLAN.md §7).
+    /// ends in whitespace.
     pub lines: Vec<Box<str>>,
     /// Index into [`lines`](Self::lines) of the line that carries the baseline. A
     /// one-line box has baseline `0`.
@@ -102,7 +102,7 @@ impl MathBox {
     }
 }
 
-/// Compose boxes side by side, aligning their baselines (PLAN.md §9.5).
+/// Compose boxes side by side, aligning their baselines.
 ///
 /// `seps[i]` is placed between piece `i` and piece `i + 1`; a missing entry counts as
 /// no separator. The separator is written out on the baseline row only, and the other
@@ -192,7 +192,7 @@ fn pad(out: &mut String, n: usize) {
 }
 
 /// The delimiter pair that surrounds a matrix, named after the environment it comes
-/// from (DECISIONS.md D3).
+/// from.
 ///
 /// LaTeX spells the delimiters in the environment's name — `pmatrix` is parenthesized,
 /// `bmatrix` bracketed — and techxt reproduces the environment's own pair rather than
@@ -215,7 +215,7 @@ pub enum MatrixFence {
 
 impl MatrixFence {
     /// The delimiter pair of a matrix environment, or `None` if the name is not one
-    /// of the matrix environments techxt knows (DECISIONS.md D3).
+    /// of the matrix environments techxt knows.
     ///
     /// ```
     /// use techxt::mathfmt::MatrixFence;
@@ -264,9 +264,8 @@ impl MatrixFence {
     /// Parentheses and brackets come as {top, extension, bottom} triples that stack
     /// into a delimiter of any height. Braces need a fourth piece: U+23A8 `⎨` is the
     /// *centre* of the brace, not an extension, so it goes on the middle row alone and
-    /// U+23AA `⎪` fills the rest (DECISIONS.md D2 — PLAN.md §9.5 lists only three
-    /// pieces, which would leave a four-row brace with no extension). The two vertical
-    /// bars are single characters that simply repeat.
+    /// U+23AA `⎪` fills the rest (three pieces alone would leave a four-row brace with
+    /// no extension). The two vertical bars are single characters that simply repeat.
     ///
     /// The middle row is the box's baseline row, `(rows - 1) / 2`, so the brace's
     /// centre and the formula's baseline agree.
@@ -311,7 +310,7 @@ impl MatrixFence {
 }
 
 /// How the delimiters of a *display* matrix are drawn
-/// ([`Options::matrix_delimiters`](crate::Options::matrix_delimiters), PLAN.md §9.5).
+/// ([`Options::matrix_delimiters`](crate::Options::matrix_delimiters)).
 ///
 /// It lives here, next to the builders that draw with it, and reaches them as a
 /// parameter because this module reads no options of its own.
@@ -334,7 +333,7 @@ pub enum MatrixDelims {
 ///
 /// Right-justification is what makes a column of numbers line up on its units digit,
 /// which is the only alignment plain text can offer without knowing the column type.
-/// Widths are per column (PLAN.md §9.5), not v3's single global width.
+/// Widths are per column, not v3's single global width.
 fn layout_rows<R, S>(rows: &[R]) -> Vec<String>
 where
     R: AsRef<[S]>,
@@ -396,7 +395,7 @@ where
     }
 }
 
-/// Build the inline rendering of a matrix as a single-line [`Atom`] (PLAN.md §9.5).
+/// Build the inline rendering of a matrix as a single-line [`Atom`].
 ///
 /// `rows` is the matrix contents, one inner slice per row, each cell already rendered
 /// to text. The atom's class pair is [`Block`](AtomClass::Block) on both edges: a

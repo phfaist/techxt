@@ -1,5 +1,5 @@
 /**
- * Bootstrap and wiring (web/PLAN.md §6, §9).
+ * Bootstrap and wiring.
  *
  * This file owns everything the UI modules deliberately do not: the state that
  * outlives a keystroke, the worker, the clipboard, the keyboard shortcuts, the share
@@ -77,14 +77,14 @@ import { initSheets } from './ui/sheets';
 import { initToast } from './ui/toast';
 import type { ConversionResult, Diagnostic } from './worker/protocol';
 
-/** The status-line aside for a document the browser will not keep for us (§6.4). */
+/** The status-line aside for a document the browser will not keep for us. */
 const DOC_TOO_LARGE =
   'too large to save locally — this document will not survive a reload, and is not logged in your library';
 
-/** The aside for a library the user asked to stop growing (§6.10). */
+/** The aside for a library the user asked to stop growing. */
 const LIBRARY_PAUSED = 'the library has stopped logging new documents — nothing in it was removed';
 
-/** The aside for a library another tab has upgraded out from under this one (§6.10). */
+/** The aside for a library another tab has upgraded out from under this one. */
 const LIBRARY_STALE = 'the library was updated in another tab — reload to use it here';
 
 const ISSUE_URL = 'https://github.com/phfaist/techxt/issues/new';
@@ -100,7 +100,7 @@ function mountPoint(id: string): HTMLElement {
 /**
  * `navigator.clipboard` where it exists and is allowed, and the old
  * `<textarea>` + `execCommand` dance where it is not — which on iOS below 13.4 is
- * the only thing there is (§6.3).
+ * the only thing there is.
  */
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -148,7 +148,7 @@ function downloadText(text: string, name: string, type = 'text/plain;charset=utf
 
 /**
  * `launchQueue`, which no TypeScript DOM library declares yet. Only the two members
- * the file handler of §9 uses are named here — inventing more would be inventing.
+ * the file handler uses are named here — inventing more would be inventing.
  */
 interface LaunchParams {
   files?: FileSystemFileHandle[];
@@ -160,7 +160,7 @@ interface LaunchQueue {
 /* ------------------------------------------------------------ service worker */
 
 /**
- * The service worker, and the two things the rest of the app needs of it (§9).
+ * The service worker, and the two things the rest of the app needs of it.
  *
  * The browser looks for a new worker when one is registered — which is once, at
  * startup — and on a navigation within its scope. That is the whole of it: a tab
@@ -190,7 +190,7 @@ function registerServiceWorker(toast: Toaster): Updates {
     },
     // `registerType: 'autoUpdate'` is configured in vite.config.ts, and in that mode
     // the plugin calls `onNeedReload` — the hook that *replaces* its automatic
-    // reload — rather than `onNeedRefresh`. Both are wired so the toast of §9
+    // reload — rather than `onNeedRefresh`. Both are wired so the update toast
     // appears whichever mode a future build chooses.
     onNeedReload: () => announce(),
     onNeedRefresh: () => announce(),
@@ -250,14 +250,14 @@ function registerServiceWorker(toast: Toaster): Updates {
 async function start(): Promise<void> {
   const toast = initToast(mountPoint('toast-mount'));
   // Before About, which offers the button that asks it a question, and told about
-  // About immediately afterwards so it can answer back (§9).
+  // About immediately afterwards so it can answer back.
   const updates = registerServiceWorker(toast);
   const about = initAbout({
     checkForUpdate: () => updates.check(),
     onReload: () => window.location.reload(),
   });
   updates.report(about);
-  // Every sheet is a dialog over the tool (§6.8). A modal makes everything behind it
+  // Every sheet is a dialog over the tool. A modal makes everything behind it
   // inert, so the disclosure has to be told to put itself away first — otherwise it
   // is still open, and still open when the sheet closes.
   const sheets = initSheets({
@@ -271,7 +271,7 @@ async function start(): Promise<void> {
 
   const storage = browserStorage();
   // What this *tab* remembers, as against what the origin does: one fact, the entry
-  // being written into (§6.10). The migration runs before anything reads it, and
+  // being written into. The migration runs before anything reads it, and
   // hands the id previous builds kept for the whole origin to whichever tab gets here
   // first.
   const tab = tabStorage();
@@ -282,7 +282,7 @@ async function start(): Promise<void> {
     storage,
   });
   const state = loaded.state;
-  // An empty output pane is a bad first impression and a bad demo (§6.7).
+  // An empty output pane is a bad first impression and a bad demo.
   if (loaded.firstVisit && state.doc === '') state.doc = DEFAULT_EXAMPLE.source;
 
   // Assigned below, before anything can call back into them: the UI modules are built
@@ -292,15 +292,15 @@ async function start(): Promise<void> {
   let diagnostics: DiagnosticsPanel;
   let libraryPane: LibraryPane;
   /**
-   * The library (§6.10). It is `null` until IndexedDB has answered, which is a task
+   * The library. It is `null` until IndexedDB has answered, which is a task
    * or two after the page is usable and deliberately not something the first
    * conversion waits for; {@link openLibrary} below is what fills it in.
    */
   let library: Library | null = null;
   /**
-   * The line to the app's other tabs, or `null` where this browser has not got one
-   * (§6.10). Opened beside the library and for the library's sake alone: nothing else
-   * in the app is shared between two copies of it.
+   * The line to the app's other tabs, or `null` where this browser has not got one.
+   * Opened beside the library and for the library's sake alone: nothing else in the
+   * app is shared between two copies of it.
    */
   let channel: LibraryChannel | null = null;
   /**
@@ -312,7 +312,7 @@ async function start(): Promise<void> {
 
   /** The last output we are willing to show: what a cancel or a crash falls back to. */
   let lastGoodOutput = '';
-  /** The pane's latest fit-to-pane measurement; the pane owns the measuring (§6.5). */
+  /** The pane's latest fit-to-pane measurement; the pane owns the measuring. */
   let measuredColumns = 72;
   /** The column count the last request was issued with; negative before the first. */
   let lastColumns = -1;
@@ -358,11 +358,11 @@ async function start(): Promise<void> {
       panes.setStale(false);
       typesetMath(result);
       // The library is a log of what was converted, so a conversion is exactly when
-      // it hears about a document. The write itself is debounced (§6.10).
+      // it hears about a document. The write itself is debounced.
       library?.record(state.doc, state.opts, makePreview(result.text));
     } else {
       // A hard parse failure has no text of its own; the previous output stays,
-      // dimmed, with the diagnostics saying why (§6.3).
+      // dimmed, with the diagnostics saying why.
       panes.setStale(true);
     }
   }
@@ -371,7 +371,7 @@ async function start(): Promise<void> {
 
   /**
    * The latest typeset pass. Conversions already carry a monotonic id and a stale
-   * answer is dropped (§6.2); typesetting is the same problem one step later — it is
+   * answer is dropped; typesetting is the same problem one step later — it is
    * asynchronous, it can be slow on a large document, and by the time it finishes the
    * result it was rendering may have been superseded — so it is given the same
    * discipline rather than a second one of its own.
@@ -387,7 +387,7 @@ async function start(): Promise<void> {
   let mathJaxUnavailable = false;
 
   /**
-   * Wrap this result's formulas in elements and hand them to MathJax (§6.3, §9.1).
+   * Wrap this result's formulas in elements and hand them to MathJax.
    *
    * The pane is never blocked for this: `setOutput` has already put the text on the
    * screen, and each element still reads as its own LaTeX until the moment MathJax
@@ -416,7 +416,7 @@ async function start(): Promise<void> {
    * Ask for the typesetter as soon as the mode is chosen, rather than when the first
    * formula needs it — the fetch is 1.8 MB and the conversion it belongs to is
    * already on its way. Idempotent, so every path that can select the mode may call
-   * it: a click on the control, a share link, a library entry, a reload (§9.1).
+   * it: a click on the control, a share link, a library entry, a reload.
    */
   function prepareMathJax(): void {
     if (!mathJax(state.opts)) return;
@@ -428,7 +428,7 @@ async function start(): Promise<void> {
    * mode is ever selected: an app that was installed to work offline should not
    * discover the first time it is opened on a train that the typesetter is a download
    * away. On the web the same call would be 1.8 MB spent on the great majority of
-   * visitors who never turn the mode on, which is exactly what §9.1's runtime route
+   * visitors who never turn the mode on, which is exactly what fetching it at runtime
    * exists to avoid — so it is asked for only where "keep it" is the whole point.
    *
    * The service worker holds it after the first run, so later runs are a cache read.
@@ -477,7 +477,7 @@ async function start(): Promise<void> {
     });
   }
 
-  /** The bug report a panic deserves: the link *is* the reproduction (§6.2). */
+  /** The bug report a panic deserves: the link *is* the reproduction. */
   async function reportBug(message: string): Promise<void> {
     const fragment = await encodeShare({ v: 1, doc: state.doc, opts: state.opts });
     let link = shareUrl(fragment);
@@ -512,7 +512,8 @@ async function start(): Promise<void> {
       new Worker(new URL('./worker/convert.worker.ts', import.meta.url), { type: 'module' }),
     onReady(version) {
       // The version exists only once wasm has loaded, and both places that show it
-      // were built before that (§6.8, and the bug-report line of the More panel).
+      // were built before that (the About sheet, and the bug-report line of the More
+      // panel).
       about.setVersion(version);
       controls.setVersion(version);
     },
@@ -532,7 +533,7 @@ async function start(): Promise<void> {
     panes.setFontLoading(true);
     try {
       // `applyFont` sets the two custom properties `styles.css` reads; `panes.setFont`
-      // is the pane's own hook for it (re-measuring the fit-to-pane sample, §6.5).
+      // is the pane's own hook for it (re-measuring the fit-to-pane sample).
       // Both are idempotent, and the pane owns the measurement.
       await applyFont(font, size);
       await panes.setFont(font, size);
@@ -551,17 +552,17 @@ async function start(): Promise<void> {
       const before = state.doc;
       state.doc = text;
       persistence.document(text);
-      // A paste is a decision, not a keystroke, so it does not wait (§6.2).
+      // A paste is a decision, not a keystroke, so it does not wait.
       requestConversion(cause === 'paste' ? 'immediate' : 'debounced');
       // The library is told about the *edit*, not just about the conversion it
       // provokes: a select-all-and-paste has replaced the document whether or not the
-      // new one converts (§6.10).
+      // new one converts.
       noteEdit(before, text);
     },
     onColumnsChange(columns) {
       measuredColumns = columns;
       // Only *Fit* cares, only a real change is worth a conversion, and nothing at
-      // all before the first conversion has been issued (§6.5).
+      // all before the first conversion has been issued.
       if (lastColumns < 0 || columns === lastColumns) return;
       if ((state.opts.wrap ?? DEFAULT_OPTIONS.wrap) !== 'fit') return;
       requestConversion('immediate');
@@ -610,10 +611,10 @@ async function start(): Promise<void> {
     },
     onCompletionQuery(query) {
       // Wiring, and nothing more: the pane decides when to ask, the binding decides what
-      // the answer is and in what order (§4.9), and this carries the question to the
+      // the answer is and in what order, and this carries the question to the
       // worker and the answer back. The document goes with it because the binding scans
       // it for the user's own `\newcommand`s, which is why `state.doc` is the argument
-      // rather than the prefix alone (§6.13).
+      // rather than the prefix alone.
       client.complete(state.doc, query.prefix, query.limit, (items) => {
         panes.setCompletions(query, items);
       });
@@ -634,7 +635,7 @@ async function start(): Promise<void> {
     onOptionsChange(next: AppOptions) {
       state.opts = withDefaults(sanitizeOptions(next));
       persistence.options(state.opts);
-      // The display half of `wrap: 'soft'` (§6.3): the library is told nothing about
+      // The display half of `wrap: 'soft'`: the library is told nothing about
       // it — `resolveOptions` drops it — so the pane has to be told directly. The same
       // is true of `math: 'mathjax'`, whose display half is the typesetter, and which
       // is fetched the moment it is selected rather than when a formula arrives.
@@ -653,7 +654,7 @@ async function start(): Promise<void> {
       state.ui.keepFontsOffline = enabled;
       persistence.ui(state.ui);
       if (!enabled) return;
-      // One "keep everything offline" rather than a checkbox per asset (§8.3, §9.1):
+      // One "keep everything offline" rather than a checkbox per asset:
       // the display faces and the typesetter are the two things the app fetches after
       // the first load, and someone ticking this is answering the same question about
       // both. MathJax's failure is not worth a toast here — it was not asked for by
@@ -754,7 +755,7 @@ async function start(): Promise<void> {
   async function openLibrary(): Promise<void> {
     const backend = await openLibraryBackend(() => libraryClosed());
     if (!backend) {
-      // Honest and inert, the way `browserStorage()` is for localStorage (§6.10).
+      // Honest and inert, the way `browserStorage()` is for localStorage.
       panes.setEntryState(null);
       libraryPane.setUnavailable(
         'This browser will not let the page keep a library here. Everything else works as usual.',
@@ -786,7 +787,7 @@ async function start(): Promise<void> {
         }
         if (!created) return;
         void refreshLibrary();
-        // Once, ever: the library only helps if people know it is there (§6.10).
+        // Once, ever: the library only helps if people know it is there.
         if (hints.toldAboutFirstSave) return;
         hints.toldAboutFirstSave = true;
         writeLibraryHints(storage, hints);
@@ -811,7 +812,7 @@ async function start(): Promise<void> {
       onSession(session) {
         // Only an *open* entry is worth continuing after a reload. A sealed one is not
         // being written to, and is found again below by what it holds rather than by
-        // an id that would invite the next keystroke straight back into it (§6.10).
+        // an id that would invite the next keystroke straight back into it.
         const open = session.sealed ? null : session.entryId;
         writeCurrentEntryId(tab, open);
         // And the other tabs are told, for the same reason and on the same terms: an
@@ -829,7 +830,7 @@ async function start(): Promise<void> {
     syncEntry();
     // A reload is not a new document: if the editing session was writing into an
     // entry and the pane came back with that same session's text in it, the log
-    // continues there rather than growing a second copy (§6.10).
+    // continues there rather than growing a second copy.
     const previous = readCurrentEntryId(tab);
     const resumed =
       loaded.source === 'storage' && previous !== null ? await library.get(previous) : null;
@@ -855,7 +856,7 @@ async function start(): Promise<void> {
   }
 
   /**
-   * Another tab has taken over the entry this one was writing into (§6.10).
+   * Another tab has taken over the entry this one was writing into.
    *
    * Giving it up is not a courtesy, it is the point: two tabs updating one entry in
    * place put the whole record each time, so the second write silently replaces the
@@ -886,7 +887,7 @@ async function start(): Promise<void> {
   }
 
   /**
-   * The database was given up while the page is still running (§6.10).
+   * The database was given up while the page is still running.
    *
    * One cause: another tab is upgrading it, and this one was in the way. Holding on
    * would have left *that* tab with no library at all, so `library-store.ts` let go —
@@ -921,7 +922,7 @@ async function start(): Promise<void> {
 
   /**
    * Re-read the library and tell the pane where the user stands — the count, the
-   * size, and the one line of warning that is ever shown about storage (§6.10).
+   * size, and the one line of warning that is ever shown about storage.
    */
   async function refreshLibrary(): Promise<void> {
     // A closed database answers every read with nothing, and a pane that reported
@@ -942,8 +943,7 @@ async function start(): Promise<void> {
   let shownEntry: LibraryEntry | null = null;
 
   /**
-   * Say, in the input pane's header, which entry the keystrokes are going into
-   * (§6.10).
+   * Say, in the input pane's header, which entry the keystrokes are going into.
    *
    * This is the whole answer to item 8's first complaint. The library was silent about
    * the current entry, so nothing on screen contradicted the assumption that a paste
@@ -976,7 +976,7 @@ async function start(): Promise<void> {
   }
 
   /**
-   * What one input event did to the session, said out loud (§6.10).
+   * What one input event did to the session, said out loud.
    *
    * The automatic fork is the safety net under New, Save and ★, and it is the one that
    * can be wrong — so it is also the one that comes with an Undo. Getting it wrong then
@@ -1046,7 +1046,7 @@ async function start(): Promise<void> {
   let pruneProposed = false;
 
   /**
-   * Storage ran out. The app *proposes*; it does not act (§6.10).
+   * Storage ran out. The app *proposes*; it does not act.
    *
    * Export comes first and prominently, so nothing has to be lost at all. Only the
    * oldest unstarred entries are ever offered, only with the user's explicit
@@ -1092,7 +1092,7 @@ async function start(): Promise<void> {
     const previousSession = library?.session ?? { entryId: null, sealed: false };
     const previousEntry = shownEntry;
 
-    // Sealed unless this *is* the entry being written to (§6.10): a version the user
+    // Sealed unless this *is* the entry being written to: a version the user
     // moved on from comes back to be read and copied from, and the first edit to it
     // starts a new entry instead of overwriting what they kept.
     if (adoptionOnOpen(previousSession, entry.id) === 'open') library?.adopt(entry.id);
@@ -1109,7 +1109,7 @@ async function start(): Promise<void> {
         onSelect: () => {
           // The settings that were replaced belong to an entry that is itself in the
           // log, so this is a convenience rather than a rescue — but it is the app's
-          // idiom, and a replaced document deserves one level of undo (§6.7). The
+          // idiom, and a replaced document deserves one level of undo. The
           // session comes back as it was, sealed included: a version the user had
           // kept must not start absorbing edits because they looked at another entry.
           if (previousSession.sealed && previousEntry !== null) {
@@ -1220,7 +1220,7 @@ async function start(): Promise<void> {
     toast.show({ message: describeImport(plan, decoded.library.dropped), timeoutMs: 6000 });
   }
 
-  /** The first time the pane is opened it is no longer news (§6.10). */
+  /** The first time the pane is opened it is no longer news. */
   function openedLibrary(): void {
     controls.setLibraryNew(false);
     if (!hints.opened) {
@@ -1233,7 +1233,7 @@ async function start(): Promise<void> {
   /* --------------------------------------------- New, Save and ★: three verbs */
 
   /**
-   * The three buttons differ only in what happens after the seal (§6.10): **New**
+   * The three buttons differ only in what happens after the seal: **New**
    * clears the input, **Save** leaves the document on screen, and **★** stars it as
    * well. Sealing itself is one primitive in `library.ts`, and none of them creates
    * the next entry — the first edit does.
@@ -1259,7 +1259,7 @@ async function start(): Promise<void> {
       action: {
         label: 'Undo',
         onSelect: () => {
-          // The app's single-level undo, as Load ▾ offers it (§6.7): the document
+          // The app's single-level undo, as Load ▾ offers it: the document
           // comes back, and so does the entry it was being written into.
           if (kept) library?.adopt(kept.id);
           setDocument(previous, false);
@@ -1335,7 +1335,7 @@ async function start(): Promise<void> {
     return `${origin}${pathname}${search}${fragment}`;
   }
 
-  /** Loading an example throws work away, so it comes with one level of undo (§6.7). */
+  /** Loading an example throws work away, so it comes with one level of undo. */
   function loadExample(example: ExampleDoc): void {
     const previous = state.doc;
     setDocument(example.source);
@@ -1353,8 +1353,8 @@ async function start(): Promise<void> {
   /**
    * Replace the document. Every caller of this is a point where the app already knows
    * the user has moved on to something else — Load ▾, the file handler, opening a
-   * library entry, an Undo — which is exactly where a new library entry begins
-   * (§6.10). Opening an entry from the library is the one exception, and passes
+   * library entry, an Undo — which is exactly where a new library entry begins.
+   * Opening an entry from the library is the one exception, and passes
    * `false`: it has just settled the session itself — writing into that entry when it
    * is the one already open, sealed on to it otherwise — and this must not overwrite
    * that answer with a third.
@@ -1368,10 +1368,10 @@ async function start(): Promise<void> {
   }
 
   /**
-   * The manifest's `file_handlers` (§9, W8): an installed copy can be asked to open a
+   * The manifest's `file_handlers`: an installed copy can be asked to open a
    * `.tex`, and the file arrives through `launchQueue` rather than through any URL.
    * Additive — a browser without it simply never calls this — and it replaces the
-   * document, so it offers the same single-level undo the Load menu does (§6.7).
+   * document, so it offers the same single-level undo the Load menu does.
    */
   function registerFileHandler(): void {
     const queue = (window as unknown as { launchQueue?: LaunchQueue }).launchQueue;
@@ -1430,7 +1430,7 @@ async function start(): Promise<void> {
     persistence.flush();
     // Best effort, and honest about it: a page being torn down may not get its
     // IndexedDB transaction finished. The 2 s debounce is what makes that a rare
-    // couple of seconds' typing rather than a session (§6.10).
+    // couple of seconds' typing rather than a session.
     void library?.flush();
   };
   window.addEventListener('pagehide', (event) => {
@@ -1458,12 +1458,12 @@ async function start(): Promise<void> {
   prefetchMathJaxWhenInstalled();
   measuredColumns = panes.columns();
   // The font is applied without being awaited: the first conversion should not wait
-  // for a face to arrive, and the pane re-measures when it does (§6.5).
+  // for a face to arrive, and the pane re-measures when it does.
   void useFont(state.ui.font, state.ui.size, false);
   if (state.ui.keepFontsOffline) void preloadAllFonts(state.ui.size);
   requestConversion('immediate');
   // Last, and unawaited: the library is the one part of the app that may take a
-  // moment to become available, and nothing above it waits for that (§6.10).
+  // moment to become available, and nothing above it waits for that.
   void openLibrary();
 }
 

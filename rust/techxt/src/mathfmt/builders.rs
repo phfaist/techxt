@@ -12,7 +12,7 @@ use super::join::MathWrapDelims;
 /// Build the atom for `\frac{numerator}{denominator}`, with both operands already
 /// rendered to text (v3 `_format_frac`; also `\nicefrac`, `\textfrac`).
 ///
-/// **This is not a deferred wrappable** (DECISIONS.md D1). A fraction knows all by
+/// **This is not a deferred wrappable**. A fraction knows all by
 /// itself that `(a+b)/c` needs parentheses — the reason is *internal*, it does not
 /// depend on the neighbours — so the delimiters go on eagerly and the result is a
 /// finished [`Str`](super::AtomBody::Str) atom. Making it a
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn frac_is_eager_so_a_following_factor_is_only_spaced() {
-        // DECISIONS.md D1: a true wrappable would give `(𝑎/𝑏)𝑐`
+        // A true wrappable would give `(𝑎/𝑏)𝑐`
         let atoms = vec![
             frac_atom("𝑎", "𝑏", &MathWrapDelims::Parens),
             Atom::from_text("𝑐", AtomClass::both(AtomClass::Ord)),

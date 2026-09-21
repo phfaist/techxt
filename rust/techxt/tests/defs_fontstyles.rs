@@ -1,5 +1,4 @@
-//! `defs::fontstyles`: the font macros, the two stacks, and `\emph`'s toggle
-//! (PLAN.md §9.5, DECISIONS.md D6 and D7).
+//! `defs::fontstyles`: the font macros, the two stacks, and `\emph`'s toggle.
 
 use techxt::mathfmt::FontStyle;
 use techxt::Converter;
@@ -53,8 +52,8 @@ fn only_ascii_letters_are_mapped() {
 
 #[test]
 fn a_nested_style_overrides_an_upright_one() {
-    // DECISIONS.md D7: `Upright` is a style, not the absence of one, so a nested
-    // `\mathbf` still applies.
+    // `Upright` is a style, not the absence of one, so a nested `\mathbf` still
+    // applies.
     assert_eq!(text(r"\mathrm{a\mathbf{b}}"), "a𝐛\n");
     assert_eq!(text(r"\textrm{a\textbf{b}}"), "a𝐛\n");
 }
@@ -67,8 +66,8 @@ fn a_style_is_restored_when_its_argument_ends() {
 
 #[test]
 fn styling_applies_to_document_characters_only() {
-    // DECISIONS.md D6: a rule's replacement text is not document text. `\ldots` stays
-    // an ellipsis and `\TeX` stays upright even inside a bold argument.
+    // A rule's replacement text is not document text. `\ldots` stays an ellipsis and
+    // `\TeX` stays upright even inside a bold argument.
     assert_eq!(text(r"\textbf{a\ldots b}"), "𝐚…𝐛\n");
     assert_eq!(text(r"\textbf{\TeX}"), "TeX\n");
 }

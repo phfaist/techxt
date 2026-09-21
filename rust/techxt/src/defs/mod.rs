@@ -1,5 +1,4 @@
-//! The default definitions library: what techxt knows about LaTeX out of the box
-//! (PLAN.md §12).
+//! The default definitions library: what techxt knows about LaTeX out of the box.
 //!
 //! Everything here is *data* in the sense that matters: one [`Category`](crate::def::Category) per theme,
 //! each built from the entry builders of [`techxt::def`](crate::def), each usable on
@@ -33,7 +32,7 @@
 //! Everything standard: the LaTeX2e kernel's own commands and environments, the
 //! `amsmath` and `amssymb` families, and the packages a paper reaches for without
 //! thinking — `graphicx`, `hyperref`, `natbib`, `booktabs`, `multirow`, `longtable`,
-//! `verbatim`. That is what PLAN.md §12.2 asks for: nothing standard should reach the
+//! `verbatim`. The aim is that nothing standard should reach the
 //! unknown policy out of the box, so an ordinary document converts without a single
 //! diagnostic. Where a construct has no plain-text meaning at all — a font size, a
 //! page break, a counter's value — it is still *declared*, which is what keeps its
@@ -45,7 +44,7 @@
 //!
 //! - **TeX's conditionals** (`\if…\else\fi`), and with them category codes, registers
 //!   and counters. Macro *definition* is no longer on this list — [`preamble`] seeds
-//!   techy-xp's definers, so `\newcommand` and `\def` are honoured (PLAN.md §16 M9) —
+//!   techy-xp's definers, so `\newcommand` and `\def` are honoured —
 //!   but a conditional is outside techy-xp's scope by design, and reaching one raises
 //!   `techy-xp.presets.conditional-unsupported` and renders as nothing.
 //! - **`tabbing`**, whose `\=` and `\>` collide with the accent macros of
@@ -87,7 +86,7 @@ pub mod tables;
 pub mod theorems;
 pub mod verbatim;
 
-/// Every category the library ships, stacked in PLAN.md §12.1's order.
+/// Every category the library ships, in stacking order.
 ///
 /// This is what [`Converter::standard`](crate::Converter::standard) builds from. The
 /// order is normative and **later categories shadow earlier ones**: `symbols_extra`

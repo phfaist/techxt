@@ -1,5 +1,5 @@
 /**
- * The sheets over the tool — About, Install and the library (web/PLAN.md §6.8, §6.10).
+ * The sheets over the tool — About, Install and the library.
  *
  * The page does not scroll: the tool is exactly one viewport tall, and everything
  * that is not the tool is a `<dialog>` over it. `showModal()` is doing real work
@@ -36,7 +36,7 @@ export interface Sheets {
  * It is captured at module scope, not in {@link initSheets}, because Chrome fires it
  * once and early — around load, well before anyone opens the Install sheet — and an
  * event nobody was listening for is simply gone. `preventDefault()` is what stops the
- * browser's own mini-infobar and lets us keep the prompt for a button (§6.8).
+ * browser's own mini-infobar and lets us keep the prompt for a button.
  */
 interface InstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -178,7 +178,7 @@ export function initSheets(init: SheetsInit = {}): Sheets {
     refreshInstallState();
   }
 
-  /** Show the browser's own prompt, and say what it answered — in the sheet (§6.8). */
+  /** Show the browser's own prompt, and say what it answered — in the sheet. */
   async function runInstallPrompt(): Promise<void> {
     const prompt = deferredPrompt;
     const result = document.getElementById('install-result');

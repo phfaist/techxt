@@ -1,4 +1,4 @@
-//! `defs::accents`: the accent macros and the first-character rule (PLAN.md §9.3).
+//! `defs::accents`: the accent macros and the first-character rule.
 
 use techxt::Converter;
 

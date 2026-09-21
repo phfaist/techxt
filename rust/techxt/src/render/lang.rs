@@ -6,7 +6,7 @@ use techy::core::node::BodySlotExt;
 use techy::core::NodeExtTypes;
 use techy::latexlike::LatexlikeLang;
 
-/// A latexlike language techxt can render a tree of (PLAN.md §11.1).
+/// A latexlike language techxt can render a tree of.
 ///
 /// **Auto-implemented; never implement it by hand.** The blanket implementation below
 /// covers every language that qualifies, so a language earns this by satisfying

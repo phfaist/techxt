@@ -1,10 +1,10 @@
 //! Makes the embedded techxt version available to the binding.
 //!
 //! `techxt_version()` reports the version of the library that was compiled in, which is
-//! what makes a bug report from the web app actionable (web/PLAN.md §6.8). The number
-//! lives in `rust/Cargo.toml`'s `[workspace.package]`, and this crate is deliberately
-//! not a member of that workspace (§3), so it is read out of the manifest here rather
-//! than inherited — three lines of parsing instead of a TOML dependency, for one
+//! what makes a bug report from the web app actionable. The number lives in
+//! `rust/Cargo.toml`'s `[workspace.package]`, and this crate is deliberately not a
+//! member of that workspace, so it is read out of the manifest here rather than
+//! inherited — three lines of parsing instead of a TOML dependency, for one
 //! `version = "…"` line whose shape is fixed by cargo.
 
 fn main() {

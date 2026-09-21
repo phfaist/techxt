@@ -1,6 +1,5 @@
 /**
- * The MathJax TeX configuration, held to the three properties a unit test can reach
- * (web/PLAN.md §9.1).
+ * The MathJax TeX configuration, held to the three properties a unit test can reach.
  *
  * The measurement itself — which of techxt's ~1 400 names MathJax understands — needs
  * MathJax, the symbol table and half a second, and lives in
@@ -48,7 +47,7 @@ describe('the MathJax TeX configuration', () => {
 
   it('scans for no delimiters of its own', () => {
     // techxt's output is text, and `\$5` produces a `$` that no scanner can tell from
-    // the `$` of a formula (§9.1). The app hands MathJax one element per math region.
+    // the `$` of a formula. The app hands MathJax one element per math region.
     expect(TEX_INPUT.inlineMath).toEqual([]);
     expect(TEX_INPUT.displayMath).toEqual([]);
     expect(TEX_INPUT.processEscapes).toBe(false);

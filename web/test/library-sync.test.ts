@@ -1,5 +1,5 @@
 /**
- * What one tab tells the others (web/PLAN.md §6.10).
+ * What one tab tells the others.
  *
  * Node has a `BroadcastChannel` with the same delivery rule the browser has, so the
  * one property the claim rule rests on — *the sender never hears itself* — is

@@ -1,5 +1,5 @@
 /**
- * The library's model and its policy (web/PLAN.md §6.10).
+ * The library's model and its policy.
  *
  * The point of putting the retention rules in a pure module is that they can be
  * asserted rather than argued about, so the tests that matter most here are the ones
@@ -259,7 +259,7 @@ describe('fingerprint and sameContent', () => {
 
   it('ignores an option that is the default written out in full', () => {
     // Absent means the default everywhere else, so an entry that spells the default
-    // out is the same entry as one that leaves it out (§6.4).
+    // out is the same entry as one that leaves it out.
     expect(fingerprint('a', { wrap: 'soft' })).toBe(fingerprint('a', {}));
   });
 });
@@ -711,7 +711,7 @@ describe('sealing', () => {
     await log.flush();
     const kept = (await log.list())[0]!;
 
-    // What `main.ts` now does for every entry but the live draft (§6.10): the document
+    // What `main.ts` now does for every entry but the live draft: the document
     // comes back on screen, and nothing is written until it changes.
     log.adoptSealed(kept);
     expect(log.session).toEqual({ entryId: kept.id, sealed: true });
@@ -992,7 +992,7 @@ describe('pausing', () => {
     clock.advance(2000);
     await log.flush();
     // The nuisance, deliberately: the library stopped growing, and nothing that was
-    // in it was touched (§6.10).
+    // in it was touched.
     expect((await log.list()).map((item) => item.source)).toEqual(['kept']);
 
     log.resume();

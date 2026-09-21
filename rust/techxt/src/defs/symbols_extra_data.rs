@@ -2,9 +2,9 @@
 //
 // Source: pylatexenc `latex2text/_defaultspecs.py` (what a macro renders as)
 // and `latexwalker/_defaultspecs.py` (what it parses), minus the categories
-// PLAN.md §4 drops, plus the mode evidence of `latexencode`'s default rules.
+// techxt drops, plus the mode evidence of `latexencode`'s default rules.
 
-//! The generated symbol table (PLAN.md §12.3, §12.4).
+//! The generated symbol table.
 //!
 //! One row per macro, sorted by name: what it is called, what it renders as,
 //! the arguments it declares, and the modes it is visible in. See

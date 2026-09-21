@@ -1,5 +1,5 @@
 //! What each definer *shape* does, and what expansion looks like once it meets the
-//! renderer (PLAN.md §16 M9, phase 3).
+//! renderer.
 //!
 //! `defs_macros.rs` pins the wiring — that definitions are honoured at all, where they
 //! are scoped, what is refused, what the budgets bound. This file is the other half: the
@@ -256,7 +256,7 @@ fn every_definer_defines_unconditionally_whatever_latexs_rule_would_be() {
         "B\n"
     );
     // None of it is diagnosed: techy-xp's `definition-already-exists` and its sibling can
-    // never fire on techxt's stack (PLAN.md §17, amended for M9).
+    // never fire on techxt's stack.
     assert!(diagnostics(r"\providecommand{\emph}[1]{<#1>}\emph{a}").is_empty());
 }
 

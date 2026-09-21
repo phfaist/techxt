@@ -1,4 +1,4 @@
-//! Today's date, in the English form `\today` produces (PLAN.md §13).
+//! Today's date, in the English form `\today` produces.
 //!
 //! `Options::today` is a plain string, and the only thing standing between the system
 //! clock and that string is a civil-calendar conversion and a table of month names. A
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn the_plans_own_example_round_trips() {
-        // PLAN.md §13 spells the expected shape out: "August 19, 2026".
+        // The expected shape, spelled out: "August 19, 2026".
         // 2026-08-19 is 20684 days after the epoch.
         assert_eq!(civil_from_days(20_684), (2026, 8, 19));
         assert_eq!(format_date(2026, 8, 19), "August 19, 2026");

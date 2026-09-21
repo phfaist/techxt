@@ -1,5 +1,4 @@
-//! The one test that needs a browser: `Session::convert` across the `JsValue` boundary
-//! (web/PLAN.md §4.8).
+//! The one test that needs a browser: `Session::convert` across the `JsValue` boundary.
 //!
 //! Everything else about the binding is ordinary Rust and is tested natively; what only
 //! wasm can show is that a plain JavaScript options object deserializes into an
@@ -89,7 +88,7 @@ fn convert_round_trips_through_jsvalue() {
     assert!(!diagnostic.rendered.is_empty());
     assert!(diagnostic.frames.is_empty());
     let span = diagnostic.span.as_ref().expect("span: not null");
-    // UTF-16 code units: `𝕏` counts two, not one and not four (§4.4).
+    // UTF-16 code units: `𝕏` counts two, not one and not four.
     assert_eq!(span.start, 3);
     assert_eq!(span.end, 18);
     assert_eq!(span.line, 1);

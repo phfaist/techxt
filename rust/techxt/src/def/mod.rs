@@ -1,4 +1,4 @@
-//! Definitions: what techxt knows about a construct (PLAN.md §10).
+//! Definitions: what techxt knows about a construct.
 //!
 //! A techxt definition says two things at once about one construct: **how it parses**
 //! (how many arguments it takes and of what shape) and **how it renders** (its
@@ -8,8 +8,7 @@
 //! pylatexenc's two independent databases, whose divergence is a documented source of
 //! dropped arguments and index errors.
 //!
-//! At render time a construct's rule is found through the dispatch chain of PLAN.md
-//! §10.3, in this order:
+//! At render time a construct's rule is found through a dispatch chain, in this order:
 //!
 //! 1. the converter's **override map** — `ConverterBuilder::override_macro` and friends,
 //!    keyed by [`CallableKind`] and name;

@@ -1,5 +1,5 @@
 /**
- * What one copy of the app tells the others (web/PLAN.md §6.10).
+ * What one copy of the app tells the others.
  *
  * Two tabs on the same origin share one library and one `localStorage`, and until
  * this file existed they shared them by standing on each other. Nothing here makes
@@ -10,8 +10,7 @@
  *   should re-read it. Sent for a create, a delete, a star, a rename, an import and a
  *   clear. Deliberately *not* sent for the two-second in-place update of the entry
  *   being typed into: that would have every other tab load every entry in full
- *   (§6.10, "the pane loads every entry") every two seconds, to refresh a preview
- *   that §6.10 already allows to be stale.
+ *   every two seconds, to refresh a preview that is already allowed to be stale.
  * - **`claim`** — this tab is now writing into this entry. A tab that hears a claim
  *   on the entry *it* is writing into gives it up. This is the one that matters: two
  *   tabs updating one entry in place is the only interference that costs the user

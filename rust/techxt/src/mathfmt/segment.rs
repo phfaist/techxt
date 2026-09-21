@@ -97,8 +97,7 @@ fn is_upright_latin_letter(c: char) -> bool {
     c.is_ascii_alphabetic()
 }
 
-/// Split a plain string into the atoms it is made of (PLAN.md §9.5, v3
-/// `_segment_plain_str`).
+/// Split a plain string into the atoms it is made of (v3 `_segment_plain_str`).
 ///
 /// Three rules, applied left to right:
 ///
@@ -110,9 +109,8 @@ fn is_upright_latin_letter(c: char) -> bool {
 ///    math is a variable. When no math alphabet is in force the heuristic would misfire
 ///    on `xy`, so the caller passes `upright_letters_are_op = false` and every letter
 ///    becomes its own [`Ord`](AtomClass::Ord); function names still come out right
-///    because `\sin` and friends declare themselves `Op` explicitly. Per DECISIONS.md
-///    D4 the flag is `true` exactly when the effective math font is a
-///    [`Style`](super::FontStyle::Style).
+///    because `\sin` and friends declare themselves `Op` explicitly. The flag is `true`
+///    exactly when the effective math font is a [`Style`](super::FontStyle::Style).
 /// 2. **A run of digits, absorbing a decimal point that has digits on both sides,
 ///    becomes one [`Ord`](AtomClass::Ord)**, so `3.14` is a single number while `3.` is
 ///    `3` then `.`, and `.5` is `.` then `5`.

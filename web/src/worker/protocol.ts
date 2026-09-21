@@ -5,7 +5,7 @@
  * `ConversionResult` and consumes `OptionsPayload`), the worker, and the UI. Every
  * string literal below is the wire form the Rust `OptionsDto` deserializes — kebab
  * case for enum values, camelCase for field names — so a change here is a change in
- * `web/crate/src/options.rs` too. See web/PLAN.md §4.2, §4.3 and §6.2.
+ * `web/crate/src/options.rs` too.
  */
 
 /* ------------------------------------------------------------------ options in */
@@ -47,7 +47,7 @@ export type MacroDefinitions = 'honored' | 'declared';
 /**
  * `techxt::convert::FontStyle`: `'off'` is `Disabled`, `'default'` is `Default`, and
  * every other value is `Style(FontStyleKind::…)` — the Unicode alphabet a letter is
- * mapped into. Nothing here has anything to do with the display font of §8.
+ * mapped into. Nothing here has anything to do with the display font.
  */
 export type FontStyleValue =
   | 'off'
@@ -72,7 +72,7 @@ export type FontStyleValue =
  *
  * Every field is optional and an absent field means *the library's own default* —
  * the app never re-types a default, so a change of one in techxt is picked up rather
- * than frozen (PLAN §4.2, §6.4). `wrapWidth: null` and `today: null` are the
+ * than frozen. `wrapWidth: null` and `today: null` are the
  * library's `None`, which is also what absent means for those two.
  */
 export interface OptionsPayload {
@@ -105,7 +105,7 @@ export type Severity = 'note' | 'warning' | 'error';
 
 /**
  * A span in the document the user typed. Offsets are **UTF-16 code units**, mapped
- * from techy's UTF-8 byte offsets inside the binding (PLAN §4.4), so they can be
+ * from techy's UTF-8 byte offsets inside the binding, so they can be
  * handed to `setSelectionRange` unchanged.
  */
 export interface Span {
@@ -132,7 +132,7 @@ export interface Diagnostic {
   rendered: string;
   /**
    * Where to select in the input, or `null` when neither this diagnostic nor anything
-   * it came from is in the document that was converted (§4.5).
+   * it came from is in the document that was converted.
    */
   span: Span | null;
   /**
@@ -141,7 +141,7 @@ export interface Diagnostic {
    *
    * A diagnostic raised inside an expansion points into the macro's *body*, which is
    * not a place the textarea can select, so the binding substitutes the invocation
-   * that expanded it and says so here (§4.5). Always `false` when `span` is `null`.
+   * that expanded it and says so here. Always `false` when `span` is `null`.
    */
   approx: boolean;
   frames: TraceFrame[];
@@ -151,10 +151,10 @@ export interface Diagnostic {
  * A run of the converted **output** that is a formula's own LaTeX source.
  *
  * Offsets are UTF-16 code units into {@link ConversionResult.text}, mapped in the
- * binding by the same single pass a diagnostic's span goes through (§4.4). The app
+ * binding by the same single pass a diagnostic's span goes through. The app
  * wraps each range in an element and hands the element to MathJax; the text itself is
  * untouched, so what the user copies, downloads or saves is still the library's own
- * string (§4.3, §6.3).
+ * string.
  *
  * The list is already filtered. techxt reports four kinds of preformatted run — a
  * source-mode formula, a formula it rendered and laid out itself, a construct kept as
@@ -202,7 +202,7 @@ export interface ConversionResult {
  *
  * The JS side does no matching, no merging and no ranking: it sends a prefix and
  * renders what comes back, so every rule about what is offered and in what order lives
- * next to the symbol table it is drawn from (§4.9).
+ * next to the symbol table it is drawn from.
  */
 export interface Completion {
   /** The name without its backslash, e.g. `alpha`. */
@@ -221,7 +221,7 @@ export interface Completion {
  * Both requests carry a monotonic `id` and are answered under the same rule: a reply
  * whose id is not the latest is dropped by the client rather than rendered — but on a
  * counter of its own for each, so that a keystroke asking what `\alp` could be never
- * invalidates the conversion in flight beside it (PLAN §6.2, §6.13).
+ * invalidates the conversion in flight beside it.
  *
  * `complete` answers the editor's completion chips. It carries the whole document
  * because the binding scans it for the user's own definitions, and it is never

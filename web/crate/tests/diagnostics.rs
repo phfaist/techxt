@@ -1,4 +1,4 @@
-//! Diagnostics as the app receives them (web/PLAN.md §4.3, §4.5, §4.8).
+//! Diagnostics as the app receives them.
 //!
 //! These run the real converter over real documents: what is under test is the shape of
 //! the answer — severities, identifiers, mapped spans, the `ok: false` path — rather
@@ -43,8 +43,8 @@ fn a_clean_document_reports_nothing() {
     assert_eq!(result.ms, 0.0);
 }
 
-/// §4.8: an `\undefinedmacro` document yields one `techxt.unknown-macro` warning whose
-/// span selects exactly `\undefinedmacro`.
+/// An `\undefinedmacro` document yields one `techxt.unknown-macro` warning whose span
+/// selects exactly `\undefinedmacro`.
 #[test]
 fn an_unknown_macro_is_one_warning_selecting_exactly_the_macro() {
     let latex = "a \\undefinedmacro.\n";
@@ -74,9 +74,8 @@ fn an_unknown_macro_is_one_warning_selecting_exactly_the_macro() {
     assert!(!diagnostic.approx);
 }
 
-/// §4.5 as amended for M9: a diagnostic raised inside an expansion points into the
-/// macro's body, which the textarea cannot select — so the app gets the invocation
-/// instead, marked `approx`.
+/// A diagnostic raised inside a macro expansion points into the macro's body, which the
+/// textarea cannot select — so the app gets the invocation instead, marked `approx`.
 ///
 /// This is the routine case rather than an exotic one, and it is the case with *no*
 /// trace frames at all: the fallback that answers it is the source's provenance chain.
@@ -159,7 +158,7 @@ fn line_and_column_follow_the_document() {
     assert_eq!(selection(latex, span), "\\undefinedmacro");
 }
 
-/// §4.8: under strict recovery a malformed document is `ok: false` with one error — and
+/// Under strict recovery a malformed document is `ok: false` with one error — and
 /// no text, since there is none.
 #[test]
 fn strict_mode_answers_not_ok_with_one_error() {

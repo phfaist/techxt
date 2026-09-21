@@ -1,6 +1,5 @@
 /**
- * The library's storage: IndexedDB, and the browser facts around it (web/PLAN.md
- * §6.10).
+ * The library's storage: IndexedDB, and the browser facts around it.
  *
  * This is the only file in the app that opens a database. Everything above it works
  * against {@link LibraryBackend} in `library.ts`, which is why the retention policy,

@@ -1,4 +1,4 @@
-//! The core of mathematical notation (PLAN.md §9.5): Greek letters, operators and
+//! The core of mathematical notation: Greek letters, operators and
 //! relations, `\frac`, `\sqrt`, brackets, arrows, dots and delimiters.
 //!
 //! Most of this category is one line per symbol, and those lines do more than they look
@@ -26,14 +26,14 @@
 //! - **a relation whose character the class tables do not carry** — today only
 //!   `\coloneqq` → `≔`. The character *would* be the class if
 //!   [`segment_plain`](crate::mathfmt::segment_plain)'s relation table listed it, but
-//!   that table is a faithful port of pylatexenc v3's (PLAN.md §9.5) and one curated
+//!   that table is a faithful port of pylatexenc v3's and one curated
 //!   macro is no reason to grow it, so the macro carries a
 //!   [`Rel`](crate::mathfmt::AtomClass::Rel) atom of its own.
 //!
 //! # Fonts do not reach any of it
 //!
 //! None of the text this module produces is styled, because none of it is document
-//! text (DECISIONS.md D6): `\sin` stays an upright `sin` next to an italic `𝑥`, and
+//! text: `\sin` stays an upright `sin` next to an italic `𝑥`, and
 //! `\alpha` stays `α`. Only the characters an author typed go through an alphabet.
 
 use alloc::format;
@@ -48,7 +48,7 @@ use crate::render::{math, NodeView, RenderCx, RenderError, RenderState};
 
 use super::handler;
 
-/// The mathcore category (PLAN.md §12.1).
+/// The mathcore category.
 ///
 /// ```
 /// use techxt::Converter;
@@ -520,7 +520,7 @@ fn fractions_and_roots(category: &mut Category) {
 /// and plain text has exactly one way to put something above or below a baseline:
 /// unicode's script characters. So the annotation is rendered as a **script** on the
 /// base — `\stackrel{\mathrm{def}}{=}` becomes `=ᵈᵉᶠ` — through the same all-or-nothing
-/// ladder `^` and `_` run (PLAN.md §9.5), which falls back to `^`/`_` notation for an
+/// ladder `^` and `_` run, which falls back to `^`/`_` notation for an
 /// annotation unicode cannot show. Nothing is dropped either way.
 fn stacked(category: &mut Category) {
     for name in ["binom", "dbinom", "tbinom"] {
@@ -597,7 +597,7 @@ fn styles(category: &mut Category) {
 const NUMERATOR: &str = "numerator";
 /// See [`NUMERATOR`].
 const DENOMINATOR: &str = "denominator";
-/// `\sqrt`'s two argument names (PLAN.md §9.5).
+/// `\sqrt`'s two argument names.
 const INDEX: &str = "index";
 /// See [`INDEX`].
 const RADICAND: &str = "radicand";
@@ -676,7 +676,7 @@ const QUANTITY: &str = "quantity";
 /// `\bmod`, `\coloneqq`.
 #[derive(Debug)]
 struct FixedAtom {
-    /// The text, which is never styled — it is not document text (DECISIONS.md D6).
+    /// The text, which is never styled — it is not document text.
     text: &'static str,
     /// What it presents to its neighbours on each side.
     cls: (AtomClass, AtomClass),
@@ -689,7 +689,7 @@ impl TextHandler for FixedAtom {
     }
 }
 
-/// `\operatorname{…}` (PLAN.md §9.5).
+/// `\operatorname{…}`.
 ///
 /// Two things at once, and both are needed: the name is set upright, and the result is
 /// declared an operator so that `$2\operatorname{tr}A$` reads `2 tr 𝐴`.
@@ -708,7 +708,7 @@ impl TextHandler for OperatorName {
     }
 }
 
-/// The current state with the mode-appropriate font stack set upright (DECISIONS.md D7).
+/// The current state with the mode-appropriate font stack set upright.
 ///
 /// [`FontStyle::Disabled`] is left alone: it is the option-level off switch, and no
 /// macro may turn alphabet mapping back on.
@@ -773,7 +773,7 @@ impl TextHandler for Stacked {
     }
 }
 
-/// `\frac{…}{…}` and its aliases (PLAN.md §9.5, DECISIONS.md D1).
+/// `\frac{…}{…}` and its aliases.
 ///
 /// The delimiters go on **eagerly**, around whichever operand needs them, and the result
 /// is finished text. A fraction knows by itself that `(𝑎+𝑏)/𝑐` needs parentheses — the
@@ -795,7 +795,7 @@ impl TextHandler for Fraction {
     }
 }
 
-/// `\sqrt[index]{radicand}` (PLAN.md §9.5).
+/// `\sqrt[index]{radicand}`.
 #[derive(Debug)]
 struct Root;
 

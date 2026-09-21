@@ -1,4 +1,4 @@
-//! Hyperlinks (PLAN.md §9.8): `\url` and `\href`.
+//! Hyperlinks: `\url` and `\href`.
 //!
 //! A URL is the one place in a LaTeX document where the escape character and the
 //! comment character are ordinary text: `https://ex.org/a_b#c%20d` is full of
@@ -20,7 +20,7 @@
 
 use crate::def::{Category, MacroDef, Template, TextRule};
 
-/// The links category (PLAN.md §12.1).
+/// The links category.
 pub fn category() -> Category {
     Category::new("links")
         .with_macro(

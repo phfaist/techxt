@@ -76,7 +76,7 @@
 //! | [`ParagraphBreak`](FlowItem::ParagraphBreak), the edges of a [`Verbatim`](FlowItem::Verbatim) | leave a blank line |
 //!
 //! Blocks separating at line strength rather than blank-line strength is what makes
-//! consecutive list items come out tight (PLAN.md §15 example 22), while
+//! consecutive list items come out tight (acceptance example 22), while
 //! `\begin{verbatim}` still stands apart from its surroundings (example 24). A handler
 //! that wants a blank line around its block — display math, a quotation — emits a
 //! [`ParagraphBreak`](FlowItem::ParagraphBreak) next to the
@@ -317,13 +317,12 @@ fn push_inline_word(out: &mut String, pending_space: &mut bool, word: &str) {
 }
 
 /// Report a table marker that reached layout, which means the enclosing table or
-/// matrix handler failed to consume it (PLAN.md §6: they never reach layout in correct
-/// operation).
+/// matrix handler failed to consume it (they never reach layout in correct operation).
 ///
-/// The plan prescribes exactly this: a `debug_assert!(false)`, so that the handler bug
-/// surfaces loudly while it is being written, plus a defined fallback in release builds
-/// so that a shipped conversion degrades to slightly wrong spacing instead of losing
-/// content or panicking on a document.
+/// This is deliberately a `debug_assert!(false)`, so that the handler bug surfaces
+/// loudly while it is being written, plus a defined fallback in release builds so that a
+/// shipped conversion degrades to slightly wrong spacing instead of losing content or
+/// panicking on a document.
 //
 // The `#[allow]` is deliberate and cannot be avoided by rewriting: the assertion's
 // condition *is* the constant `false`, that being the whole point. Clippy's suggested
@@ -331,7 +330,7 @@ fn push_inline_word(out: &mut String, pending_space: &mut bool, word: &str) {
 // release behaviour is specified.
 #[allow(
     clippy::assertions_on_constants,
-    reason = "PLAN.md §6 prescribes debug_assert!(false) with a defined release fallback"
+    reason = "debug_assert!(false) with a defined release fallback, by design"
 )]
 #[inline]
 fn stray_table_marker(marker: &str) {
@@ -799,7 +798,7 @@ mod tests {
 
     #[test]
     fn adjacent_text_items_are_one_word() {
-        // PLAN.md §15 #4: `\textbf{bold}text` is one unbreakable word.
+        // Acceptance example #4: `\textbf{bold}text` is one unbreakable word.
         assert_eq!(plain(vec![t("bold"), t("text")]), "boldtext\n");
         // and it is measured as one word when deciding to wrap
         assert_eq!(
@@ -840,7 +839,7 @@ mod tests {
 
     #[test]
     fn wrapping_crosses_item_boundaries() {
-        // PLAN.md §15 #25: `aaa bbb \textbf{ccc ddd} eee` at wrap_width 12 wraps
+        // Acceptance example #25: `aaa bbb \textbf{ccc ddd} eee` at wrap_width 12 wraps
         // *inside* the macro, because glue decides breaks, not item boundaries.
         assert_eq!(
             wrapped(
@@ -935,7 +934,7 @@ mod tests {
 
     #[test]
     fn example_2_four_newlines_are_one_blank_line() {
-        // PLAN.md §15 #2
+        // Acceptance example #2
         let f = Flow::from_plain_text("one\n\n\n\ntwo");
         assert_eq!(render(&f, &LayoutOptions::default()), "one\n\ntwo\n");
     }
@@ -1066,8 +1065,8 @@ mod tests {
 
     #[test]
     fn example_22_nested_lists() {
-        // PLAN.md §15 #22, with the list environments opening a block of their own so
-        // that the inner list's first item does not close the outer list's item.
+        // Acceptance example #22, with the list environments opening a block of their
+        // own so that the inner list's first item does not close the outer list's item.
         assert_eq!(
             plain(vec![
                 indent("", ""), // itemize
@@ -1109,7 +1108,8 @@ mod tests {
 
     #[test]
     fn verbatim_is_preserved_byte_for_byte() {
-        // PLAN.md §15 #24: body byte-identical, blank-line separated, never wrapped.
+        // Acceptance example #24: body byte-identical, blank-line separated, never
+        // wrapped.
         let body = "  keep   this\n\n    exactly\n";
         assert_eq!(
             wrapped(6, vec![t("a"), verb(body), t("b")]),
@@ -1201,7 +1201,7 @@ mod tests {
     fn render_inline_squeezes_verbatim_onto_the_line() {
         // The payload's own spacing is content and survives; the newline it ends with
         // is not, and asks for the same one separator the following word does rather
-        // than a second one of its own (DECISIONS.md D13).
+        // than a second one of its own.
         assert_eq!(
             render_inline(&flow(vec![t("a"), verb("x  y\nz\n"), t("b")])),
             "a x  y z b"

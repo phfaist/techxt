@@ -1,16 +1,16 @@
 /**
- * The display-font registry (web/PLAN.md §8).
+ * The display-font registry.
  *
  * A display font is CSS and nothing else: it changes how the converted text *looks*,
  * never what it says. The Unicode character styles of the More-options panel
  * (`textFont`, `mathFont`) are a different thing entirely and live in the binding.
  *
- * Each entry is a **chain**, not a face (§8.2). techxt copies input text straight
+ * Each entry is a **chain**, not a face. techxt copies input text straight
  * through, so a document can contain any script at all; browsers fall back per glyph,
  * so the chosen face renders what it has and the platform supplies the rest. Every
  * chain therefore ends in a system stack that covers CJK and emoji.
  *
- * Loading is the browser's own laziness (§8.3): the `@font-face` rules in
+ * Loading is the browser's own laziness: the `@font-face` rules in
  * `styles.css` declare all five display faces, and a declared face that nothing applies is
  * never fetched. There is no loader here beyond `document.fonts.load`, which exists
  * only so the pane header can say "loading font…".
@@ -28,7 +28,7 @@ export interface FontEntry {
    * system entry, which declares no face and downloads nothing.
    */
   family: string | null;
-  /** The full CSS chain, face first and platform coverage last (§8.2). */
+  /** The full CSS chain, face first and platform coverage last. */
   stack: string;
   /** One line for the About section; empty for the system entry. */
   credit: string;
@@ -39,7 +39,7 @@ export interface FontEntry {
 
 /**
  * The platform tails. A serif face falls back to a serif stack so the mix a
- * multi-script document produces does not clash (§8.2).
+ * multi-script document produces does not clash.
  */
 const MONO_TAIL =
   'ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", ' +
@@ -118,7 +118,7 @@ export const FONTS: readonly FontEntry[] = [
 ];
 
 /**
- * The face the app's own chrome is set in (§8.7).
+ * The face the app's own chrome is set in.
  *
  * It is **not** a display font and deliberately not part of {@link FONTS}: it never
  * renders converted text, it is not offered in the selector, and no state ever names
@@ -159,7 +159,7 @@ export function isFontId(id: unknown): id is FontId {
  *
  * Applying is what triggers the download; the returned promise is only for the
  * "loading font…" state. It never rejects — a face that fails to arrive leaves the
- * chain of §8.2 rendering, which is a fine outcome and not an error to report.
+ * rest of the chain rendering, which is a fine outcome and not an error to report.
  */
 export async function applyFont(id: FontId, sizePx: number, root: HTMLElement = document.documentElement): Promise<void> {
   const entry = fontEntry(id);
@@ -175,7 +175,7 @@ export async function applyFont(id: FontId, sizePx: number, root: HTMLElement = 
 
 /**
  * Fetch every self-hosted face, for someone about to lose their network ("keep all
- * fonts offline", §8.3). Resolves when all of them have settled, however they did.
+ * fonts offline"). Resolves when all of them have settled, however they did.
  */
 export async function preloadAllFonts(sizePx: number = DEFAULT_SIZE): Promise<void> {
   if (typeof document.fonts?.load !== 'function') return;

@@ -179,7 +179,7 @@ pub fn fmt_script_text(text: &str, kind: ScriptKind) -> Option<String> {
 }
 
 /// Build the atom for a sub- or superscript whose argument has already been rendered
-/// to `arg_text` (PLAN.md §9.5, v3 `_subsuperscript_formatter`).
+/// to `arg_text` (v3 `_subsuperscript_formatter`).
 ///
 /// The three-step ladder:
 ///

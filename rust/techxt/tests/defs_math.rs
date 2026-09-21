@@ -1,7 +1,7 @@
-//! The math definitions and the math handlers (PLAN.md §9.5, §9.7).
+//! The math definitions and the math handlers.
 //!
-//! PLAN.md §15's own examples live in `math_examples.rs`; what is tested here is the
-//! behavior around them — the scope boundaries, the three modes' agreements and
+//! The normative acceptance examples live in `math_examples.rs`; what is tested here is
+//! the behavior around them — the scope boundaries, the three modes' agreements and
 //! disagreements, the matrix family, and the cases the port reference
 //! (`/home/user/ref/notes/pylatexenc-math.md` §10) singles out as easy to get wrong.
 
@@ -73,12 +73,12 @@ fn no_math_atom_reaches_the_layout_engine() {
 #[test]
 fn a_deeply_braced_formula_folds_under_the_runs_descent_guard() {
     // A formula's interior is descended into by the driver like any other subtree — the
-    // joiner runs afterwards, on the assembled flow (DECISIONS.md D24) — so it is
-    // guarded exactly as the braces outside a formula are, by the run's own descent
-    // guard and by nothing special of math's. The guard is configured explicitly
-    // because the default budget is deliberately tight (DECISIONS.md D9) and would
-    // refuse this depth. The depth is modest because the *parser* recurses too and is
-    // the binding constraint on a test thread's smaller stack.
+    // joiner runs afterwards, on the assembled flow — so it is guarded exactly as the
+    // braces outside a formula are, by the run's own descent guard and by nothing
+    // special of math's. The guard is configured explicitly because the default budget
+    // is deliberately tight and would refuse this depth. The depth is modest because
+    // the *parser* recurses too and is the binding constraint on a test thread's
+    // smaller stack.
     let converter = Converter::builder()
         .descent_guard(StdDescentGuardInit::depth_limit(1000))
         .build()
@@ -119,7 +119,7 @@ fn text_returns_to_text_mode_inside_a_formula() {
     );
 }
 
-// ------------------------------------------------------------- scripts (§9.5)
+// ------------------------------------------------------------------- scripts
 
 #[test]
 fn the_script_ladder_prefers_unicode_then_retries_without_the_joiners_spaces() {
@@ -171,7 +171,7 @@ fn an_empty_script_renders_as_nothing() {
 
 #[test]
 fn a_fraction_wraps_its_operands_eagerly() {
-    // DECISIONS.md D1: a true wrappable would give `(𝑎/𝑏)𝑐` here.
+    // A true wrappable would give `(𝑎/𝑏)𝑐` here.
     assert_eq!(text(r"$\frac{a}{b}c$"), "𝑎/𝑏 𝑐\n");
     assert_eq!(text(r"$c\frac{a}{b}$"), "𝑐 𝑎/𝑏\n");
     assert_eq!(text(r"$\frac{a+b}{c}$"), "(𝑎 + 𝑏)/𝑐\n");
@@ -198,8 +198,8 @@ fn a_named_operator_is_upright_and_spaced_as_an_operator() {
     assert_eq!(text(r"$(\sin x)$"), "(sin 𝑥)\n");
     assert_eq!(text(r"$\det(A) \neq 0$"), "det(𝐴) ≠ 0\n");
     assert_eq!(text(r"$\lg n + \coth x$"), "lg 𝑛 + coth 𝑥\n");
-    // DECISIONS.md D6: the name is a rule's replacement text, so no alphabet touches
-    // it — that is what keeps it upright next to an italic variable.
+    // The name is a rule's replacement text, so no alphabet touches it — that is what
+    // keeps it upright next to an italic variable.
     assert_eq!(text(r"$\operatorname{tr}(A)$"), "tr(𝐴)\n");
     assert_eq!(text(r"$2\operatorname{tr}A$"), "2 tr 𝐴\n");
     assert_eq!(text(r"$\operatorname*{argmax}_x f(x)$"), "argmaxₓ 𝑓(𝑥)\n");
@@ -219,9 +219,9 @@ fn a_symbols_replacement_is_segmented_and_therefore_classified() {
 
 #[test]
 fn upright_letters_read_as_an_operator_only_while_variables_are_styled() {
-    // DECISIONS.md D4. With the default italic math font, a run of upright letters
-    // stands out as a name; with no alphabet at all it does not, and `2xy` would
-    // otherwise be read as a function called `xy`.
+    // With the default italic math font, a run of upright letters stands out as a name;
+    // with no alphabet at all it does not, and `2xy` would otherwise be read as a
+    // function called `xy`.
     assert_eq!(text("$2xy$"), "2𝑥𝑦\n");
     let bare = with(|b| b.math_font(FontStyle::Disabled));
     assert_eq!(bare.latex_to_text("$2 x y$").expect("parses").text, "2xy\n");
@@ -237,7 +237,7 @@ fn a_font_macro_inside_math_writes_the_math_stack() {
     assert_eq!(text(r"$\mathbf{x}$"), "𝐱\n");
     assert_eq!(text(r"$\mathbb{R}$"), "ℝ\n");
     assert_eq!(text(r"$\mathbf{a+b}$"), "𝐚 + 𝐛\n");
-    // DECISIONS.md D7: `Style(Upright)` is a style, and a nested one still overrides it.
+    // `Style(Upright)` is a style, and a nested one still overrides it.
     assert_eq!(text(r"$\mathrm{d}x$"), "d𝑥\n");
     assert_eq!(text(r"$\mathbf{a\mathrm{b}c}$"), "𝐚b𝐜\n");
 }
@@ -246,7 +246,6 @@ fn a_font_macro_inside_math_writes_the_math_stack() {
 
 #[test]
 fn an_inline_matrix_is_one_line_with_the_environments_own_delimiters() {
-    // DECISIONS.md D3, one per environment.
     assert_eq!(
         text(r"$\begin{pmatrix}1&2\\3&4\end{pmatrix}$"),
         "( 1  2; 3  4 )\n"
@@ -288,8 +287,8 @@ fn a_display_matrix_is_one_line_per_row() {
 
 #[test]
 fn a_tall_brace_gets_its_extension_piece() {
-    // DECISIONS.md D2: U+23A8 `⎨` is the brace's *centre*, not an extension, so a
-    // matrix taller than three rows needs U+23AA `⎪` for the rest.
+    // U+23A8 `⎨` is the brace's *centre*, not an extension, so a matrix taller than
+    // three rows needs U+23AA `⎪` for the rest.
     assert_eq!(
         text(r"\[\begin{Bmatrix}1&2\\3&4\\5&6\\7&8\end{Bmatrix}\]"),
         "    ⎧ 1  2 ⎫\n    ⎨ 3  4 ⎬\n    ⎪ 5  6 ⎪\n    ⎩ 7  8 ⎭\n"
@@ -349,7 +348,7 @@ fn plain_mode_renders_a_matrix_on_one_line() {
     );
 }
 
-// -------------------------------------------- math environments (§9.5, §9.7)
+// --------------------------------------------------------- math environments
 
 #[test]
 fn a_math_environment_is_display_math() {
@@ -368,9 +367,9 @@ fn a_math_environment_is_display_math() {
 
 #[test]
 fn a_math_environment_re_emits_its_source_in_source_mode() {
-    // A math environment opens a formula (PLAN.md §9.5), so `Source` mode shows it
-    // rather than rendering it — the same answer `\[…\]` gives. Answering at the group
-    // alone is what once made one equation read two ways depending on its spelling.
+    // A math environment opens a formula, so `Source` mode shows it rather than
+    // rendering it — the same answer `\[…\]` gives. Answering at the group alone is
+    // what once made one equation read two ways depending on its spelling.
     let source = with(|b| b.math_mode(MathMode::Source));
     let round_trips = |latex: &str| {
         assert_eq!(
@@ -470,7 +469,7 @@ fn source_mode_keeps_an_inline_formula_in_its_running_text() {
 
 #[test]
 fn inside_a_math_environment_a_break_is_a_line_and_an_ampersand_is_nothing() {
-    // PLAN.md §9.7: the joiner already spaces the relation the `&` was aligning.
+    // The joiner already spaces the relation the `&` was aligning.
     assert_eq!(
         text(r"\begin{align} a &= 1 \\ b &= 2 \end{align}"),
         "    𝑎 = 1\n    𝑏 = 2\n"

@@ -14,9 +14,9 @@ categories = ["text-processing", "value-formatting"]
 [lints]
 workspace = true
 
-# Exactly three runtime dependencies (PLAN.md §2 as amended for M9), all no_std +
-# alloc: techy, techy-xp (which brings techy's own map choice, hashbrown, as the one
-# transitive addition), and unicode-width.
+# Exactly three runtime dependencies, all no_std + alloc: techy, techy-xp (which
+# brings techy's own map choice, hashbrown, as the one transitive addition), and
+# unicode-width.
 #
 # techy default features are empty (its only feature, `serde`, is opt-in), so nothing
 # has to be turned off here to keep the no_std build honest; the CI `no_std` job
@@ -27,7 +27,7 @@ techy.workspace = true
 techy-xp.workspace = true
 unicode-width.workspace = true
 
-# proptest drives the layout and joiner invariants (PLAN.md §14.2). Tests are the one
+# proptest drives the layout and joiner invariants. Tests are the one
 # place where this crate links std (`#![cfg_attr(not(test), no_std)]`).
 [dev-dependencies]
 proptest.workspace = true

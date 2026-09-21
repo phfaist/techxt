@@ -1,5 +1,5 @@
-//! CLI smoke tests: every flag PLAN.md §13 lists, over fixture files, asserting standard
-//! output, standard error and the exit code (PLAN.md §14.5).
+//! CLI smoke tests: every flag, over fixture files, asserting standard output, standard
+//! error and the exit code.
 //!
 //! These drive the real binary rather than the library, because the things worth testing
 //! here are exactly the things the library does not do: argument parsing, the two streams,
@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 
 /// What one run of the binary did.
 struct Run {
-    /// The exit code. PLAN.md §13: 0 clean, 1 converted-with-errors, 2 no output at all.
+    /// The exit code: 0 clean, 1 converted-with-errors, 2 no output at all.
     code: i32,
     /// Everything written to standard output — the converted text, unless `-o` sent it
     /// to a file.
@@ -94,7 +94,7 @@ fn assert_run(args: &[&str], stdout: &str, stderr: &str, code: i32) {
 
 #[test]
 fn a_file_argument_is_converted_to_standard_output() {
-    // PLAN.md §15 example #1, through the command line.
+    // Acceptance example #1, through the command line.
     assert_run(&[&fixture("greeting.tex")], "Hello brave world.\n", "", 0);
 }
 
@@ -141,7 +141,7 @@ fn a_file_that_cannot_be_read_is_a_failure_not_a_panic() {
         "the failure names the file: {:?}",
         result.stderr
     );
-    assert_eq!(result.code, 2, "PLAN.md §13: an I/O failure is exit code 2");
+    assert_eq!(result.code, 2, "an I/O failure is exit code 2");
 }
 
 #[test]
@@ -161,9 +161,8 @@ fn an_output_file_that_cannot_be_written_is_a_failure_not_a_panic() {
 
 #[test]
 fn the_wrap_flag_wraps_across_a_macro_boundary() {
-    // PLAN.md §15 example #25, which is this milestone's named acceptance example: the
-    // bold word is three characters of styled text and wraps like any other word, even
-    // though `\textbf{ccc ddd}` is one macro invocation.
+    // Acceptance example #25: the bold word is three characters of styled text and
+    // wraps like any other word, even though `\textbf{ccc ddd}` is one macro invocation.
     assert_run(
         &[&fixture("example25.tex"), "--wrap", "12"],
         "aaa bbb 𝐜𝐜𝐜\n𝐝𝐝𝐝 eee\n",
@@ -184,7 +183,7 @@ fn the_wrap_flag_wraps_across_a_macro_boundary() {
 #[test]
 fn the_math_mode_flag_selects_all_three_modes() {
     let file = fixture("math.tex");
-    // PLAN.md §15 examples #10 and #13–#14, on one document.
+    // Acceptance examples #10 and #13–#14, on one document.
     assert_run(&[&file], "𝑎 + 𝑏 and 𝑥² + 𝑦ᵢ\n", "", 0);
     assert_run(
         &[&file, "--math-mode", "fancy"],
@@ -223,7 +222,7 @@ fn the_math_wrap_flag_selects_the_delimiters() {
 
 #[test]
 fn the_matrix_delims_flag_selects_the_bracket_style() {
-    // PLAN.md §15 example #23, both halves.
+    // Acceptance example #23, both halves.
     let file = fixture("matrix.tex");
     assert_run(&[&file], "    ⎛  1  2 ⎞\n    ⎝ 30  4 ⎠\n", "", 0);
     assert_run(
@@ -236,7 +235,7 @@ fn the_matrix_delims_flag_selects_the_bracket_style() {
 
 #[test]
 fn the_keep_comments_flag_keeps_them() {
-    // PLAN.md §15 example #9, both halves.
+    // Acceptance example #9, both halves.
     let file = fixture("comments.tex");
     assert_run(&[&file], "AB\n", "", 0);
     assert_run(&[&file, "--keep-comments"], "A\n% note\nB\n", "", 0);
@@ -244,7 +243,7 @@ fn the_keep_comments_flag_keeps_them() {
 
 #[test]
 fn the_heading_style_flag_selects_all_four_styles() {
-    // PLAN.md §9.2's table, one row per style.
+    // One row per style.
     let file = fixture("headings.tex");
     assert_run(
         &[&file],
@@ -274,7 +273,7 @@ fn the_heading_style_flag_selects_all_four_styles() {
 
 #[test]
 fn the_footnote_style_flag_selects_all_three_styles() {
-    // PLAN.md §15 example #18 plus the two other styles.
+    // Acceptance example #18 plus the two other styles.
     let file = fixture("footnotes.tex");
     assert_run(
         &[&file],
@@ -293,10 +292,10 @@ fn the_footnote_style_flag_selects_all_three_styles() {
 
 #[test]
 fn the_unknown_macro_flag_selects_the_policy() {
-    // A macro no definition claims resolves to a zero-argument callable (DECISIONS.md
-    // D16), so what is observable here is what the *name* renders as. `render-args` is
-    // deliberately indistinguishable from `skip` on such a macro — there are no
-    // arguments to render — and the pair is asserted rather than glossed over.
+    // A macro no definition claims resolves to a zero-argument callable, so what is
+    // observable here is what the *name* renders as. `render-args` is deliberately
+    // indistinguishable from `skip` on such a macro — there are no arguments to render —
+    // and the pair is asserted rather than glossed over.
     let file = fixture("unknown.tex");
     let warning = "warning: no text rule for the macro ‘\\nosuchmacro’\n  at: @ (line 1, col 3)\n";
     assert_run(&[&file], "a b\n", warning, 0);
@@ -349,7 +348,7 @@ fn the_today_option_is_set_from_the_clock() {
     assert!(matches!(year.parse::<i32>(), Ok(2020..=2200)), "{date:?}");
 }
 
-// ----------------------------------------------------- macro definitions (§16 M9)
+// ------------------------------------------------------------------- macro definitions
 
 /// What `macros.tex` converts to with its definitions honoured — the default.
 const MACROS_EXPANDED: &str = concat!(
@@ -433,11 +432,11 @@ fn a_small_expansion_depth_budget_stops_a_nesting_runaway() {
 
 #[test]
 fn a_refused_command_is_a_warning_shown_at_the_default_verbosity() {
-    // PLAN.md §10.6 as amended for M9 phase 3. techy-xp raises its refusals as errors —
-    // it must, since a strict parse aborts on one — and techxt reports them as warnings,
-    // because a command it refuses *by name* cannot rank worse than one it has never
-    // heard of. So the document converts, the reader is told exactly which TeX feature
-    // was not acted on, and the exit code stays 0.
+    // techy-xp raises its refusals as errors — it must, since a strict parse aborts on
+    // one — and techxt reports them as warnings, because a command it refuses *by name*
+    // cannot rank worse than one it has never heard of. So the document converts, the
+    // reader is told exactly which TeX feature was not acted on, and the exit code
+    // stays 0.
     let result = run_with_stdin(&[], r"A \expandafter B and \ifx C\fi D");
     assert_eq!(result.stdout, "A B and CD\n");
     assert_eq!(result.stderr.matches("warning: ").count(), 3);
@@ -485,7 +484,7 @@ fn warnings_alone_exit_zero() {
 
 #[test]
 fn notes_alone_exit_zero_and_are_printed_only_under_v() {
-    // An unresolved `\input` is a note (PLAN.md §10.6), which is below the default
+    // An unresolved `\input` is a note, which is below the default
     // reporting threshold: silent by default, visible under `-v`, and never a failure.
     let document = "before \\input{nowhere.tex} after";
     let quiet_by_default = run_with_stdin(&[], document);
@@ -501,9 +500,9 @@ fn notes_alone_exit_zero_and_are_printed_only_under_v() {
 
 #[test]
 fn an_error_diagnostic_exits_one_with_the_text_still_written() {
-    // PLAN.md §13's exit code 1: the document converted — the text is there, and the
-    // stray brace is in it, because tolerant recovery keeps what it cannot parse — but
-    // something in it was wrong.
+    // Exit code 1: the document converted — the text is there, and the stray brace is
+    // in it, because tolerant recovery keeps what it cannot parse — but something in it
+    // was wrong.
     let result = run(&[&fixture("stray-brace.tex")]);
     assert_eq!(result.stdout, "a } b\n");
     assert!(result.stderr.starts_with("error: "), "{:?}", result.stderr);
@@ -531,7 +530,7 @@ fn strict_refuses_the_document_outright_and_exits_two() {
 
 #[test]
 fn strict_refuses_an_unknown_macro() {
-    // DECISIONS.md D10: under strict recovery techxt registers no catch-all, so a
+    // Under strict recovery techxt registers no catch-all, so a
     // command no definition claims cannot be shaped into an invocation at all.
     let result = run(&[&fixture("unknown.tex"), "--strict"]);
     assert_eq!(result.stdout, "");

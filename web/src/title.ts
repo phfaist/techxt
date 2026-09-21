@@ -1,5 +1,5 @@
 /**
- * What a document calls itself (web/PLAN.md §6.3, §6.10).
+ * What a document calls itself.
  *
  * A document's own heading is the only name the app ever has for it, and two features
  * want it: Download names the file after it, and the library names an entry after it.
@@ -71,7 +71,7 @@ export function slugify(raw: string): string {
     .replace(/-+$/, '');
 }
 
-/** What Download calls the converted text (§6.3). */
+/** What Download calls the converted text. */
 export function downloadName(source: string): string {
   const title = documentTitle(source);
   const slug = title ? slugify(title) : '';

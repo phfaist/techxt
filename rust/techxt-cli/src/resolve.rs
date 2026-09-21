@@ -1,4 +1,4 @@
-//! The sandboxed filesystem resolver behind `--input-dir` (PLAN.md §13).
+//! The sandboxed filesystem resolver behind `--input-dir`.
 //!
 //! techy resolves `\input` at *parse* time, and it deliberately assigns no meaning at
 //! all to the reference string: path syntax, extension conventions, sandboxing and
@@ -38,8 +38,8 @@ const EXTENSION_FALLBACKS: [&str; 2] = [".tex", ".latex"];
 /// file is accepted only if its canonical path starts with the canonical directory
 /// **followed by a path separator**. The separator is not decoration. Comparing the bare
 /// prefix would accept `/home/user/notes-evil/secret.tex` for a sandbox rooted at
-/// `/home/user/notes`, because the one string does start with the other (PLAN.md §14.3
-/// names this the `dir-evil` case).
+/// `/home/user/notes`, because the one string does start with the other (the `dir-evil`
+/// case).
 #[derive(Clone, Debug)]
 pub struct DirectoryResolver {
     /// The canonical sandbox root. Canonical because every comparison it takes part in
@@ -84,9 +84,9 @@ impl DirectoryResolver {
     /// Whether `candidate` — which must already be canonical — lies inside the sandbox.
     ///
     /// The comparison is on the encoded bytes rather than on `Path::starts_with`'s
-    /// component walk. Both answer the same question here; the byte prefix is the form
-    /// PLAN.md §13 specifies ("dir + separator prefix"), and it is the form whose failure
-    /// mode is easy to reason about.
+    /// component walk. Both answer the same question here; the byte prefix is the
+    /// specified form ("dir + separator prefix"), and it is the form whose failure mode
+    /// is easy to reason about.
     ///
     /// Note that the root itself is *not* contained — it is a directory, and a directory
     /// is not a document — except when the root is the filesystem root, where the
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn a_sibling_sharing_the_name_prefix_is_not() {
-        // PLAN.md §14.3's `dir-evil` case: the bare-prefix comparison accepts this, the
+        // The `dir-evil` case: the bare-prefix comparison accepts this, the
         // separator-terminated one does not.
         let resolver = resolver_at("/srv/paper");
         assert!(!resolver.contains(Path::new("/srv/paper-evil/secret.tex")));

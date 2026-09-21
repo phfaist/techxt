@@ -1,27 +1,26 @@
 /**
- * The two panes: a textarea for the source, a `<pre>` for the answer (web/PLAN.md
- * §6.1, §6.3, §6.5, §6.6, §6.12, §6.13).
+ * The two panes: a textarea for the source, a `<pre>` for the answer.
  *
  * Three properties of this module are load-bearing rather than decorative:
  *
  * - The output is `white-space: pre` and is written with `textContent`. The library
  *   decided the line breaks; a second, invisible wrapping by the browser would
- *   misrepresent the output, so *Wrap: Off* scrolls horizontally instead (§6.3).
+ *   misrepresent the output, so *Wrap: Off* scrolls horizontally instead.
  *   *Wrap: Soft* is the one exception, and an explicit one: it is the answer the app
  *   starts on, so {@link Panes.setSoftWrap} turns the folding on in CSS. The text
  *   itself is untouched either way — `getOutput` is what Copy and Download hand over.
  *   {@link Panes.markMath} may wrap a run of that text in an element *after* it has
  *   been set, for a typesetter to replace, and it too builds every node by hand.
- * - The fit-to-pane measurement (§6.5) is what makes *Wrap: Fit* mean anything: the
+ * - The fit-to-pane measurement is what makes *Wrap: Fit* mean anything: the
  *   pane's width in pixels becomes a column count the library can wrap to.
  * - The textarea turns off every helpful thing a phone does to prose. An editor that
- *   capitalises `\alpha` is worse than useless (§6.6).
- * - **The textarea stays a textarea.** Highlighting is a `<pre>`-like mirror behind it
- *   (§6.12), not a `contenteditable`, because `contenteditable` breaks
- *   `setSelectionRange` and {@link Panes.selectSpan} — the diagnostics' jump-to-source —
- *   depends on it. The same mirror carries the diagnostic underline, so the two share
- *   one element and cannot drift apart; they use different channels of it, colour for
- *   the lexer and a tint plus an underline for the diagnostics.
+ *   capitalises `\alpha` is worse than useless.
+ * - **The textarea stays a textarea.** Highlighting is a `<pre>`-like mirror behind it,
+ *   not a `contenteditable`, because `contenteditable` breaks `setSelectionRange`
+ *   and {@link Panes.selectSpan} — the diagnostics' jump-to-source — depends on it.
+ *   The same mirror carries the diagnostic underline, so the two share one element
+ *   and cannot drift apart; they use different channels of it, colour for the lexer
+ *   and a tint plus an underline for the diagnostics.
  *
  * Nothing here knows what a conversion is. Every user action leaves through a
  * callback of {@link PanesInit}; every state change the app makes arrives through a
@@ -41,7 +40,7 @@ import type { Completion, Diagnostic, MathRegion, Span } from '../worker/protoco
 import type { CompletionQuery, Panes, PanesInit } from './api';
 
 /**
- * The 62 alphanumerics and a space (§6.5). Its mean advance is the advance itself for
+ * The 62 alphanumerics and a space. Its mean advance is the advance itself for
  * a monospace face, and a good estimate for a proportional one.
  */
 const SAMPLE =
@@ -73,7 +72,7 @@ const KEYBOARD_THRESHOLD = 120;
 
 /**
  * Up to this many characters are lexed and spanned whole; past that, only a window
- * around what is on screen is (§6.12).
+ * around what is on screen is.
  *
  * Both numbers were measured rather than chosen. Building a span costs **5.3 µs**, and a
  * densely marked-up LaTeX document carries roughly 120 spans per kilobyte — so the cost of
@@ -100,7 +99,7 @@ const HIGHLIGHT_WHOLE_LIMIT = 6_000;
  */
 const HIGHLIGHT_MARGIN = 3_000;
 
-/** The chips the row shows, which is also the length of the Tab cycle (§6.13). */
+/** The chips the row shows, which is also the length of the Tab cycle. */
 const CHIP_CAP = 5;
 /**
  * How many entries a macro query asks for. A few more than the row shows, because the
@@ -111,7 +110,7 @@ const MACRO_QUERY_LIMIT = 8;
 /**
  * How many an environment query asks for. `complete()` takes no kind and ranks macros
  * above environments, so the only way to be sure the environments are in the answer at
- * all is to ask for enough of it to reach them (§6.13). It is a cap and not a count: a
+ * all is to ask for enough of it to reach them. It is a cap and not a count: a
  * prefix that matches twelve names answers with twelve.
  */
 const ENVIRONMENT_QUERY_LIMIT = 250;
@@ -132,7 +131,7 @@ export function initPanes(init: PanesInit): Panes {
   /** Mean advance per (font, size); a face that has not loaded yet is re-measured. */
   const advanceCache = new Map<string, number>();
 
-  /** The latest error/warning diagnostics with a span — what §7's markers paint. */
+  /** The latest error/warning diagnostics with a span — what the markers paint. */
   let paintDiagnostics: Array<Diagnostic & { span: Span }> = [];
   /** The text `paintDiagnostics`' offsets are valid for — see `remapPaintDiagnostics`. */
   let paintDiagnosticsText = '';
@@ -143,7 +142,7 @@ export function initPanes(init: PanesInit): Panes {
   let gutterLineHeight = 0;
 
   /**
-   * Whether the syntax colours are painted at all (§6.12).
+   * Whether the syntax colours are painted at all.
    *
    * One flag for the whole feature, on purpose: it gates the lexing and the class that
    * makes the textarea's own glyphs transparent together, so turning it off leaves the
@@ -168,7 +167,7 @@ export function initPanes(init: PanesInit): Panes {
    * The runs the mirror is holding right now, one per child node of `backdrop` and in
    * the same order.
    *
-   * This is what makes the rebuild incremental (§6.12): the next repaint is diffed
+   * This is what makes the rebuild incremental: the next repaint is diffed
    * against it, and only the runs that actually changed are touched. It is the mirror's
    * own record of itself, so anything that replaces the mirror's children by another
    * route has to replace this too, or the two fall out of step — `paintBackdrop` checks
@@ -180,7 +179,7 @@ export function initPanes(init: PanesInit): Panes {
 
   /**
    * The pane's geometry as of the last time it was cheap to ask, which is what places the
-   * highlight window (§6.12).
+   * highlight window.
    *
    * Reading `scrollTop`, `clientHeight` or `scrollHeight` from an element whose text has
    * just changed makes the browser lay the whole document out before it can answer, and
@@ -234,7 +233,7 @@ export function initPanes(init: PanesInit): Panes {
   menuWrap.append(loadButton, menu);
 
   /**
-   * **New** (§6.10): seal the entry the document is being logged into and clear the
+   * **New**: seal the entry the document is being logged into and clear the
    * input. It sits beside `Load ▾` because that is the moment it is reached for — the
    * user is about to type something new and is looking at the source pane — not
    * because of what it acts on.
@@ -247,7 +246,7 @@ export function initPanes(init: PanesInit): Panes {
 
   /**
    * Which library entry the keystrokes are going into, in the header where they are
-   * going in (§6.10).
+   * going in.
    *
    * The complaint item 8 answers is that the app was silent about this, so the chip is
    * a button rather than a label: it opens the library at that entry, which makes the
@@ -283,7 +282,7 @@ export function initPanes(init: PanesInit): Panes {
   input.spellcheck = false;
 
   /**
-   * A gentle underline for the error/warning spans, laid behind `input` (§7). A
+   * A gentle underline for the error/warning spans, laid behind `input`. A
    * `<textarea>` cannot style part of its own text, so this mirrors it instead: same
    * classes, so the same padding and font keep every character lined up with the
    * real one above it; transparent text of its own, so only the highlight shows.
@@ -300,7 +299,7 @@ export function initPanes(init: PanesInit): Panes {
   const editorShell = el('div', 'pane-editor');
   editorShell.append(gutter, editorArea);
 
-  /* --- the completion chips (§6.13) */
+  /* ----------- the completion chips */
 
   /**
    * A row under the input, never a popup: it works the same on a desktop and on a
@@ -370,7 +369,7 @@ export function initPanes(init: PanesInit): Panes {
   downloadButton.addEventListener('click', () => init.onDownload());
 
   /**
-   * **Save** (§6.10). Everything is already saved — the log is automatic — so what
+   * **Save**. Everything is already saved — the log is automatic — so what
    * this really does is stop *this* version being edited: it seals the entry and the
    * next edit starts a new one. The tooltip carries that truth, because the word on
    * the button cannot.
@@ -387,7 +386,7 @@ export function initPanes(init: PanesInit): Panes {
 
   /**
    * **★**: seal the entry *and* star it, so it can be filtered to and is never
-   * removed by anything automatic (§6.10).
+   * removed by anything automatic.
    *
    * Icon-only, and deliberately: this header already carries four controls plus the ⇅
    * Focus button on a phone, and a fifth word would not fit. The glyph is the whole
@@ -414,7 +413,7 @@ export function initPanes(init: PanesInit): Panes {
   output.tabIndex = 0;
   output.setAttribute('aria-label', 'Converted text');
 
-  /** The hidden span the fit-to-pane measurement is taken from (§6.5). */
+  /** The hidden span the fit-to-pane measurement is taken from. */
   const gauge = el('span', 'pane-gauge');
   gauge.setAttribute('aria-hidden', 'true');
   gauge.textContent = SAMPLE;
@@ -610,7 +609,7 @@ export function initPanes(init: PanesInit): Panes {
     return advance;
   }
 
-  /** Measure, and report only a genuine change in the column count (§6.5). */
+  /** Measure, and report only a genuine change in the column count. */
   function measure(): void {
     const known = reportedColumns;
     const next = measureQuietly();
@@ -697,7 +696,7 @@ export function initPanes(init: PanesInit): Panes {
   }
 
   /**
-   * Which characters are on screen, estimated from the scroll offset (§6.12).
+   * Which characters are on screen, estimated from the scroll offset.
    *
    * A character is a character's share of the content height. The alternative — asking
    * the browser where a character actually is — means a forced layout, and on a 200 KB
@@ -717,8 +716,7 @@ export function initPanes(init: PanesInit): Panes {
   }
 
   /**
-   * Settle `windowFrom`/`windowTo`: which characters are worth turning into elements
-   * (§6.12).
+   * Settle `windowFrom`/`windowTo`: which characters are worth turning into elements.
    *
    * A short document is all of them: it is a few hundred spans and the whole question
    * does not arise. Past {@link HIGHLIGHT_WHOLE_LIMIT} the mirror still holds every
@@ -822,7 +820,7 @@ export function initPanes(init: PanesInit): Panes {
 
   /**
    * Repaint the mirror: the lexer's colours and the diagnostics' underline, in one flat
-   * list of spans (§6.12, §7).
+   * list of spans.
    *
    * Every node is built here from slices of the textarea's own value — no markup is
    * parsed and no `innerHTML` is assigned — and the slices tile the text exactly, which
@@ -883,8 +881,8 @@ export function initPanes(init: PanesInit): Panes {
       const button = el('button', 'gutter-marker');
       button.type = 'button';
       button.dataset.sev = diagnostic.severity;
-      // `via macro` for a span the binding substituted for one inside an expansion
-      // (§4.5): the marker sits at the macro call, and says so rather than implying the
+      // `via macro` for a span the binding substituted for one inside an expansion:
+      // the marker sits at the macro call, and says so rather than implying the
       // message was raised there.
       const line = diagnostic.span ? `line ${diagnostic.span.line}` : '';
       const via = diagnostic.approx ? ', via macro' : '';
@@ -911,7 +909,7 @@ export function initPanes(init: PanesInit): Panes {
 
   /**
    * Put the mirror where the textarea is, in the next frame rather than in this
-   * keystroke (§6.12).
+   * keystroke.
    *
    * `backdrop.scrollTop = input.scrollTop` looks free and is not: it reads a scroll
    * offset from an element whose text the edit has just invalidated, so the browser has
@@ -968,7 +966,7 @@ export function initPanes(init: PanesInit): Panes {
     backdrop.scrollLeft = input.scrollLeft;
     positionGutter();
     // A document large enough to be windowed can be scrolled out of its window, and
-    // the colours have to follow (§6.12). Cheap to ask, and the margin means the answer
+    // the colours have to follow. Cheap to ask, and the margin means the answer
     // is almost always no.
     if (highlighting && !composing && input.value.length > HIGHLIGHT_WHOLE_LIMIT) {
       const seen = seenRange(input.value);
@@ -986,7 +984,7 @@ export function initPanes(init: PanesInit): Panes {
   const editorObserver = new ResizeObserver(scheduleRelayoutDiagnostics);
   editorObserver.observe(input);
 
-  /* --------------------------------------------------- completion (§6.13) */
+  /* ----------------------------------------------------------- completion */
 
   /** What the row is currently about, kept in step with the caret. */
   let trigger: CompletionTrigger | null = null;
@@ -1017,7 +1015,7 @@ export function initPanes(init: PanesInit): Panes {
   let dismissedAt: number | null = null;
   /**
    * The answers already given about the name being typed *now*, so that a backspace is
-   * not a round trip through the worker (§6.13).
+   * not a round trip through the worker.
    *
    * Deliberately no bigger than one name: it is emptied the moment the trigger moves to
    * a different `\`, which is what makes it impossible for it to answer with a table
@@ -1027,7 +1025,7 @@ export function initPanes(init: PanesInit): Panes {
    * It is worth having because the worker is shared with the conversion, and on a 200 KB
    * document a completion issued just after the debounce fired waits about a quarter of a
    * second behind it. What it cannot do is make *new* prefixes faster: a letter nobody
-   * has typed yet is a question nobody has asked yet. That is measured in §6.13, and it
+   * has typed yet is a question nobody has asked yet. That has been measured, and it
    * is why the answer to a slow document is not a second wasm instance.
    */
   const answers = new Map<string, Completion[]>();
@@ -1185,7 +1183,7 @@ export function initPanes(init: PanesInit): Panes {
    * assignment to `value` both drop the undo stack on the floor, so a Tab would cost the
    * user every keystroke they had typed before it. Where it is refused — it returns
    * `false` rather than throwing — the assignment is the fallback, and Shift-Tab back
-   * through the cycle is then the only undo there is (§6.13).
+   * through the cycle is then the only undo there is.
    *
    * It fires an `input` event of its own, which `applying` tells the handler to leave
    * alone: this edit does its own bookkeeping below, and is not a keystroke that should
@@ -1273,12 +1271,12 @@ export function initPanes(init: PanesInit): Panes {
     const bulk = inputType.startsWith('insertFromPaste') || inputType === 'insertFromDrop';
     // A keystroke is the one thing that ends a cycle *and* may start the next row: the
     // text the cycle inserted is now just text, and what is under the caret now is a
-    // fresh question (§6.13).
+    // fresh question.
     endCycle();
     // The diagnostics themselves are stale until the next result arrives — same as
     // the panel above — but their *offsets* still have to track every keystroke, or
     // an edit before a span paints the highlight over the wrong characters until
-    // that result lands (§7). Debouncing that redraw (as `scheduleRelayoutDiagnostics`
+    // that result lands. Debouncing that redraw (as `scheduleRelayoutDiagnostics`
     // does for the gutter, below) would defeat the point: a fast typist never leaves
     // an 80ms gap for it to fire, so the backdrop would sit frozen — stale text,
     // stale wrapping, stale everything — for the whole burst. So this part runs now.
@@ -1303,7 +1301,7 @@ export function initPanes(init: PanesInit): Panes {
       return;
     }
     // Enter, space and everything else are never intercepted: the row hangs off Tab
-    // precisely so that the user's newlines stay their own (§6.13).
+    // precisely so that the user's newlines stay their own.
     if (event.key === 'Escape' && !completionRow.hidden) {
       // "Stop bothering me", not "undo": whatever the cycle applied stays where it is,
       // and the row does not come back until the next escape character.
@@ -1316,13 +1314,13 @@ export function initPanes(init: PanesInit): Panes {
     if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey) return;
     // The obligation this rule exists for: while there is no row, Tab moves focus out
     // of the textarea exactly as it always did. A keyboard-only user who could not
-    // leave the editor would be trapped in it (§6.9, §6.13).
+    // leave the editor would be trapped in it.
     if (completionRow.hidden) return;
     event.preventDefault();
     step(event.shiftKey ? -1 : 1);
   });
 
-  /* ------------------------------------------------------- composition (§6.12) */
+  /* --------------------------------------------------------------- composition */
 
   input.addEventListener('compositionstart', () => {
     composing = true;
@@ -1340,7 +1338,7 @@ export function initPanes(init: PanesInit): Panes {
   /* ----------------------------------------------- the caret, and losing focus */
 
   /**
-   * A cursor move ends the cycle (§6.13). The caret this pane put there itself does
+   * A cursor move ends the cycle. The caret this pane put there itself does
    * not: applying a candidate moves the selection as a matter of course, and a cycle
    * that ended on its own first step would be a cycle of one.
    */
@@ -1372,7 +1370,7 @@ export function initPanes(init: PanesInit): Panes {
     hideRow();
   });
 
-  /* ----------------------------------------------- the on-screen keyboard (§6.6) */
+  /* ------------------------------------------------------ the on-screen keyboard */
 
   const viewport = window.visualViewport;
   if (viewport) {
@@ -1418,7 +1416,7 @@ export function initPanes(init: PanesInit): Panes {
       paintDiagnosticsText = value;
       // The window is carried along by an edit, but this is not an edit: a different
       // document has to be looked at again rather than coloured where the last one was
-      // being read (§6.12).
+      // being read.
       windowFrom = 0;
       windowTo = 0;
       paintedText = value;
@@ -1433,7 +1431,7 @@ export function initPanes(init: PanesInit): Panes {
 
     setCompletions(query: CompletionQuery, items: readonly Completion[]) {
       // The query object is the token: an answer to anything but the question the row
-      // is waiting for is an answer to a keystroke that has been typed over (§6.2).
+      // is waiting for is an answer to a keystroke that has been typed over.
       if (query !== pendingQuery) return;
       pendingQuery = null;
       const asked = trigger;
@@ -1454,7 +1452,7 @@ export function initPanes(init: PanesInit): Panes {
 
     /**
      * The one thing that is ever put in the output pane besides text: an element per
-     * formula, wrapped around the source that is already there (§6.3).
+     * formula, wrapped around the source that is already there.
      *
      * Every node is built here, from a slice of `outputText` — no markup is parsed, no
      * `innerHTML` is assigned, and `outputText` itself is not touched, so Copy,
@@ -1552,7 +1550,7 @@ export function initPanes(init: PanesInit): Panes {
 
     setEntryState(state) {
       // `null` is a browser with nowhere to keep a library: a control that cannot do
-      // anything is worse than no control (§6.10).
+      // anything is worse than no control.
       saveButton.hidden = state === null;
       starButton.hidden = state === null;
       entryChip.hidden = state === null;
@@ -1611,7 +1609,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
 /**
  * A button's word, in a span of its own.
  *
- * Below 620 px the pane headers hide these (§6.6): four labelled buttons and a title
+ * Below 620 px the pane headers hide these: four labelled buttons and a title
  * do not fit a phone, and the hiding is the `.sr-only` treatment rather than
  * `display: none`, so the button keeps its accessible name and its 44 px target.
  */
@@ -1695,7 +1693,7 @@ function buildMirror(area: HTMLTextAreaElement): HTMLDivElement {
   // about the scrollbar; `clientWidth` is the padding box, already less whatever a
   // classic scrollbar or a reserved gutter has taken out of it. So it is `clientWidth`
   // minus the padding — which is also why this needs no opinion about
-  // `scrollbar-gutter` (§6.12) beyond letting the textarea answer for itself.
+  // `scrollbar-gutter` beyond letting the textarea answer for itself.
   const padding =
     parseFloat(style.getPropertyValue('padding-left') || '0') +
     parseFloat(style.getPropertyValue('padding-right') || '0');

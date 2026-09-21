@@ -1,5 +1,4 @@
-//! The rule dispatch chain (PLAN.md §10.3) and the unknown-construct policies
-//! (PLAN.md §10.6).
+//! The rule dispatch chain and the unknown-construct policies.
 //!
 //! Dispatch consults four sources in order, and each test here pins one link of the
 //! chain by making the sources disagree:
@@ -387,7 +386,7 @@ fn a_specials_content_rule_emits_its_trigger() {
     );
 }
 
-// ------------------------------------------------- unknown-macro resolution (D10)
+// ------------------------------------------------------- unknown-macro resolution
 
 /// Convert `\nowhere` — a command no category defines — under one point of the
 /// {recovery} x {resolution} matrix.
@@ -423,8 +422,8 @@ fn assert_accepted(recovery: Recovery, resolution: UnknownMacroResolution) {
 
 #[test]
 fn following_recovery_ties_an_unknown_macro_to_the_recovery_mode() {
-    // DECISIONS.md D10: the default pairs the two. Tolerant accepts the command as an
-    // argument-less callable and warns; strict refuses to parse it at all.
+    // The default pairs the two. Tolerant accepts the command as an argument-less
+    // callable and warns; strict refuses to parse it at all.
     assert_accepted(Recovery::Tolerant, UnknownMacroResolution::FollowRecovery);
 
     let error = under_resolution(Recovery::Strict, UnknownMacroResolution::FollowRecovery)
@@ -488,11 +487,11 @@ fn a_declared_macro_is_unaffected_by_the_resolution_setting() {
 
 // ------------------------------------------- over plain techy (`Latexlike`)
 //
-// techxt parses with techy-xp's `LatexlikeXp`, but it *renders* any latexlike language
-// (PLAN.md §11.1): the fold reads node payloads, and no payload is techy-xp's. These
-// tests hand it trees of plain techy's own `Latexlike`, parsed by `LatexlikeDriver`
-// with no techy-xp anywhere — the case techxt 0.1.0 served only by accident, because
-// everyone happened to name the same concrete type.
+// techxt parses with techy-xp's `LatexlikeXp`, but it *renders* any latexlike language:
+// the fold reads node payloads, and no payload is techy-xp's. These tests hand it trees
+// of plain techy's own `Latexlike`, parsed by `LatexlikeDriver` with no techy-xp anywhere
+// — the case techxt 0.1.0 served only by accident, because everyone happened to name the
+// same concrete type.
 
 /// A plain-techy language holding `packages`, driven by techy's own latexlike driver.
 fn plain_techy(packages: impl IntoIterator<Item = Package<Latexlike>>) -> Language<Latexlike> {
@@ -707,8 +706,8 @@ fn every_unknown_macro_policy_acts_on_a_plain_techy_macro() {
     // Step 4 over a foreign language. `KeepSource` is the one that could have gone
     // wrong: it re-emits the invocation through `Latexlike`'s own `InvocationSyntaxData`
     // — a different type from the one `LatexlikeXp` carries, under a span regime that
-    // tiles where techy-xp's does not — and PLAN.md §1.6's payload-only rule is what
-    // makes the two answer alike.
+    // tiles where techy-xp's does not — and the payload-only rule is what makes the two
+    // answer alike.
     let latex = r"a\ruleless{x}b";
     let tree = foreign_unknowns().parse(latex).expect("parses").tree;
 
@@ -871,8 +870,8 @@ fn a_content_rule_concatenates_a_plain_techy_macros_provided_arguments() {
 // -------------------------------------------- wrapping the renderer over a foreign tree
 
 /// A consumer's recomposer over a *plain techy* tree: it uppercases characters nodes and
-/// delegates every other node to techxt's renderer — PLAN.md §3's wrapping contract,
-/// written against a language techxt does not parse with.
+/// delegates every other node to techxt's renderer — the wrapping contract, written
+/// against a language techxt does not parse with.
 struct ShoutingWrapper<'a> {
     inner: TextRenderer<'a>,
 }

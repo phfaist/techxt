@@ -1,5 +1,5 @@
 /**
- * The library export/import codec (web/PLAN.md §6.11), tested the way the share
+ * The library export/import codec, tested the way the share
  * codec is: a round trip, then everything a file can be that it should not be.
  *
  * The most important test in this file is the one that says an import never removes
@@ -49,7 +49,7 @@ function ids(): () => string {
 /* ------------------------------------------------------------------ exporting */
 
 describe('encodeLibrary', () => {
-  it('writes the format of §6.11, with the previews in it', () => {
+  it('writes the export format, with the previews in it', () => {
     const file = JSON.parse(encodeLibrary([entry({ starred: true })], META)) as Record<
       string,
       unknown
@@ -375,7 +375,7 @@ describe('planImport: replacing', () => {
 });
 
 describe('describeImport', () => {
-  it('says what happened, in the words §6.11 asks for', () => {
+  it('says what happened, in words', () => {
     const plan = planImport([], Array.from({ length: 12 }, (_, i) => entry({ id: `e${i}`, source: `s${i}` })), {
       mode: 'add',
       skipExisting: false,

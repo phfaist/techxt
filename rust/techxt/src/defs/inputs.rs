@@ -1,4 +1,4 @@
-//! File inclusion (PLAN.md §9.8): `\input` and `\include`.
+//! File inclusion: `\input` and `\include`.
 //!
 //! Inclusion happens at **parse** time, not here. techy resolves the reference through
 //! the [source resolver](crate::ConverterBuilder::source_resolver) the converter was
@@ -15,7 +15,7 @@
 //! Resolution is techy's, and techy performs it only for a macro whose spec is an
 //! [`InputMacroSpec`] — no argument declaration can ask for it. So this category
 //! registers `\input` through [`MacroDef::spec`], the escape hatch for a spec techxt does
-//! not model (DECISIONS.md D15), and the spec it hands over depends on how the converter
+//! not model, and the spec it hands over depends on how the converter
 //! was configured:
 //!
 //! - **with a source resolver**: techy's inclusion spec, which resolves the reference at
@@ -27,7 +27,7 @@
 //!   was not asked to include anything.
 //!
 //! A foreign spec carries no rule, so `\input`'s rule is found by name at dispatch step 3
-//! rather than by downcast at step 2 (PLAN.md §10.3); the fallback table
+//! rather than by downcast at step 2; the fallback table
 //! [`DefinitionSet`](crate::def::DefinitionSet) builds holds it either way.
 //!
 //! # The reference is a group, so a macro in it expands
@@ -62,12 +62,12 @@
 //! | `\newcommand\greet[1]{Hi #1}` **inside** the included file, `\greet{x}` after it | `\greet` is an unknown macro |
 //! | `\gdef\x{a}` inside the included file, `\x` after it | the same: a `\gdef` escapes every *group*, and a file is not a group |
 //!
-//! Until PLAN.md §16 M9 nothing could observe this, because techxt defined nothing.
+//! Until techxt honoured the defining commands nothing could observe this.
 //! It can now, and the answer is a real limitation: `\input{macros.tex}` in a preamble is
 //! how many real documents keep their definitions. LaTeX's own `\input` opens no group
 //! and so persists; techxt does not follow it here, because `persist_state: true` would
 //! carry *every* state change out of the file — a mode left in math, a group left open —
-//! into the rest of the document. Making it a choice is future work (PLAN.md §17);
+//! into the rest of the document. Making it a choice is future work;
 //! `tests/defs_macros.rs` pins what is true today.
 //!
 //! # An unresolved include is a note, not an error
@@ -77,8 +77,7 @@
 //! slot at all — techy reports the lookup it attempted — and this handler renders
 //! nothing and raises [`InputNotResolved`], a *note*.
 //! Converting without a resolver is a perfectly ordinary configuration, and the missing
-//! slot is not a failure of anything: it is the absence of a feature nobody turned on
-//! (DECISIONS.md C4).
+//! slot is not a failure of anything: it is the absence of a feature nobody turned on.
 
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -97,7 +96,7 @@ use super::handler;
 /// What the inclusion macros call their argument.
 const FILENAME: &str = "filename";
 
-/// The inputs category (PLAN.md §12.1).
+/// The inputs category.
 pub fn category() -> Category {
     let mut category = Category::new("inputs");
     for name in ["input", "include"] {
@@ -114,8 +113,7 @@ pub fn category() -> Category {
     category
 }
 
-/// Register techy's inclusion spec, but only for a converter that can resolve
-/// (DECISIONS.md D15).
+/// Register techy's inclusion spec, but only for a converter that can resolve.
 #[derive(Debug)]
 struct Resolving;
 
@@ -140,9 +138,10 @@ impl CallableSpecSource for Resolving {
             InputMacroSpec::new(
                 arguments,
                 // State-transparent (`persist_state: false`): every state change an
-                // included file makes ends with the file. Since PLAN.md §16 M9 that is
-                // **observable**, and the module documentation's *An included file's
-                // definitions end with the file* says exactly what it costs.
+                // included file makes ends with the file. Now that the defining commands
+                // are honoured that is **observable**, and the module documentation's
+                // *An included file's definitions end with the file* says exactly what it
+                // costs.
                 false,
                 // Not the node's body: the attached content is retrieved by slot name,
                 // and marking it as a body would make every generic body walk descend

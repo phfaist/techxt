@@ -1,9 +1,10 @@
-//! The math engine's behaviour as the plan and the porting notes state it, exercised
-//! through the public API with hand-built atoms (no parser, no renderer).
+//! The math engine's behaviour as the specification and the porting notes state it,
+//! exercised through the public API with hand-built atoms (no parser, no renderer).
 //!
-//! The scenarios come from PLAN.md §9.5 and §15 and from the coverage checklist of the
-//! pylatexenc porting notes: the seven spacing rules, unary minus, the script ladder
-//! and its binding order, lazy delimiters, matrices, and the display-math box join.
+//! The scenarios come from the normative acceptance examples and from the coverage
+//! checklist of the pylatexenc porting notes: the seven spacing rules, unary minus, the
+//! script ladder and its binding order, lazy delimiters, matrices, and the display-math
+//! box join.
 
 use techxt::mathfmt::{
     baseline_join, classify_plain, display_matrix_atom, display_matrix_box, fmt_script_text,
@@ -43,7 +44,7 @@ fn it(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// PLAN.md §15 — the normative examples the joiner can answer on its own
+// The normative examples the joiner can answer on its own
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -335,7 +336,7 @@ fn a_root_closes_on_the_left_and_opens_on_the_right() {
 
 #[test]
 fn a_fraction_is_wrapped_eagerly_not_lazily() {
-    // DECISIONS.md D1: `$\frac{a}{b}c$` is `𝑎/𝑏 𝑐`, never `(𝑎/𝑏)𝑐`
+    // `$\frac{a}{b}c$` is `𝑎/𝑏 𝑐`, never `(𝑎/𝑏)𝑐`
     let atoms = vec![
         frac_atom(&it("a"), &it("b"), &MathWrapDelims::Parens),
         a(&it("c"), AtomClass::Ord),
@@ -522,7 +523,7 @@ fn the_golden_alphabets_of_the_porting_notes() {
 
 #[test]
 fn the_upright_letters_are_op_flag_follows_the_font() {
-    // DECISIONS.md D4: the flag is true exactly when a style is in effect
+    // The flag is true exactly when a style is in effect
     assert!(FontStyle::Style(FontStyleKind::Italic).is_style());
     assert!(FontStyle::Style(FontStyleKind::Upright).is_style());
     assert!(!FontStyle::Default.is_style());

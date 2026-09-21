@@ -1,4 +1,4 @@
-//! Property tests for the renderer core (PLAN.md §14.2).
+//! Property tests for the renderer core.
 //!
 //! The one that matters most: **tolerant parsing and conversion must never panic**, for
 //! any input at all. techxt is meant to be pointed at whatever a corpus contains —
@@ -125,7 +125,7 @@ proptest! {
     }
 
     /// Comments never contribute anything by default, so removing them cannot change
-    /// the output — the LaTeX-correct behaviour PLAN.md §9.1 prescribes.
+    /// the output — the LaTeX-correct behaviour.
     #[test]
     fn a_trailing_comment_changes_nothing(input in "[a-c ]{0,40}") {
         let converter = Converter::standard();

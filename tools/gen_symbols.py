@@ -4,7 +4,7 @@
 
 This is a **development aid**, not part of the cargo build: it is run by hand when
 the upstream tables change, and its output is committed alongside it.  Re-running
-it must produce byte-identical files unless the inputs changed (PLAN.md §12.4).
+it must produce byte-identical files unless the inputs changed.
 
 Usage::
 
@@ -13,15 +13,15 @@ Usage::
 
 What it generates today:
 
-``defs/accents_data.rs`` (milestone M4)
-    the accent table of PLAN.md §9.3 — the LaTeX accent macros and the combining
-    character each installs, ported from pylatexenc's ``unicode_accents_list`` —
-    plus the two unicode-derived tables the plan's accent rule needs: the spacing
-    clone of every combining character (for ``\\'{}`` with an empty argument) and
-    the (base, combining) pairs that compose to a precomposed character under NFC.
+``defs/accents_data.rs``
+    the accent table — the LaTeX accent macros and the combining character each
+    installs, ported from pylatexenc's ``unicode_accents_list`` — plus the two
+    unicode-derived tables techxt's accent rule needs: the spacing clone of every
+    combining character (for ``\\'{}`` with an empty argument) and the (base,
+    combining) pairs that compose to a precomposed character under NFC.
 
-``defs/symbols_extra_data.rs`` (milestone M8)
-    the ~1000-entry long tail of PLAN.md §12.3: every macro pylatexenc's two
+``defs/symbols_extra_data.rs``
+    the ~1000-entry long tail: every macro pylatexenc's two
     default-spec tables know, with the replacement text, argument shape and mode
     restriction of each.
 
@@ -251,7 +251,7 @@ def spacing_clone(combining: str) -> str | None:
 
     A mark with neither — COMBINING DOT BELOW, COMBINING RIGHT ARROW ABOVE — has no
     standalone form at all, and the accent handler falls back to a space followed
-    by the mark itself (PLAN.md §9.3).
+    by the mark itself.
     """
     for codepoint in range(0x20, 0x3000):
         candidate = chr(codepoint)
@@ -288,7 +288,7 @@ def composition_pairs(combining_marks):
 
 
 def generate_accents(pylatexenc: Path) -> str:
-    """``defs/accents_data.rs`` — the accent tables of PLAN.md §9.3."""
+    """``defs/accents_data.rs`` — the accent tables."""
     specs = pylatexenc / "pylatexenc" / "latex2text" / "_defaultspecs.py"
     accents = dedup_sorted(read_literal(specs, "unicode_accents_list"))
     marks = dedup_sorted(
@@ -302,7 +302,7 @@ def generate_accents(pylatexenc: Path) -> str:
         "// Source: pylatexenc `latex2text/_defaultspecs.py`, `unicode_accents_list`,",
         "// plus the composition and spacing-clone facts of the unicode database.",
         "",
-        "//! The accent tables (PLAN.md §9.3, §12.4).",
+        "//! The accent tables.",
         "//!",
         "//! Three tables, all sorted so that they can be searched by bisection, and all",
         "//! written with escaped characters so that a combining mark cannot be mangled",
@@ -325,7 +325,7 @@ def generate_accents(pylatexenc: Path) -> str:
         "/// The standalone (spacing) form of a combining mark, where unicode has one.",
         "///",
         "/// Sorted by the combining mark. A mark that is missing here has no standalone",
-        "/// form, and PLAN.md §9.3's fallback — a space followed by the mark — applies.",
+        "/// form, and the fallback — a space followed by the mark — applies.",
         "pub(crate) static ACCENT_SPACING: &[(char, char)] = &[",
     ]
     for mark in marks:
@@ -357,11 +357,11 @@ def generate_accents(pylatexenc: Path) -> str:
 
 # ------------------------------------------------------- the symbols_extra long tail
 
-# pylatexenc categories PLAN.md §4 drops outright.
+# pylatexenc categories techxt drops outright.
 DROPPED_TEXT_CATEGORIES = frozenset(("latex-ethuebung", "nonstandard-qit"))
 # ... and the parse-side categories that go with them.  `natbib` is dropped here too,
 # but for the opposite reason: techxt curates it by hand in `defs::natbib`, whose
-# citation shapes are richer than a generated `Skip` would be (PLAN.md §9.8).
+# citation shapes are richer than a generated `Skip` would be.
 DROPPED_WALKER_CATEGORIES = frozenset(("latex-ethuebung", "natbib"))
 
 # pylatexenc argument codes → techy's, which happen to be the same letters for the
@@ -371,7 +371,7 @@ ARGUMENT_CODES = {"*": "s", "[": "o", "{": "m"}
 # Macros whose upstream replacement is not a constant and so must never be baked into
 # a committed table.  `\today` is evaluated by pylatexenc at *import* time from the
 # system clock, which would make this generator's output differ from one day to the
-# next; PLAN.md §9.8 gives it to the embedder as `Options::today` instead, and
+# next; techxt gives it to the embedder as `Options::today` instead, and
 # `defs::titling` implements that.
 NOT_CONSTANT = frozenset(("today",))
 
@@ -382,7 +382,7 @@ def macro_arguments(spec):
     ``None`` means the spec asks for something techxt's generated table has no way
     to say — a verbatim-delimited argument (``\\verb``, ``\\url``, ``\\href``), or an
     argument carrying a parsing-state delta (``\\ensuremath`` entering math,
-    ``\\text`` leaving it).  Every such macro is one PLAN.md §9 curates by hand, so
+    ``\\text`` leaving it).  Every such macro is one techxt curates by hand, so
     dropping it here loses nothing; generating a plain ``{…}`` argument in its place
     would be actively wrong, because the entry would then parse its argument under
     the wrong rules wherever the curated category is not also loaded.
@@ -414,7 +414,7 @@ def macro_arguments(spec):
         code = ARGUMENT_CODES.get(code)
         if code is None:
             return None
-        # Every argument in techxt's database is named (PLAN.md §10.1). pylatexenc
+        # Every argument in techxt's database is named. pylatexenc
         # names only a handful, so the rest are named after their position, which is
         # also what a generated template refers to them by.
         ported.append((code, name or ("star" if code == "s" else f"arg{index}")))
@@ -424,10 +424,10 @@ def macro_arguments(spec):
 def replacement_template(replacement: str):
     """Convert a v3 ``%``-style replacement into techxt's template language.
 
-    PLAN.md §4 drops the ``%`` mini-language itself, and §10.5 replaces it: ``%s``
-    takes the next argument in order, ``%(n)s`` takes the *n*-th, and both become
-    ``{n}`` — a 1-based index reference.  Braces in the surrounding literal text are
-    doubled, since a brace is what a reference is written with.
+    techxt drops the ``%`` mini-language itself, and its template language replaces
+    it: ``%s`` takes the next argument in order, ``%(n)s`` takes the *n*-th, and
+    both become ``{n}`` — a 1-based index reference.  Braces in the surrounding
+    literal text are doubled, since a brace is what a reference is written with.
 
     Returns ``(template, highest_index)``, or ``(None, 0)`` for a replacement using
     some other ``%`` conversion, which techxt has no equivalent for.
@@ -541,7 +541,7 @@ def symbol_mode(name: str, replacement: str, arguments, bare, math) -> str:
 
 
 def generate_symbols_extra(pylatexenc: Path) -> str:
-    """``defs/symbols_extra_data.rs`` — the long tail of PLAN.md §12.3.
+    """``defs/symbols_extra_data.rs`` — the symbol long tail.
 
     The union of two pylatexenc tables: the render side
     (``latex2text/_defaultspecs.py``), which says what a macro *becomes*, and the
@@ -558,7 +558,7 @@ def generate_symbols_extra(pylatexenc: Path) -> str:
     walker_specs = import_pylatexenc(pylatexenc, "pylatexenc.latexwalker._defaultspecs")
     uni2latex = import_pylatexenc(pylatexenc, "pylatexenc.latexencode._uni2latexmap")
 
-    # What each macro renders as.  A callable `simplify_repl` is one of PLAN.md §9's
+    # What each macro renders as.  A callable `simplify_repl` is one of techxt's
     # handlers, curated by hand in another `defs` module; only the strings are data.
     replacements = {}
     for category, groups in text_specs.specs:
@@ -596,7 +596,7 @@ def generate_symbols_extra(pylatexenc: Path) -> str:
             rule = "Skip"
         elif "\n" in replacement:
             # techxt spells a break as a `Flow` item, never as a character in
-            # replacement text (PLAN.md §6); `\vspace` is curated in `defs::base`.
+            # replacement text; `\vspace` is curated in `defs::base`.
             unported.append((name, "replacement contains a line break"))
             continue
         elif "%" in replacement:
@@ -629,9 +629,9 @@ def generate_symbols_extra(pylatexenc: Path) -> str:
             "//",
             "// Source: pylatexenc `latex2text/_defaultspecs.py` (what a macro renders as)",
             "// and `latexwalker/_defaultspecs.py` (what it parses), minus the categories",
-            "// PLAN.md §4 drops, plus the mode evidence of `latexencode`'s default rules.",
+            "// techxt drops, plus the mode evidence of `latexencode`'s default rules.",
             "",
-            "//! The generated symbol table (PLAN.md §12.3, §12.4).",
+            "//! The generated symbol table.",
             "//!",
             "//! One row per macro, sorted by name: what it is called, what it renders as,",
             "//! the arguments it declares, and the modes it is visible in. See",
