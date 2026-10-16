@@ -374,8 +374,7 @@
 //! - **TeX's conditionals, category codes, registers and counters.** `\ifx`, `\catcode`,
 //!   `\count` and `\setcounter` are read and reported rather than acted on — techy-xp
 //!   declines them by design, and a document reaching one is told which feature is
-//!   missing rather than left to guess. `\DeclareMathOperator` is likewise declared and
-//!   dropped: the operator it names is not defined. See [`defs::preamble`].
+//!   missing rather than left to guess. See [`defs::preamble`].
 //! - **Numbering beyond headings.** Theorems, figures, tables and equations are not
 //!   numbered, and counters (`\arabic{page}`) render as nothing; heading numbers are
 //!   the one exception. See [`defs::theorems`].

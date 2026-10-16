@@ -602,11 +602,31 @@ fn definitions_travel_into_an_included_file_and_not_back_out() {
 // ---------------------------------------------------------------- what stays out
 
 #[test]
-fn declare_math_operator_is_still_read_and_dropped() {
-    // techy-xp ships no definer for it, deliberately, so `\tr` is not defined and the
-    // declaration itself is consumed and renders as nothing.
-    assert_eq!(text(r"\DeclareMathOperator{\tr}{tr}text"), "text\n");
-    assert!(diagnostics(r"\DeclareMathOperator{\tr}{tr}text").is_empty());
+fn declare_math_operator_is_a_definer_of_techxts_own() {
+    // techy-xp ships no definer for it, so techxt does. The declaration itself is
+    // consumed and renders as nothing, as every definition does, and the operator it
+    // names is defined — as `\newcommand{\Ad}{\operatorname{Ad}}` would define it.
+    assert_eq!(text(r"\DeclareMathOperator{\Ad}{Ad}text"), "text\n");
+    assert!(diagnostics(r"\DeclareMathOperator{\Ad}{Ad}text").is_empty());
+    assert_eq!(text(r"\DeclareMathOperator{\Ad}{Ad}$2\Ad A$"), "2 Ad 𝐴\n");
+    assert!(diagnostics(r"\DeclareMathOperator{\Ad}{Ad}$2\Ad A$").is_empty());
+
+    // Under the off switch it is what it always was: read and dropped, so that `\Ad`
+    // is an unknown macro.
+    let declared = Converter::builder()
+        .macro_definitions(MacroDefinitions::Declared)
+        .build()
+        .expect("builds");
+    let converted = declared
+        .latex_to_text(r"\DeclareMathOperator{\Ad}{Ad}$2\Ad A$")
+        .expect("parses");
+    assert_eq!(converted.text, "2𝐴\n");
+    let reported: Vec<&str> = converted
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.identifier())
+        .collect();
+    assert_eq!(reported, ["techxt.unknown-macro"]);
 }
 
 #[test]

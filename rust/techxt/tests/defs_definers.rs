@@ -98,6 +98,37 @@ fn a_definition_body_may_carry_a_comment_or_a_paragraph_break() {
     assert_eq!(text("\\newcommand\\p{a\n\nb}\\p"), "a\n\nb\n");
 }
 
+#[test]
+fn a_declare_math_operator_is_a_newcommand_of_an_operatorname() {
+    // amsmath's `\DeclareMathOperator{\Ad}{Ad}` is `\newcommand{\Ad}{\operatorname{Ad}}`,
+    // so the operator is set upright and spaced as `\det` is. (`\Ad` rather than `\Tr`
+    // because techxt ships `\Tr` itself, and the point is an operator it does not.)
+    assert_eq!(text(r"\DeclareMathOperator{\Ad}{Ad}$\Ad\rho$"), "Ad ρ\n");
+    assert_eq!(text(r"\DeclareMathOperator{\Ad}{Ad}$2\Ad(\rho)$"), "2 Ad(ρ)\n");
+    assert_eq!(text(r"\DeclareMathOperator{\Ad}{Ad}$\Ad_2 \rho$"), "Ad₂ ρ\n");
+    // The name may be written bare, as `\newcommand`'s may.
+    assert_eq!(text(r"\DeclareMathOperator\Ad{Ad}$\Ad\rho$"), "Ad ρ\n");
+    // The starred form is `\operatorname*`, whose limits plain text cannot place any
+    // differently; the body is read as LaTeX, so `\,` is a thin space.
+    assert_eq!(
+        text(r"\DeclareMathOperator*{\argmax}{arg\,max}$\argmax_x f(x)$"),
+        "arg maxₓ 𝑓(𝑥)\n"
+    );
+    // A declaration over a name techxt ships wins, as a `\renewcommand` would — and a
+    // later `\renewcommand` over the declared operator wins in turn.
+    assert_eq!(text(r"\DeclareMathOperator{\det}{Det}$\det A$"), "Det 𝐴\n");
+    assert_eq!(
+        text(r"\DeclareMathOperator{\Ad}{Ad}\renewcommand{\Ad}{\mathrm{Adj}}$\Ad\rho$"),
+        "Adj ρ\n"
+    );
+    // Local, as every definition here is: it dies with its group.
+    assert_eq!(
+        diagnostics(r"{\DeclareMathOperator{\Ad}{Ad}}$\Ad$"),
+        ["techxt.unknown-macro"]
+    );
+    assert!(diagnostics(r"\DeclareMathOperator*{\argmax}{arg\,max}$\argmax_x f(x)$").is_empty());
+}
+
 // --------------------------------------------- a body is text, expanded where it is used
 
 #[test]

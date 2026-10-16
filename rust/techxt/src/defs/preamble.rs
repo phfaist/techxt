@@ -24,10 +24,11 @@
 //! # The defining commands are honoured
 //!
 //! `\newcommand`, `\renewcommand`, `\providecommand`, `\newenvironment`,
-//! `\renewenvironment`, `\def`, `\gdef`, `\let`, `\edef`, `\xdef` and
-//! `\NewDocumentCommand` are the `DEFINERS` table, and each is registered as the techy-xp
-//! definer spec that actually makes the definition. A later use of the defined macro is
-//! expanded by the token reader techy-xp puts under techxt's parser, so
+//! `\renewenvironment`, `\def`, `\gdef`, `\let`, `\edef`, `\xdef`,
+//! `\NewDocumentCommand` and `\DeclareMathOperator` are the `DEFINERS` table, and each
+//! is registered as the definer spec that actually makes the definition. A later use of
+//! the defined macro is expanded by the token reader techy-xp puts under techxt's
+//! parser, so
 //! `\newcommand\greet[1]{Hello #1!}\greet{world}` converts to `Hello world!` — the
 //! definition itself still renders as nothing, which is what a definer contributes to a
 //! document's text.
@@ -88,13 +89,29 @@
 //! expands what the author wrote is worth more than a diagnostic about a name clash the
 //! author cannot see, and making the rule unconditional keeps the two knobs independent.
 //!
+//! ## `\DeclareMathOperator` is techxt's own definer
+//!
+//! techy-xp ships no definer for amsmath's operator declaration, so this module does.
+//! `\DeclareMathOperator{\Tr}{Tr}` is `\newcommand{\Tr}{\operatorname{Tr}}` by another
+//! name, and the starred form is `\operatorname*`: `MathOperatorDefiner` reads the name
+//! and the body the way `\newcommand` does and builds the same token-time macro, with
+//! the body wrapped in `\operatorname{…}` on the way.
+//!
+//! ```
+//! # use techxt::Converter;
+//! let converter = Converter::standard();
+//! assert_eq!(
+//!     converter.latex_to_text(r"\DeclareMathOperator*{\argmax}{arg\,max} $\argmax_x f(x)$")?.text,
+//!     "arg maxₓ 𝑓(𝑥)\n",
+//! );
+//! # Ok::<(), Box<dyn core::error::Error>>(())
+//! ```
+//!
 //! ## What stays declared-only
 //!
-//! `\DeclareMathOperator` is read and dropped: it is a *declaration*, not a definer, and
-//! the operator it names is not defined. techy-xp deliberately ships
-//! no definer for it. The same goes for everything that would need TeX's conditionals,
-//! category codes, registers or counters — `\newtheorem`, `\setlength`, `\newcounter`
-//! and their relatives are consumed here and act on nothing.
+//! Everything that would need TeX's conditionals, category codes, registers or counters
+//! — `\newtheorem`, `\setlength`, `\newcounter` and their relatives — is consumed here
+//! and acts on nothing.
 //!
 //! ## Turning it off
 //!
@@ -128,6 +145,8 @@
 //! silently. `\def\x{…}`, which is *only* written unbraced, therefore keeps the
 //! ordinary parser for its name. Neither restriction applies once the definers are on.
 
+use alloc::format;
+use alloc::string::ToString;
 use alloc::sync::Arc;
 
 use techy::core::constructs::CharsGroupArgumentParser;
@@ -135,9 +154,11 @@ use techy::core::specs::{ArgumentSpec, CallableSpec};
 use techy::latexlike::GroupType;
 use techy_xp::define::{
     def_definer, gdef_definer, let_definer, new_command_definer, new_document_command_definer,
-    provide_command_definer, renew_command_definer, DefinerSpec, RedefinitionRule,
+    provide_command_definer, renew_command_definer, Defined, DefinerSpec, DefinitionRefused,
+    DefinitionScope, NameForm, ParameterSyntax, ParsedDefinition, RedefinitionRule, StarForm,
 };
 use techy_xp::envs::{new_environment_definer, renew_environment_definer};
+use techy_xp::expand::{Delivery, ExpandableSpec, MacroBody};
 use techy_xp::lang::LatexlikeXp;
 use techy_xp::presets::ExpandedDefinerSpec;
 
@@ -237,6 +258,10 @@ enum Definer {
     Xdef,
     /// `\NewDocumentCommand\x{m o}{body}` — xparse's, with `m`, `o`, `O{…}` and `s`.
     NewDocumentCommand,
+    /// `\DeclareMathOperator{\x}{name}` — amsmath's, which is
+    /// `\newcommand{\x}{\operatorname{name}}`; techxt's own definer, since techy-xp
+    /// ships none.
+    DeclareMathOperator,
 }
 
 impl Definer {
@@ -261,6 +286,7 @@ impl Definer {
             Definer::Edef => Arc::new(ExpandedDefinerSpec::new(scoped(def_definer()), "def")),
             Definer::Xdef => Arc::new(ExpandedDefinerSpec::new(scoped(gdef_definer()), "gdef")),
             Definer::NewDocumentCommand => Arc::new(scoped(new_document_command_definer())),
+            Definer::DeclareMathOperator => Arc::new(scoped(declare_math_operator_definer())),
         }
     }
 }
@@ -285,8 +311,87 @@ impl CallableSpecSource for Definers {
     }
 }
 
-/// One defining command: its name, the techy-xp definer it hands over, and the shape it
-/// declares when the definers are **off**.
+/// The definer behind `\DeclareMathOperator`: a token-time macro whose body is the
+/// operator's name wrapped in `\operatorname{…}`.
+///
+/// techy-xp ships no definer for amsmath's declaration (its own docs list it among the
+/// deferred ones), and there is nothing to defer: `\DeclareMathOperator{\Tr}{Tr}` is
+/// `\newcommand{\Tr}{\operatorname{Tr}}`, and the starred form is `\operatorname*`.
+/// So this is techy-xp's macro definer with one step in front — the body's text is
+/// prefixed with `\operatorname`, spelled with the escape character the author used,
+/// and braced. The macro is otherwise what `\newcommand` would have made: the same
+/// token rules (those in force where the declaration was written), the same definition
+/// site, no parameters. `\operatorname` is techxt's own
+/// ([`defs::mathcore`](super::mathcore)), so wherever the operator is used its name is
+/// set upright and classed as an operator, and a document's later
+/// `\renewcommand{\Tr}{…}` shadows it like any other macro.
+#[derive(Debug)]
+struct MathOperatorDefiner;
+
+/// `MathOperatorDefiner`'s wire identity, namespaced the way every techy identifier is.
+const MATH_OPERATOR_DEFINER_IDENTIFIER: &str = "techxt.define.math-operator";
+
+impl techy_xp::define::Definer<LatexlikeXp> for MathOperatorDefiner {
+    fn identifier(&self) -> &str {
+        MATH_OPERATOR_DEFINER_IDENTIFIER
+    }
+
+    fn define(
+        &self,
+        mut parsed: ParsedDefinition<LatexlikeXp>,
+    ) -> Result<Defined<LatexlikeXp>, DefinitionRefused> {
+        // Empty by construction — the spec declares no parameter syntax — and handed
+        // over rather than invented, so that the spec stays the one source of truth.
+        let shapes = parsed.take_shapes();
+        let mut bodies = parsed.take_bodies();
+        if bodies.is_empty() {
+            return Err(DefinitionRefused::new(
+                parsed.name(),
+                "this definer read no operator name, and the operator is its name",
+            ));
+        }
+        let body = bodies.remove(0);
+        let star = if parsed.starred() { "*" } else { "" };
+        let text = format!(
+            "{escape}operatorname{star}{{{name}}}",
+            escape = parsed.escape_char(),
+            name = body.text(),
+        );
+        let macro_body = MacroBody::new(
+            text,
+            Arc::clone(body.definition_state()),
+            body.parameters(),
+        );
+        let spec = ExpandableSpec::new(macro_body, shapes, Delivery::TokenTime)
+            .map_err(|error| DefinitionRefused::new(parsed.name(), error.to_string()))?
+            .with_definition_site(parsed.site().clone());
+        Ok(Defined::one(
+            parsed.scope(),
+            parsed.callable_type(),
+            parsed.name(),
+            Arc::new(spec),
+        ))
+    }
+}
+
+/// `\DeclareMathOperator{\x}{name}` and `\DeclareMathOperator*{\x}{name}` — amsmath's.
+///
+/// The `\newcommand` shape without the parameter declaration: a `{\cs}`-or-`\cs` name
+/// and one body. The star is read the way the `\newcommand` family reads it
+/// ([`StarForm::AcceptedAndIgnored`] is techy-xp's name for *read and recorded*), and
+/// this definer does not ignore it: it chooses `\operatorname*`.
+fn declare_math_operator_definer() -> DefinerSpec<LatexlikeXp> {
+    DefinerSpec::new(Arc::new(MathOperatorDefiner))
+        .with_name_form(NameForm::BracedOrBare)
+        .with_parameters(ParameterSyntax::None)
+        .with_bodies(1)
+        .with_redefinition(RedefinitionRule::Always)
+        .with_scope(DefinitionScope::Local)
+        .with_star(StarForm::AcceptedAndIgnored)
+}
+
+/// One defining command: its name, the definer it hands over, and the shape it declares
+/// when the definers are **off**.
 ///
 /// The declared shape is never what parses an honoured definition — the definer spec
 /// reads its own name form, parameter declaration and bodies, which is why
@@ -302,9 +407,11 @@ type Definition = (
 
 /// The defining commands, with the shape each falls back to when they are only declared.
 ///
-/// The first six are the ones techxt always declared, at their original shapes; the last
-/// five are names techxt never declared at all before the definers arrived, and their
-/// fallback shapes are this table's own. `\let` declares **nothing**: `\let\a=\b` and
+/// `\newcommand`, `\renewcommand`, `\providecommand`, the two environment definers, `\def`
+/// and `\DeclareMathOperator` are the ones techxt always declared, at their original
+/// shapes; the others are names techxt never declared at all before the definers
+/// arrived, and their fallback shapes are this table's own. `\let` declares
+/// **nothing**: `\let\a=\b` and
 /// `\let\a\b` are both written, no argument code reads the optional `=`, and a shape that
 /// read one argument would leave the other half in the document's text.
 static DEFINERS: &[Definition] = &[
@@ -378,6 +485,12 @@ static DEFINERS: &[Definition] = &[
         Definer::NewDocumentCommand,
         &[("m", "command"), (RAW, "codes"), (RAW, "body")],
     ),
+    // `s m m`: `\DeclareMathOperator*{\cmd}{name}`, amsmath's.
+    (
+        "DeclareMathOperator",
+        Definer::DeclareMathOperator,
+        &[("s", "star"), (RAW, "command"), ("m", "name")],
+    ),
 ];
 
 /// Every preamble declaration, with its argument shape.
@@ -432,12 +545,8 @@ static DECLARATIONS: &[Declaration] = &[
     ("newcounter", &[("m", "counter"), ("o", "within")]),
     ("usecounter", &[("m", "counter")]),
     ("pagenumbering", &[("m", "style")]),
-    // amsmath and amsthm declarations: an operator name, a counter's parent, the shape
-    // the next `\newtheorem` takes.
-    (
-        "DeclareMathOperator",
-        &[("s", "star"), (RAW, "command"), ("m", "name")],
-    ),
+    // amsmath and amsthm declarations: a counter's parent, the shape the next
+    // `\newtheorem` takes. (`\DeclareMathOperator` is in [`DEFINERS`].)
     ("numberwithin", &[("m", "counter"), ("m", "within")]),
     ("theoremstyle", &[("m", "style")]),
     ("allowdisplaybreaks", &[("o", "strength")]),

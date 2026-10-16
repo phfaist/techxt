@@ -1376,8 +1376,6 @@ pub enum UnknownMacroResolution {
 ///
 /// techy-xp implements no conditionals, category codes, registers or counters, so
 /// `\ifx`, `\catcode`, `\count` and `\setcounter` define nothing under either setting.
-/// `\DeclareMathOperator` is techxt's own declaration and is likewise unaffected: it is
-/// read and dropped, and the operator it names is not defined.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MacroDefinitions {
