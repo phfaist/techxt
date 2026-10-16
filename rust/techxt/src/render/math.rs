@@ -171,7 +171,7 @@ pub(crate) fn inline_text(flow: &Flow, state: &RenderState, options: &Options) -
 ///   indent block. Preformatted because the box's columns are already laid out:
 ///   re-wrapping a matrix would destroy the alignment the joiner computed.
 ///
-/// A forced line break (`\\` in an `align` body) starts a new display line; each line is
+/// A forced line break (`\\` in a `gather` body) starts a new display line; each line is
 /// joined on its own, exactly as if it were a formula of its own. An empty formula
 /// (`$ $`) produces nothing at all, block included.
 pub(crate) fn finish(body: Flow, display: bool, options: &Options) -> Flow {
@@ -387,7 +387,7 @@ fn flush_text(run: &mut String, atoms: &mut Vec<Atom>) {
     run.clear();
 }
 
-/// Split a folded matrix body into rows of rendered cells.
+/// Split a folded block body — a matrix's, an `align`'s — into rows of rendered cells.
 ///
 /// The body was folded with [`MathCtx::matrix`](super::MathCtx::matrix) set, so `&` and
 /// `\\` arrived as [`CellSep`](FlowItem::CellSep) and [`RowSep`](FlowItem::RowSep);

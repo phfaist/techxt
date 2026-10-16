@@ -38,6 +38,7 @@ use crate::def::{CallableKind, Category, EnvDef, MacroDef, Template, TextHandler
 use crate::diag::UnsupportedIgnored;
 use crate::flow::{display_width, BlockKind, Flow, FlowItem};
 use crate::layout::render_inline;
+use crate::mathfmt::ColumnAlign;
 use crate::render::{NodeView, RenderCx, RenderError, TableCtx};
 
 use super::handler;
@@ -197,17 +198,6 @@ fn enclosing_table(node: NodeView<'_>) -> Option<NodeView<'_>> {
 
 // ------------------------------------------------------------- column specifications
 
-/// How one column's cells are padded.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Align {
-    /// `l`, and everything techxt cannot honour exactly (`p{…}`, `X`).
-    Left,
-    /// `c`, padded on both sides and biased left when the padding is odd.
-    Center,
-    /// `r`.
-    Right,
-}
-
 /// The column specification as it was written, reassembled from node payloads.
 ///
 /// Answers an empty specification for a table with no `colspec` argument at all — a
@@ -217,23 +207,24 @@ fn colspec_source(node: NodeView<'_>) -> String {
     node.argument_source("colspec").unwrap_or_default()
 }
 
-/// Read the alignment letters of a column specification.
+/// Read the alignment letters of a column specification — a `tabular`'s, or an
+/// `array`'s ([`defs::mathenvs`](super::mathenvs)).
 ///
 /// Everything that does not describe a column of text is skipped: rules (`|`), inserted
 /// material (`@{…}`, `!{…}`) and cell decorations (`>{…}`, `<{…}`) take no column of
 /// their own, and the paragraph columns (`p`, `m`, `b`) and `tabularx`'s `X` take one
 /// but have a width techxt cannot honour, so they read as left-aligned.
-fn parse_alignments(spec: &str) -> Vec<Align> {
+pub(super) fn parse_alignments(spec: &str) -> Vec<ColumnAlign> {
     let mut alignments = Vec::new();
     let mut chars = spec.chars().peekable();
     while let Some(character) = chars.next() {
         match character {
-            'l' => alignments.push(Align::Left),
-            'c' => alignments.push(Align::Center),
-            'r' => alignments.push(Align::Right),
-            'X' => alignments.push(Align::Left),
+            'l' => alignments.push(ColumnAlign::Left),
+            'c' => alignments.push(ColumnAlign::Center),
+            'r' => alignments.push(ColumnAlign::Right),
+            'X' => alignments.push(ColumnAlign::Left),
             'p' | 'm' | 'b' => {
-                alignments.push(Align::Left);
+                alignments.push(ColumnAlign::Left);
                 skip_group(&mut chars);
             }
             '@' | '!' | '>' | '<' => skip_group(&mut chars),
@@ -329,7 +320,7 @@ fn flush_row(rows: &mut Vec<Row>, cells: &mut Vec<String>) {
 }
 
 /// Lay the rows out: columns padded to their widest cell, rules across the whole table.
-fn render_rows(rows: &[Row], alignments: &[Align]) -> Flow {
+fn render_rows(rows: &[Row], alignments: &[ColumnAlign]) -> Flow {
     let columns = rows
         .iter()
         .filter_map(|row| match row {
@@ -379,7 +370,7 @@ fn render_rows(rows: &[Row], alignments: &[Align]) -> Flow {
 }
 
 /// One row of cells, padded to the column widths and joined.
-fn render_row(cells: &[String], widths: &[usize], alignments: &[Align]) -> String {
+fn render_row(cells: &[String], widths: &[usize], alignments: &[ColumnAlign]) -> String {
     let mut line = String::new();
     for (index, width) in widths.iter().enumerate() {
         if index > 0 {
@@ -388,21 +379,21 @@ fn render_row(cells: &[String], widths: &[usize], alignments: &[Align]) -> Strin
         let cell = cells.get(index).map_or("", String::as_str);
         // A column the specification did not describe — or described with something
         // techxt cannot honour — is left-aligned.
-        let align = alignments.get(index).copied().unwrap_or(Align::Left);
+        let align = alignments.get(index).copied().unwrap_or(ColumnAlign::Left);
         pad_into(&mut line, cell, *width, align);
     }
     line
 }
 
 /// Append `cell`, padded to `width` according to `align`.
-fn pad_into(line: &mut String, cell: &str, width: usize, align: Align) {
+fn pad_into(line: &mut String, cell: &str, width: usize, align: ColumnAlign) {
     let padding = width.saturating_sub(display_width(cell));
     let (before, after) = match align {
-        Align::Left => (0, padding),
-        Align::Right => (padding, 0),
+        ColumnAlign::Left => (0, padding),
+        ColumnAlign::Right => (padding, 0),
         // Left-biased on an odd count: the extra space goes on the right, so a column
         // of centred cells still starts where the eye expects it to.
-        Align::Center => (padding / 2, padding - padding / 2),
+        ColumnAlign::Center => (padding / 2, padding - padding / 2),
     };
     line.extend(core::iter::repeat_n(' ', before));
     line.push_str(cell);
@@ -417,26 +408,26 @@ mod tests {
     fn alignment_letters_are_read_and_the_rest_is_skipped() {
         assert_eq!(
             parse_alignments("lcr"),
-            [Align::Left, Align::Center, Align::Right]
+            [ColumnAlign::Left, ColumnAlign::Center, ColumnAlign::Right]
         );
         assert_eq!(
             parse_alignments("|l||c|r|"),
-            [Align::Left, Align::Center, Align::Right]
+            [ColumnAlign::Left, ColumnAlign::Center, ColumnAlign::Right]
         );
         // A paragraph column takes a column but not its width, and its `{3cm}` must not
         // read as a centred column of its own.
-        assert_eq!(parse_alignments("p{3cm}r"), [Align::Left, Align::Right]);
-        assert_eq!(parse_alignments("Xl"), [Align::Left, Align::Left]);
+        assert_eq!(parse_alignments("p{3cm}r"), [ColumnAlign::Left, ColumnAlign::Right]);
+        assert_eq!(parse_alignments("Xl"), [ColumnAlign::Left, ColumnAlign::Left]);
         // Inserted material and cell decorations take no column at all.
         assert_eq!(
             parse_alignments("@{}l>{\\bfseries}c<{}"),
-            [Align::Left, Align::Center]
+            [ColumnAlign::Left, ColumnAlign::Center]
         );
-        assert_eq!(parse_alignments("!{\\vrule}r"), [Align::Right]);
+        assert_eq!(parse_alignments("!{\\vrule}r"), [ColumnAlign::Right]);
         // Nested braces inside a skipped group.
         assert_eq!(
             parse_alignments(">{\\raggedright{a}}lr"),
-            [Align::Left, Align::Right]
+            [ColumnAlign::Left, ColumnAlign::Right]
         );
         assert_eq!(parse_alignments(""), []);
     }
@@ -444,15 +435,15 @@ mod tests {
     #[test]
     fn padding_is_left_biased_when_centring() {
         let mut line = String::new();
-        pad_into(&mut line, "x", 4, Align::Center);
+        pad_into(&mut line, "x", 4, ColumnAlign::Center);
         assert_eq!(line, " x  ");
 
         let mut line = String::new();
-        pad_into(&mut line, "x", 3, Align::Right);
+        pad_into(&mut line, "x", 3, ColumnAlign::Right);
         assert_eq!(line, "  x");
 
         let mut line = String::new();
-        pad_into(&mut line, "xyz", 2, Align::Left);
+        pad_into(&mut line, "xyz", 2, ColumnAlign::Left);
         assert_eq!(line, "xyz");
     }
 }

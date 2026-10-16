@@ -88,8 +88,8 @@ pub struct MathCtx {
     /// Whether this is display math (`\[…\]`, an `equation` body) rather than inline
     /// math. Display math is laid out as an indented block of its own.
     pub display: bool,
-    /// Whether this is a matrix body, where `&` separates cells and `\\` separates
-    /// rows.
+    /// Whether this is the body of a block laid out in columns — a matrix, a `cases`,
+    /// an `align` — where `&` separates cells and `\\` separates rows.
     pub matrix: bool,
 }
 

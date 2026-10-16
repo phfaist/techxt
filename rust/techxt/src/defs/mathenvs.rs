@@ -1,8 +1,9 @@
-//! Display-math environments and matrices.
+//! Display-math environments, the aligned environments and matrices.
 //!
-//! `equation`, `align`, `gather`, `multline`, `eqnarray`, `split` and `dmath` (with
-//! their starred forms), `subequations`, and the matrix family — `matrix`, `pmatrix`,
-//! `bmatrix`, `Bmatrix`, `vmatrix`, `Vmatrix`, `smallmatrix`, the `cases` family and
+//! `equation`, `gather`, `multline` and `dmath` (with their starred forms),
+//! `displaymath` and `subequations`; `align`, `alignat`, `flalign`, `eqnarray`,
+//! `aligned`, `alignedat` and `split`; the matrix family — `matrix`, `pmatrix`,
+//! `bmatrix`, `Bmatrix`, `vmatrix`, `Vmatrix`, `smallmatrix` — the `cases` family and
 //! `array`.
 //!
 //! # An environment can be a math scope, or contribute to one
@@ -20,23 +21,46 @@
 //! formula re-emits it as LaTeX and never enters its body, which is what makes
 //! `\begin{equation}` and the `\[…\]` it is a synonym for answer that mode alike.
 //!
-//! # Two separators, three meanings
+//! # An `align` is a matrix without delimiters
+//!
+//! Every environment that lays its body out in columns goes through one handler,
+//! `Block`: `&` splits cells and `\\` splits rows, each cell is joined as a formula of
+//! its own, and the rows are laid out as the environment's
+//! [`Columns`] say. A matrix right-justifies every column and
+//! `cases` left-justifies; an `align` pushes what stands left of each `&` up against it
+//! and starts what stands right of it there, so that the relations of consecutive rows
+//! fall into a column as they do on the page:
+//!
+//! ```
+//! use techxt::Converter;
+//!
+//! let converter = Converter::standard();
+//! assert_eq!(
+//!     converter.latex_to_text(r"\begin{align} a &= b + c \\ xyz &= d \end{align}")?.text,
+//!     "      𝑎 = 𝑏 + 𝑐\n    𝑥𝑦𝑧 = 𝑑\n"
+//! );
+//! # Ok::<(), Box<dyn core::error::Error>>(())
+//! ```
+//!
+//! `aligned` and `split` are the same block handed to the formula around them, exactly
+//! as a matrix inside a formula is.
+//!
+//! # `&` and `\\`
 //!
 //! The `&` and `\\` that [`defs::base`](super::base) defines read
-//! [`RenderState`](crate::render::RenderState) to decide what they are,
-//! and these environments are what sets it. In a matrix body
-//! [`MathCtx::matrix`](crate::render::MathCtx::matrix) is set, so they become cell and
-//! row separators that the matrix handler splits at. In an `align` body it is not, so
-//! `\\` is a new display line and `&` is *nothing at all*: the joiner already spaces the
-//! relation the `&` was aligning, and a rendering that is not in columns has nothing to
-//! align it to.
+//! [`RenderState`](crate::render::RenderState) to decide what they are, and these
+//! environments are what sets it. In a block body
+//! [`MathCtx::matrix`](crate::render::MathCtx::matrix) is set, so they are the cell and
+//! row separators the handler splits at. In any other formula `\\` is a new display
+//! line and `&` is nothing: there are no columns to align to.
 
 use crate::def::{Category, EnvDef, TextHandler, TextRule};
 use crate::flow::Flow;
-use crate::mathfmt::{display_matrix_atom, inline_matrix_atom, MatrixFence};
+use crate::mathfmt::{display_block_atom, inline_block_atom, Columns, MatrixFence};
 use crate::render::{math, MathCtx, NodeView, RenderCx, RenderError};
 
 use super::handler;
+use super::tables::parse_alignments;
 
 /// The mathenvs category.
 ///
@@ -53,6 +77,7 @@ use super::handler;
 pub fn category() -> Category {
     let mut category = Category::new("mathenvs");
     display_environments(&mut category);
+    aligned_environments(&mut category);
     matrices(&mut category);
     category
 }
@@ -61,46 +86,28 @@ pub fn category() -> Category {
 
 /// The environments whose body is one displayed formula.
 ///
-/// All of them render alike: plain text has no equation numbers to place, no columns to
-/// align on and no page width to break a `multline` across, so what is left of each is
-/// "a formula, displayed" — and `\\` inside one starts the next line of it.
+/// All of them render alike: plain text has no equation numbers to place and no page
+/// width to break a `multline` across, so what is left of each is "a formula,
+/// displayed" — and `\\` inside one starts the next line of it.
 fn display_environments(category: &mut Category) {
     for name in [
         "equation",
         "equation*",
-        "align",
-        "align*",
         "gather",
         "gather*",
         "multline",
         "multline*",
-        "eqnarray",
-        "eqnarray*",
-        "split",
         "dmath",
         "dmath*",
         // LaTeX's own displayed-formula environment, which `\[…\]` is short for.
         "displaymath",
-        "flalign",
-        "flalign*",
-        // The inner forms: an `aligned` or a `gathered` is written *inside* another
-        // formula, and renders by handing its atoms to it — which is what every
-        // environment here does when math already surrounds it.
-        "aligned",
+        // The inner form: a `gathered` is written *inside* another formula, and
+        // renders by handing its atoms to it — which is what every environment here
+        // does when math already surrounds it.
         "gathered",
     ] {
         category.add_env(
             EnvDef::new(name)
-                .math_body()
-                .rule(handler(Formula { display: true })),
-        );
-    }
-    // `alignat` and its relatives take the number of column pairs, which says nothing
-    // about the text; it is parsed so that it cannot leak, and dropped.
-    for name in ["alignat", "alignat*", "alignedat"] {
-        category.add_env(
-            EnvDef::new(name)
-                .arg("m", "columns")
                 .math_body()
                 .rule(handler(Formula { display: true })),
         );
@@ -117,13 +124,39 @@ fn display_environments(category: &mut Category) {
     category.add_env(EnvDef::new("subequations").rule(TextRule::Content));
 }
 
+// ------------------------------------------------------- aligned environments
+
+/// The environments whose body is rows of cells aligned at `&`, drawn without
+/// delimiters.
+fn aligned_environments(category: &mut Category) {
+    for name in [
+        "align",
+        "align*",
+        "flalign",
+        "flalign*",
+        "eqnarray",
+        "eqnarray*",
+        // The inner forms, written inside another formula and handed to it.
+        "aligned",
+        "split",
+    ] {
+        category.add_env(EnvDef::new(name).math_body().rule(handler(Block)));
+    }
+    // `alignat` and its relatives take the number of column pairs, which the rows
+    // already show; it is parsed so that it cannot leak, and dropped.
+    for name in ["alignat", "alignat*", "alignedat"] {
+        category.add_env(
+            EnvDef::new(name)
+                .arg("m", "columns")
+                .math_body()
+                .rule(handler(Block)),
+        );
+    }
+}
+
 // ------------------------------------------------------------------ matrices
 
 /// The matrix family, plus `array`.
-///
-/// The environment's *name* is what says which delimiters it draws — that is how LaTeX
-/// spells them — so one handler serves them all and asks
-/// [`MatrixFence::for_environment`] which pair to use.
 fn matrices(category: &mut Category) {
     for name in [
         "matrix",
@@ -158,24 +191,22 @@ fn matrices(category: &mut Category) {
         "drcases",
         "drcases*",
     ] {
-        category.add_env(EnvDef::new(name).math_body().rule(handler(Matrix)));
+        category.add_env(EnvDef::new(name).math_body().rule(handler(Block)));
     }
     // `array`'s column specification says how each column is aligned and where its
-    // rules go. Plain text right-justifies every column (a column of numbers lining up
-    // on its units digit is the one alignment that always helps), so the argument is
-    // parsed — which is what keeps it out of the output — and then ignored.
+    // rules go; the alignment is honoured, the rules are not drawn.
     category.add_env(
         EnvDef::new("array")
             .arg("o", "position")
             .arg("m", "colspec")
             .math_body()
-            .rule(handler(Matrix)),
+            .rule(handler(Block)),
     );
 }
 
 // ------------------------------------------------------------------ handlers
 
-/// One formula environment: `equation`, `align`, `gather`, `math`, … .
+/// One formula environment: `equation`, `gather`, `math`, … .
 #[derive(Debug)]
 struct Formula {
     /// Whether this environment *displays* its formula when nothing surrounds it.
@@ -219,27 +250,40 @@ impl TextHandler for Formula {
     }
 }
 
-/// One matrix.
+/// One block laid out in rows and columns: a matrix, a `cases`, an `align`.
 ///
-/// Inline, a matrix is a single-line `[ 1  2; 30  4 ]`; displayed, it is one line per
-/// row between delimiters drawn as tall as it is. Either way it is **one atom**, opaque
-/// to the joiner and self-delimiting on both edges, so `$x\begin{pmatrix}1&2\end{pmatrix}y$`
-/// hugs the way a bracketed expression does.
+/// Inline, a block is a single line — `[ 1  2; 30  4 ]`, `𝑎 = 𝑏; 𝑐 = 𝑑`; displayed, it
+/// is one line per row, between delimiters drawn as tall as it is where it has any.
+/// Either way it is **one atom**, opaque to the joiner and self-delimiting on both
+/// edges, so `$x\begin{pmatrix}1&2\end{pmatrix}y$` hugs the way a bracketed expression
+/// does.
+///
+/// The environment's *name* says which delimiters it draws and how its columns are
+/// laid out — that is how LaTeX spells them — so one handler serves them all and asks
+/// [`MatrixFence::for_environment`] and [`Columns::for_environment`]. `array` says so
+/// in an argument instead, and its column specification is read the way a `tabular`'s
+/// is.
 #[derive(Debug)]
-struct Matrix;
+struct Block;
 
-impl TextHandler for Matrix {
+impl TextHandler for Block {
     fn render(&self, node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
         let name = node.name().unwrap_or("");
-        // A name the fence table does not know can only be an environment registered
-        // elsewhere against this handler; brackets are v3's universal pair and the
-        // safe reading of "some kind of matrix".
+        // A name neither table knows can only be an environment registered elsewhere
+        // against this handler; brackets are v3's universal pair and the safe reading
+        // of "some kind of matrix", and an empty column specification lays out as a
+        // matrix does.
         let fence = MatrixFence::for_environment(name).unwrap_or(MatrixFence::Brackets);
+        let columns = Columns::for_environment(name).unwrap_or_else(|| {
+            Columns::Spec(parse_alignments(
+                &node.argument_source("colspec").unwrap_or_default(),
+            ))
+        });
 
         let enclosing = cx.state().math;
         let display = enclosing.is_none_or(|math| math.display);
 
-        // Written outside a formula, a matrix opens one — so `Source` mode re-emits it
+        // Written outside a formula, a block opens one — so `Source` mode re-emits it
         // rather than drawing it, on the same terms as every other math scope.
         if enclosing.is_none() {
             if let Some(flow) = math::source_scope(node, display, cx.options()) {
@@ -252,16 +296,23 @@ impl TextHandler for Matrix {
             display,
             matrix: true,
         });
-        let body = cx.body_with_state(inner.clone())?;
-        let rows = math::matrix_rows(body, &inner, cx.options());
 
         // A multi-row box needs a joiner to compose it with what surrounds it, so it is
-        // only ever built where one runs; `Plain` gets the single-line form, which is
-        // also what v3 renders in every non-fancy mode.
-        let atom = if display && math::atoms_in_use(&inner, cx.options()) {
-            display_matrix_atom(&rows, fence, cx.options().matrix_delimiters)
+        // only ever built where one runs. Without one a matrix takes its single-line
+        // form, which is also what v3 renders in every non-fancy mode — but an `align`
+        // on a single line would lose its rows, so there it stays the formula it was:
+        // `\\` a new display line, `&` nothing.
+        let fancy = math::atoms_in_use(&inner, cx.options());
+        if !fancy && matches!(columns, Columns::Aligned | Columns::Eqnarray) {
+            return Formula { display: true }.render(node, cx);
+        }
+
+        let body = cx.body_with_state(inner.clone())?;
+        let rows = math::matrix_rows(body, &inner, cx.options());
+        let atom = if display && fancy {
+            display_block_atom(&rows, fence, &columns, cx.options().matrix_delimiters)
         } else {
-            inline_matrix_atom(&rows, fence)
+            inline_block_atom(&rows, fence, &columns)
         };
         let flow = math::atom(atom, &inner, cx.options());
 
@@ -284,10 +335,10 @@ mod tests {
     }
 
     #[test]
-    fn an_alignment_marker_is_dropped_and_a_break_starts_a_line() {
+    fn an_align_body_lines_its_relations_up() {
         assert_eq!(
-            text(r"\begin{align} a &= 1 \\ b &= 2 \end{align}"),
-            "    𝑎 = 1\n    𝑏 = 2\n"
+            text(r"\begin{align} a &= 1 \\ xyz &= 2 \end{align}"),
+            "      𝑎 = 1\n    𝑥𝑦𝑧 = 2\n"
         );
     }
 

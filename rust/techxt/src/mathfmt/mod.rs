@@ -67,7 +67,8 @@ mod segment;
 pub use alphabets::{fmt_style, fmt_style_char, unstyle, unstyle_char, FontStyle, FontStyleKind};
 pub use atom::{Atom, AtomBody, AtomClass, ScriptInfo, ScriptKind};
 pub use boxes::{
-    baseline_join, display_matrix_atom, display_matrix_box, inline_matrix_atom, MathBox,
+    baseline_join, display_block_atom, display_block_box, display_matrix_atom,
+    display_matrix_box, inline_block_atom, inline_matrix_atom, ColumnAlign, Columns, MathBox,
     MatrixDelims, MatrixFence,
 };
 pub use builders::{frac_atom, sqrt_atom};

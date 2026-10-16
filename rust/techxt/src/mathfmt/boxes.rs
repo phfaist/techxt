@@ -1,7 +1,8 @@
-//! Two-dimensional math: [`MathBox`], the baseline join, and matrix rendering.
+//! Two-dimensional math: [`MathBox`], the baseline join, and the rendering of a block
+//! laid out in rows and columns — a matrix, a `cases`, an `align`.
 //!
-//! Everything in this file that concerns *display* matrices — multi-row delimiter
-//! pieces and the baseline join — is new in techxt; pylatexenc v3
+//! Everything in this file that concerns *display* blocks — multi-row delimiter
+//! pieces, column layouts and the baseline join — is new in techxt; pylatexenc v3
 //! renders a matrix the same way inline and in display and has no box model at all.
 //! The inline rendering, by contrast, is v3's `[ 1 2; 3 4 ]` shape with the plan's
 //! corrections: per-column widths, a two-space cell separator, and the environment's
@@ -214,20 +215,26 @@ pub enum MatrixFence {
 }
 
 impl MatrixFence {
-    /// The delimiter pair of a matrix environment, or `None` if the name is not one
-    /// of the matrix environments techxt knows.
+    /// The delimiter pair of an environment techxt lays out in columns — a matrix, or
+    /// an `align`, which is a matrix with no delimiters — or `None` if the name is not
+    /// one of them.
     ///
     /// ```
     /// use techxt::mathfmt::MatrixFence;
     ///
     /// assert_eq!(MatrixFence::for_environment("pmatrix"), Some(MatrixFence::Parens));
     /// assert_eq!(MatrixFence::for_environment("matrix"), Some(MatrixFence::None));
+    /// assert_eq!(MatrixFence::for_environment("aligned"), Some(MatrixFence::None));
     /// assert_eq!(MatrixFence::for_environment("rcases"), Some(MatrixFence::Braces));
     /// assert_eq!(MatrixFence::for_environment("tabular"), None);
     /// ```
     pub fn for_environment(name: &str) -> Option<MatrixFence> {
         Some(match name {
             "matrix" | "smallmatrix" => MatrixFence::None,
+            // The aligned environments: columns and rows like a matrix, drawn without
+            // delimiters, which is what `Columns::for_environment` lays them out as.
+            "align" | "align*" | "alignat" | "alignat*" | "flalign" | "flalign*" | "aligned"
+            | "alignedat" | "split" | "eqnarray" | "eqnarray*" => MatrixFence::None,
             "pmatrix" | "psmallmatrix" => MatrixFence::Parens,
             "bmatrix" | "bsmallmatrix" | "array" => MatrixFence::Brackets,
             // `cases` draws only a left brace in LaTeX; there is no half-delimited box
@@ -328,13 +335,109 @@ pub enum MatrixDelims {
     Ascii,
 }
 
-/// Lay the cells out into one text line per row: every cell right-justified to its
-/// column's display width, cells separated by two spaces.
+/// How the cells of one column are justified.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColumnAlign {
+    /// Flush left: `l` in a column specification, and what every column type techxt
+    /// cannot honour exactly (`p{…}`, `X`) reads as.
+    Left,
+    /// Padded on both sides, biased left when the padding is odd: `c`.
+    Center,
+    /// Flush right: `r`, and what a column of numbers wants, since it lines them up on
+    /// the units digit.
+    Right,
+}
+
+/// How a block's columns are laid out: how each is justified, and how far it stands
+/// from the one before.
 ///
-/// Right-justification is what makes a column of numbers line up on its units digit,
-/// which is the only alignment plain text can offer without knowing the column type.
-/// Widths are per column, not v3's single global width.
-fn layout_rows<R, S>(rows: &[R]) -> Vec<String>
+/// The environment's name says which layout it takes
+/// ([`for_environment`](Self::for_environment)), as it says which delimiters it draws
+/// ([`MatrixFence::for_environment`]); `array` spells its layout out in a column
+/// specification instead ([`Spec`](Self::Spec)).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Columns {
+    /// Every column right-justified, two spaces apart: the matrix family.
+    ///
+    /// Right-justification is what makes a column of numbers line up on its units
+    /// digit, the one alignment that always helps when nothing says what the column
+    /// holds. LaTeX centres a matrix's columns; techxt does not.
+    Matrix,
+    /// Every column left-justified, two spaces apart: the `cases` family, which LaTeX
+    /// sets as `ll`.
+    Cases,
+    /// Right and left in turn, the way `align` sets its column pairs: what stands left
+    /// of an `&` is pushed up against it and what stands right of it starts at it, one
+    /// space apart, so that the relations of consecutive rows fall into a column. The
+    /// next pair, after a second `&`, stands four spaces further on.
+    Aligned,
+    /// `eqnarray`'s three columns, right, centre and left, one space apart.
+    Eqnarray,
+    /// `array`'s column specification as written, two spaces apart; a column beyond
+    /// its end is right-justified.
+    Spec(Vec<ColumnAlign>),
+}
+
+impl Columns {
+    /// The column layout of an environment, or `None` if the name is not one of the
+    /// environments techxt lays out in columns — `array` among them, whose layout is
+    /// in its argument.
+    ///
+    /// ```
+    /// use techxt::mathfmt::Columns;
+    ///
+    /// assert_eq!(Columns::for_environment("pmatrix"), Some(Columns::Matrix));
+    /// assert_eq!(Columns::for_environment("align*"), Some(Columns::Aligned));
+    /// assert_eq!(Columns::for_environment("array"), None);
+    /// ```
+    pub fn for_environment(name: &str) -> Option<Columns> {
+        Some(match name {
+            "matrix" | "smallmatrix" | "pmatrix" | "psmallmatrix" | "bmatrix" | "bsmallmatrix"
+            | "Bmatrix" | "vmatrix" | "Vmatrix" => Columns::Matrix,
+            "cases" | "cases*" | "dcases" | "dcases*" | "rcases" | "rcases*" | "drcases"
+            | "drcases*" => Columns::Cases,
+            "align" | "align*" | "alignat" | "alignat*" | "flalign" | "flalign*" | "aligned"
+            | "alignedat" | "split" => Columns::Aligned,
+            "eqnarray" | "eqnarray*" => Columns::Eqnarray,
+            _ => return None,
+        })
+    }
+
+    /// The justification of column `index`, and the spaces that stand before it —
+    /// none before the first.
+    fn column(&self, index: usize) -> (ColumnAlign, usize) {
+        let before = |spaces: usize| if index == 0 { 0 } else { spaces };
+        match self {
+            Columns::Matrix => (ColumnAlign::Right, before(2)),
+            Columns::Cases => (ColumnAlign::Left, before(2)),
+            Columns::Aligned => {
+                if index % 2 == 0 {
+                    (ColumnAlign::Right, before(4))
+                } else {
+                    (ColumnAlign::Left, 1)
+                }
+            }
+            Columns::Eqnarray => match index {
+                0 => (ColumnAlign::Right, 0),
+                1 => (ColumnAlign::Center, 1),
+                2 => (ColumnAlign::Left, 1),
+                _ => (ColumnAlign::Right, 2),
+            },
+            Columns::Spec(spec) => (
+                spec.get(index).copied().unwrap_or(ColumnAlign::Right),
+                before(2),
+            ),
+        }
+    }
+}
+
+/// Lay the cells out into one text line per row: every cell padded to its column's
+/// display width, justified and spaced as `columns` says.
+///
+/// Widths are per column, not v3's single global width. The lines come out
+/// rectangular — a left-justified last column pads on its right — and a caller that
+/// draws no delimiter after them trims them.
+fn layout_rows<R, S>(rows: &[R], columns: &Columns) -> Vec<String>
 where
     R: AsRef<[S]>,
     S: AsRef<str>,
@@ -355,33 +458,45 @@ where
         .map(|row| {
             let mut line = String::new();
             for (col, cell) in row.as_ref().iter().enumerate() {
-                if col > 0 {
-                    line.push_str("  ");
-                }
+                let (align, gap) = columns.column(col);
+                pad(&mut line, gap);
                 let cell = cell.as_ref();
-                pad(&mut line, widths[col].saturating_sub(display_width(cell)));
+                let slack = widths[col].saturating_sub(display_width(cell));
+                let (before, after) = match align {
+                    ColumnAlign::Left => (0, slack),
+                    ColumnAlign::Center => (slack / 2, slack - slack / 2),
+                    ColumnAlign::Right => (slack, 0),
+                };
+                pad(&mut line, before);
                 line.push_str(cell);
+                pad(&mut line, after);
             }
             line
         })
         .collect()
 }
 
-/// Render a matrix on one line, in the `[ 1  2; 30  4 ]` form, for inline math.
+/// Render a block on one line, in the `[ 1  2; 30  4 ]` form, for inline math.
 ///
 /// The rows are separated by `"; "` and the whole is set off from its delimiters by
 /// one space on each side. An empty matrix — valid LaTeX — renders as just the
-/// delimiter pair, `[ ]`, and a matrix with no delimiters
-/// ([`MatrixFence::None`](MatrixFence::None)) renders as its rows alone.
-fn inline_matrix_text<R, S>(rows: &[R], fence: MatrixFence) -> String
+/// delimiter pair, `[ ]`. A block with no delimiters
+/// ([`MatrixFence::None`](MatrixFence::None)) renders as its rows alone, each trimmed
+/// to its content: with nothing drawn beside them, there is nothing to line them up
+/// against.
+fn inline_block_text<R, S>(rows: &[R], fence: MatrixFence, columns: &Columns) -> String
 where
     R: AsRef<[S]>,
     S: AsRef<str>,
 {
-    let contents = layout_rows(rows).join("; ");
+    let lines = layout_rows(rows, columns);
     match fence.plain_pair() {
-        None => contents,
+        None => {
+            let trimmed: Vec<&str> = lines.iter().map(|line| line.trim()).collect();
+            trimmed.join("; ")
+        }
         Some((open, close)) => {
+            let contents = lines.join("; ");
             let mut out = String::new();
             out.push(open);
             out.push(' ');
@@ -395,12 +510,32 @@ where
     }
 }
 
-/// Build the inline rendering of a matrix as a single-line [`Atom`].
+/// Build the inline rendering of a block as a single-line [`Atom`].
 ///
-/// `rows` is the matrix contents, one inner slice per row, each cell already rendered
-/// to text. The atom's class pair is [`Block`](AtomClass::Block) on both edges: a
-/// matrix delimits itself, so it hugs whatever it meets — `sin[ 1 2 ]` and `2[ 1 2 ]`
-/// stay tight — while remaining recognizable as a block.
+/// `rows` is the block's contents, one inner slice per row, each cell already rendered
+/// to text; `columns` says how they are laid out. The atom's class pair is
+/// [`Block`](AtomClass::Block) on both edges: a matrix delimits itself, so it hugs
+/// whatever it meets — `sin[ 1 2 ]` and `2[ 1 2 ]` stay tight — while remaining
+/// recognizable as a block.
+///
+/// ```
+/// use techxt::mathfmt::{inline_block_atom, Columns, MatrixFence};
+///
+/// let m = inline_block_atom(&[["a", "= b"], ["c", "= d"]], MatrixFence::None, &Columns::Aligned);
+/// assert_eq!(m.flatten(), "a = b; c = d");
+/// ```
+pub fn inline_block_atom<R, S>(rows: &[R], fence: MatrixFence, columns: &Columns) -> Atom
+where
+    R: AsRef<[S]>,
+    S: AsRef<str>,
+{
+    Atom::from_text(
+        inline_block_text(rows, fence, columns),
+        AtomClass::both(AtomClass::Block),
+    )
+}
+
+/// [`inline_block_atom`] with a matrix's columns ([`Columns::Matrix`]).
 ///
 /// ```
 /// use techxt::mathfmt::{inline_matrix_atom, MatrixFence};
@@ -413,37 +548,39 @@ where
     R: AsRef<[S]>,
     S: AsRef<str>,
 {
-    Atom::from_text(
-        inline_matrix_text(rows, fence),
-        AtomClass::both(AtomClass::Block),
-    )
+    inline_block_atom(rows, fence, &Columns::Matrix)
 }
 
-/// Build the display rendering of a matrix: one line per row, in a [`MathBox`].
+/// Build the display rendering of a block: one line per row, in a [`MathBox`].
 ///
-/// The box's baseline is `(rows - 1) / 2`, so a surrounding formula meets the matrix
+/// The box's baseline is `(rows - 1) / 2`, so a surrounding formula meets the block
 /// at its middle row. Delimiters are drawn per `style`; see [`MatrixDelims`]. An empty
-/// matrix renders as the one-line `[ ]` and never panics.
+/// matrix renders as the one-line `[ ]` and never panics. A block without delimiters
+/// carries no trailing spaces, as a [`MathBox`] never does.
 ///
 /// ```
-/// use techxt::mathfmt::{display_matrix_box, MatrixDelims, MatrixFence};
+/// use techxt::mathfmt::{display_block_box, Columns, MatrixDelims, MatrixFence};
 ///
-/// let b = display_matrix_box(&[["1", "2"], ["30", "4"]], MatrixFence::Parens,
-///                            MatrixDelims::Unicode);
-/// assert_eq!(b.lines[0].as_ref(), "⎛  1  2 ⎞");
-/// assert_eq!(b.lines[1].as_ref(), "⎝ 30  4 ⎠");
-/// assert_eq!(b.baseline, 0);
+/// let b = display_block_box(&[["a", "= b + c"], ["xyz", "= d"]], MatrixFence::None,
+///                           &Columns::Aligned, MatrixDelims::Unicode);
+/// assert_eq!(b.lines[0].as_ref(), "  a = b + c");
+/// assert_eq!(b.lines[1].as_ref(), "xyz = d");
 /// ```
-pub fn display_matrix_box<R, S>(rows: &[R], fence: MatrixFence, style: MatrixDelims) -> MathBox
+pub fn display_block_box<R, S>(
+    rows: &[R],
+    fence: MatrixFence,
+    columns: &Columns,
+    style: MatrixDelims,
+) -> MathBox
 where
     R: AsRef<[S]>,
     S: AsRef<str>,
 {
-    let body = layout_rows(rows);
+    let body = layout_rows(rows, columns);
     if body.is_empty() {
         // No rows at all: there is nothing to stack, so fall back on the inline shape,
         // which is `[ ]` for a fenced matrix and empty otherwise.
-        let text = inline_matrix_text(rows, fence);
+        let text = inline_block_text(rows, fence, columns);
         return if text.is_empty() {
             MathBox::empty()
         } else {
@@ -463,7 +600,7 @@ where
                 MatrixDelims::Unicode => fence.unicode_pieces(row, n),
             };
             match pieces {
-                None => text.into_boxed_str(),
+                None => text.trim_end().into(),
                 Some((open, close)) => {
                     let mut line = String::new();
                     line.push(open);
@@ -480,20 +617,53 @@ where
     MathBox { lines, baseline }
 }
 
-/// Build the display rendering of a matrix as a [`Block`](super::AtomBody::Block) atom.
+/// [`display_block_box`] with a matrix's columns ([`Columns::Matrix`]).
 ///
-/// Same rendering as [`display_matrix_box`], wrapped in the atom the joiner expects,
+/// ```
+/// use techxt::mathfmt::{display_matrix_box, MatrixDelims, MatrixFence};
+///
+/// let b = display_matrix_box(&[["1", "2"], ["30", "4"]], MatrixFence::Parens,
+///                            MatrixDelims::Unicode);
+/// assert_eq!(b.lines[0].as_ref(), "⎛  1  2 ⎞");
+/// assert_eq!(b.lines[1].as_ref(), "⎝ 30  4 ⎠");
+/// assert_eq!(b.baseline, 0);
+/// ```
+pub fn display_matrix_box<R, S>(rows: &[R], fence: MatrixFence, style: MatrixDelims) -> MathBox
+where
+    R: AsRef<[S]>,
+    S: AsRef<str>,
+{
+    display_block_box(rows, fence, &Columns::Matrix, style)
+}
+
+/// Build the display rendering of a block as a [`Block`](super::AtomBody::Block) atom.
+///
+/// Same rendering as [`display_block_box`], wrapped in the atom the joiner expects,
 /// with the class pair [`Block`](AtomClass::Block) on both edges.
-pub fn display_matrix_atom<R, S>(rows: &[R], fence: MatrixFence, style: MatrixDelims) -> Atom
+pub fn display_block_atom<R, S>(
+    rows: &[R],
+    fence: MatrixFence,
+    columns: &Columns,
+    style: MatrixDelims,
+) -> Atom
 where
     R: AsRef<[S]>,
     S: AsRef<str>,
 {
     Atom {
-        body: super::AtomBody::Block(display_matrix_box(rows, fence, style)),
+        body: super::AtomBody::Block(display_block_box(rows, fence, columns, style)),
         cls: AtomClass::both(AtomClass::Block),
         script: None,
     }
+}
+
+/// [`display_block_atom`] with a matrix's columns ([`Columns::Matrix`]).
+pub fn display_matrix_atom<R, S>(rows: &[R], fence: MatrixFence, style: MatrixDelims) -> Atom
+where
+    R: AsRef<[S]>,
+    S: AsRef<str>,
+{
+    display_block_atom(rows, fence, &Columns::Matrix, style)
 }
 
 #[cfg(test)]
@@ -566,10 +736,67 @@ mod tests {
             inline_matrix_atom(&M, MatrixFence::Brackets).flatten(),
             "[  1  2; 30  4 ]"
         );
+        // With no delimiter to line the rows up against, each is trimmed.
         assert_eq!(
             inline_matrix_atom(&M, MatrixFence::None).flatten(),
-            " 1  2; 30  4"
+            "1  2; 30  4"
         );
+    }
+
+    #[test]
+    fn each_layout_justifies_and_spaces_its_columns() {
+        let rows = [["a", "= b + c"], ["xyz", "= d"]];
+        let lines = |columns: &Columns| layout_rows(&rows, columns);
+        assert_eq!(lines(&Columns::Matrix), ["  a  = b + c", "xyz      = d"]);
+        assert_eq!(lines(&Columns::Cases), ["a    = b + c", "xyz  = d    "]);
+        assert_eq!(lines(&Columns::Aligned), ["  a = b + c", "xyz = d    "]);
+        // A second pair of columns stands four spaces off.
+        let pairs = [["a", "= b", "c", "= d"]];
+        assert_eq!(layout_rows(&pairs, &Columns::Aligned), ["a = b    c = d"]);
+        let three = [["a", "=", "b + c"], ["xyz", "=", "d"]];
+        assert_eq!(
+            layout_rows(&three, &Columns::Eqnarray),
+            ["  a = b + c", "xyz = d    "]
+        );
+        let spec = Columns::Spec(vec![ColumnAlign::Center, ColumnAlign::Left]);
+        assert_eq!(
+            layout_rows(&[["1", "2"], ["300", "4"]], &spec),
+            [" 1   2", "300  4"]
+        );
+        // A column beyond the specification is right-justified.
+        let spec = Columns::Spec(vec![ColumnAlign::Left]);
+        assert_eq!(
+            layout_rows(&[["1", "2"], ["300", "40"]], &spec),
+            ["1     2", "300  40"]
+        );
+    }
+
+    #[test]
+    fn a_block_without_delimiters_carries_no_trailing_spaces() {
+        let rows = [["a", "= b + c"], ["xyz", "= d"]];
+        let b = display_block_box(
+            &rows,
+            MatrixFence::None,
+            &Columns::Aligned,
+            MatrixDelims::Unicode,
+        );
+        assert_eq!(b.lines[0].as_ref(), "  a = b + c");
+        assert_eq!(b.lines[1].as_ref(), "xyz = d");
+        // Inline, its rows are trimmed to their content on both sides.
+        assert_eq!(
+            inline_block_atom(&rows, MatrixFence::None, &Columns::Aligned).flatten(),
+            "a = b + c; xyz = d"
+        );
+    }
+
+    #[test]
+    fn environment_names_map_to_their_columns() {
+        assert_eq!(Columns::for_environment("bmatrix"), Some(Columns::Matrix));
+        assert_eq!(Columns::for_environment("dcases*"), Some(Columns::Cases));
+        assert_eq!(Columns::for_environment("split"), Some(Columns::Aligned));
+        assert_eq!(Columns::for_environment("eqnarray*"), Some(Columns::Eqnarray));
+        assert_eq!(Columns::for_environment("array"), None);
+        assert_eq!(MatrixFence::for_environment("split"), Some(MatrixFence::None));
     }
 
     #[test]

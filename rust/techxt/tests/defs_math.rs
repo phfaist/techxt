@@ -349,10 +349,20 @@ fn a_display_matrix_composes_with_the_formula_around_it() {
 }
 
 #[test]
-fn an_array_ignores_its_column_specification_and_squares_its_rows() {
+fn an_array_follows_its_column_specification_and_squares_its_rows() {
+    // A short row is filled out, so the closing bracket stands in a column.
     assert_eq!(
         text(r"\[\begin{array}{lll}1 & 2 & abcdef\\ 3 & 4\end{array}\]"),
         "    ⎡ 1  2  𝑎𝑏𝑐𝑑𝑒𝑓 ⎤\n    ⎣ 3  4         ⎦\n"
+    );
+    // `c` centres, biased left when the padding is odd; `l` and `r` are what they say.
+    assert_eq!(
+        text(r"\[\begin{array}{cl} 1 & 2 \\ 300 & 4 \end{array}\]"),
+        "    ⎡  1   2 ⎤\n    ⎣ 300  4 ⎦\n"
+    );
+    assert_eq!(
+        text(r"\[\begin{array}{rl} 1 & 2 \\ 300 & 4 \end{array}\]"),
+        "    ⎡   1  2 ⎤\n    ⎣ 300  4 ⎦\n"
     );
 }
 
@@ -502,8 +512,7 @@ fn source_mode_keeps_an_inline_formula_in_its_running_text() {
 }
 
 #[test]
-fn inside_a_math_environment_a_break_is_a_line_and_an_ampersand_is_nothing() {
-    // The joiner already spaces the relation the `&` was aligning.
+fn inside_an_align_a_break_is_a_row_and_an_ampersand_lines_the_relations_up() {
     assert_eq!(
         text(r"\begin{align} a &= 1 \\ b &= 2 \end{align}"),
         "    𝑎 = 1\n    𝑏 = 2\n"
@@ -512,13 +521,44 @@ fn inside_a_math_environment_a_break_is_a_line_and_an_ampersand_is_nothing() {
         text(r"\begin{align*} x &\le y \\ y &\le z \end{align*}"),
         "    𝑥 ≤ 𝑦\n    𝑦 ≤ 𝑧\n"
     );
+    // What stands left of the `&` is pushed up against it, what stands right of it
+    // starts there, and the relations fall into a column.
+    assert_eq!(
+        text(r"\begin{align} a &= b + c \\ xyz &= d \end{align}"),
+        "      𝑎 = 𝑏 + 𝑐\n    𝑥𝑦𝑧 = 𝑑\n"
+    );
+    // A row that starts at the `&` leaves its first column empty.
+    assert_eq!(
+        text(r"\begin{align} a &= b \\ &= c + d \end{align}"),
+        "    𝑎 = 𝑏\n      = 𝑐 + 𝑑\n"
+    );
+    // A second pair of columns stands further off, and the two equations on a line no
+    // longer run into each other.
+    assert_eq!(
+        text(r"\begin{align} a &= b & c &= d \\ xx &= y & zz &= w \end{align}"),
+        "     𝑎 = 𝑏     𝑐 = 𝑑\n    𝑥𝑥 = 𝑦    𝑧𝑧 = 𝑤\n"
+    );
+    assert_eq!(
+        text(r"\begin{alignat}{2} a &= b & c &= d \end{alignat}"),
+        "    𝑎 = 𝑏    𝑐 = 𝑑\n"
+    );
+    // `eqnarray` puts the relation in a column of its own.
+    assert_eq!(
+        text(r"\begin{eqnarray} a &=& b + c \\ xyz &=& d \end{eqnarray}"),
+        "      𝑎 = 𝑏 + 𝑐\n    𝑥𝑦𝑧 = 𝑑\n"
+    );
+    // A trailing `\\` adds no row, and a label or a `\nonumber` adds no cell.
+    assert_eq!(
+        text(r"\begin{align} a &= 1 \label{eq} \\ b &= 2 \nonumber \\ \end{align}"),
+        "    𝑎 = 1\n    𝑏 = 2\n"
+    );
 }
 
 #[test]
 fn split_contributes_to_the_formula_that_encloses_it() {
     assert_eq!(
         text(r"\begin{equation}\begin{split} a &= b \\ &= c \end{split}\end{equation}"),
-        "    𝑎 = 𝑏\n    = 𝑐\n"
+        "    𝑎 = 𝑏\n      = 𝑐\n"
     );
 }
 
@@ -586,6 +626,16 @@ fn the_inner_math_environments_hand_their_atoms_to_the_formula_around_them() {
         text(r"\begin{equation}\begin{aligned} a &= b \\ c &= d \end{aligned}\end{equation}"),
         "    𝑎 = 𝑏\n    𝑐 = 𝑑\n"
     );
+    // An `aligned` is a block like a matrix: the formula around it meets it at its
+    // middle row, and inline it is one line.
+    assert_eq!(
+        text(r"\[ x = \begin{aligned} a &= b \\ c &= d \end{aligned} \]"),
+        "    𝑥 = 𝑎 = 𝑏\n        𝑐 = 𝑑\n"
+    );
+    assert_eq!(
+        text(r"$\begin{aligned} a &= b \\ c &= d \end{aligned}$ inline"),
+        "𝑎 = 𝑏; 𝑐 = 𝑑 inline\n"
+    );
     assert_eq!(
         text(r"\begin{displaymath} x = y \end{displaymath}"),
         "    𝑥 = 𝑦\n"
@@ -604,6 +654,11 @@ fn cases_is_a_matrix_with_braces() {
         "    ⎧ 1  𝑥 > 0 ⎫\n    ⎩ 0  𝑥 ≤ 0 ⎭\n"
     );
     assert_eq!(text(r"$\begin{cases} a \\ b \end{cases}$"), "{ 𝑎; 𝑏 }\n");
+    // Its columns are left-justified, as LaTeX sets them.
+    assert_eq!(
+        text(r"\[ \begin{cases} x & \text{if } x > 0 \\ -x & \text{otherwise} \end{cases} \]"),
+        "    ⎧ 𝑥   if 𝑥 > 0  ⎫\n    ⎩ -𝑥  otherwise ⎭\n"
+    );
 }
 
 /// mathtools' seven spellings of `cases` render as the one environment they are: the
