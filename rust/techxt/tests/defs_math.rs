@@ -237,6 +237,21 @@ fn a_symbols_replacement_is_segmented_and_therefore_classified() {
 // --------------------------------------------------------------------- fonts
 
 #[test]
+fn the_trace_is_an_operator_like_det() {
+    // `\Tr` and `\tr` are `physics`'s, and a paper that does not load it usually
+    // declares one of them itself; either way they read like `\det`.
+    assert_eq!(text(r"$\Tr \rho$"), "Tr ρ\n");
+    assert_eq!(text(r"$2\Tr\rho$"), "2 Tr ρ\n");
+    assert_eq!(text(r"$\Tr_2 \rho$"), "Tr₂ ρ\n");
+    assert_eq!(text(r"$\tr(A B) = \tr(B A)$"), "tr(𝐴𝐵) = tr(𝐵𝐴)\n");
+    // A document's own definition still wins.
+    assert_eq!(
+        text(r"\newcommand{\Tr}{\mathrm{Trace}} $\Tr \rho$"),
+        "Trace ρ\n"
+    );
+}
+
+#[test]
 fn upright_letters_read_as_an_operator_only_while_variables_are_styled() {
     // With the default italic math font, a run of upright letters stands out as a name;
     // with no alphabet at all it does not, and `2xy` would otherwise be read as a

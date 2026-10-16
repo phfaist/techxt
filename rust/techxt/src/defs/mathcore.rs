@@ -398,7 +398,7 @@ const SYMBOLS: &[(&str, &str)] = &[
 /// spelled-out words — that plain text cannot show, so each renders as the operator it
 /// stands for.
 fn operator_names(category: &mut Category) {
-    for (name, text) in OPERATOR_NAMES {
+    for (name, text) in OPERATOR_NAMES.iter().chain(EXTRA_OPERATOR_NAMES) {
         category.add_macro(MacroDef::new(*name).rule(handler(FixedAtom {
             text,
             cls: AtomClass::both(AtomClass::Op),
@@ -485,6 +485,15 @@ const OPERATOR_NAMES: &[(&str, &str)] = &[
     ("ker", "ker"),
     ("Pr", "Pr"),
 ];
+
+/// The operator names beyond v3's table: the trace.
+///
+/// `\Tr` and `\tr` are not LaTeX's own — `physics` defines them, and a paper that does
+/// not load it usually declares one of them itself — but they are written in the same
+/// breath as `\det`, and a document that read `det 𝐴` beside a bare `ρ` for `\Tr\rho`
+/// had no rule to state for the difference. A document's own definition still wins: a
+/// `\newcommand` or `\def` in the preamble expands before this entry is consulted.
+const EXTRA_OPERATOR_NAMES: &[(&str, &str)] = &[("Tr", "Tr"), ("tr", "tr")];
 
 // -------------------------------------------------------- fractions and roots
 
