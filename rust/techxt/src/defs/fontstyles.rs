@@ -92,6 +92,13 @@ pub fn category() -> Category {
         ("mathcal", FontStyleKind::Script),
         ("mathscr", FontStyleKind::Script),
         ("mathfrak", FontStyleKind::Fraktur),
+        // amsmath's `\boldsymbol`, bm's `\bm` and amsbsy's `\pmb`: bold, like
+        // `\mathbf`. In LaTeX they differ from it by reaching Greek letters and
+        // symbols, which no alphabet here maps either way — `\boldsymbol{\sigma}` is
+        // a plain `σ`, as `\mathbf{\sigma}` is.
+        ("boldsymbol", FontStyleKind::Bold),
+        ("bm", FontStyleKind::Bold),
+        ("pmb", FontStyleKind::Bold),
     ] {
         category.add_macro(
             MacroDef::new(name)

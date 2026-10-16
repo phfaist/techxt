@@ -44,6 +44,16 @@ fn the_math_mode_family_used_in_text_styles_the_text() {
 }
 
 #[test]
+fn the_bold_symbol_macros_are_mathbf_by_another_name() {
+    assert_eq!(text(r"$\boldsymbol{x} + \bm{y} + \pmb{z}$"), "𝐱 + 𝐲 + 𝐳\n");
+    assert_eq!(text(r"\boldsymbol{ab}"), "𝐚𝐛\n");
+    // What they add in LaTeX — bold Greek — no alphabet here maps, for `\mathbf`
+    // either, so the letter keeps its plain shape rather than going missing.
+    assert_eq!(text(r"$\boldsymbol{\sigma}$"), text(r"$\mathbf{\sigma}$"));
+    assert_eq!(text(r"$\boldsymbol{\sigma}$"), "σ\n");
+}
+
+#[test]
 fn only_ascii_letters_are_mapped() {
     assert_eq!(text(r"\textbf{a1é!}"), "𝐚1é!\n");
 }
