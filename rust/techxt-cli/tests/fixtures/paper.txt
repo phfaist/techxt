@@ -17,7 +17,7 @@ a contraction 𝑇 on a complete metric space, the sequence 𝑥ₙ₊₁ = 𝑇
 converges to the unique fixed point 𝑥^⋆, and the rate is governed by the
 Lipschitz constant 𝐿 < 1:
 
-    𝑑(𝑥ₙ, 𝑥^⋆ ) ≤ (𝐿ⁿ)/(1 - 𝐿) 𝑑(𝑥₁, 𝑥₀).
+    𝑑(𝑥ₙ, 𝑥^⋆) ≤ (𝐿ⁿ)/(1 - 𝐿) 𝑑(𝑥₁, 𝑥₀).
 
 What we add to this picture is the observation that 𝑠𝑡𝑜𝑝𝑝𝑖𝑛𝑔 𝑒𝑎𝑟𝑙𝑦 — the
 practice we call 𝐢𝐦𝐩𝐚𝐭𝐢𝐞𝐧𝐜𝐞 — changes the exponent rather than the constant.
@@ -37,11 +37,11 @@ The three assumptions are independent, and each is used exactly once below.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 An 𝑖𝑚𝑝𝑎𝑡𝑖𝑒𝑛𝑡 run stops at the first index 𝑛 with 𝑑(𝑥ₙ₊₁, 𝑥ₙ) ≤ ε, rather than
-at the first 𝑛 with 𝑑(𝑥ₙ, 𝑥^⋆ ) ≤ ε. The two differ by a factor of 1 - 𝐿,
-which is small exactly when the iteration is slow.
+at the first 𝑛 with 𝑑(𝑥ₙ, 𝑥^⋆) ≤ ε. The two differ by a factor of 1 - 𝐿, which
+is small exactly when the iteration is slow.
 
-Theorem. Let 𝑛^⋆ be the impatient stopping index. Then 𝑑( 𝑥_(𝑛^⋆), 𝑥^⋆ ) ≤
-ε/(1 - 𝐿), and this bound is attained.
+Theorem. Let 𝑛^⋆ be the impatient stopping index. Then 𝑑(𝑥_(𝑛^⋆), 𝑥^⋆) ≤ ε/(1
+- 𝐿), and this bound is attained.
 
 Proof. Sum the geometric series ∑_(𝑘 ≥ 0) 𝐿ᵏ from the triangle inequality, and
 note that equality holds for the affine map 𝑇(𝑥) = 𝐿𝑥 on ℝ. □

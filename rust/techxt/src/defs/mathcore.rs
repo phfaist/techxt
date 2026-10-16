@@ -40,7 +40,7 @@ use alloc::format;
 use alloc::string::String;
 
 use crate::def::{Category, MacroDef, Template, TextHandler, TextRule};
-use crate::flow::Flow;
+use crate::flow::{Flow, FlowItem};
 use crate::mathfmt::{
     frac_atom, script_atom, sqrt_atom, Atom, AtomClass, FontStyle, FontStyleKind, ScriptKind,
 };
@@ -382,8 +382,8 @@ const SYMBOLS: &[(&str, &str)] = &[
     ("llbracket", "\u{27e6}"), // ⟦  MATHEMATICAL LEFT WHITE SQUARE BRACKET
     ("rrbracket", "\u{27e7}"), // ⟧  MATHEMATICAL RIGHT WHITE SQUARE BRACKET
     ("Vert", "\u{2016}"),      // ‖  DOUBLE VERTICAL LINE
-    ("lVert", "\u{2016}"),     // ‖  DOUBLE VERTICAL LINE
-    ("rVert", "\u{2016}"),     // ‖  DOUBLE VERTICAL LINE
+    // `\lVert` and `\rVert` are the same bar, classed as the half each names: see
+    // `delimiters`.
 ];
 
 // ------------------------------------------------------------- operator names
@@ -619,21 +619,34 @@ const RADICAND: &str = "radicand";
 /// was pointed at — and to drop `.`, which is LaTeX's way of writing "no delimiter on
 /// this side" in `\left. … \right)`.
 fn delimiters(category: &mut Category) {
-    for name in [
-        "left", "right", "middle", "big", "Big", "bigg", "Bigg", "bigl", "Bigl", "biggl", "Biggl",
-        "bigr", "Bigr", "biggr", "Biggr", "bigm", "Bigm", "biggm", "Biggm",
+    for (names, side) in [
+        (&["left", "bigl", "Bigl", "biggl", "Biggl"][..], Side::Left),
+        (&["right", "bigr", "Bigr", "biggr", "Biggr"][..], Side::Right),
+        (&["middle", "bigm", "Bigm", "biggm", "Biggm"][..], Side::Middle),
+        (&["big", "Big", "bigg", "Bigg"][..], Side::Either),
     ] {
-        category.add_macro(
-            MacroDef::new(name)
-                .arg("m", DELIMITER)
-                .rule(handler(SizedDelimiter)),
-        );
+        for name in names {
+            category.add_macro(
+                MacroDef::new(*name)
+                    .arg("m", DELIMITER)
+                    .rule(handler(SizedDelimiter { side })),
+            );
+        }
     }
-    // `\vert` and `\lvert`/`\rvert` are the ASCII bar, deliberately: it is what an
-    // absolute value looks like, and `segment_plain` leaves it unclassified precisely
-    // because it is a delimiter as often as a relation.
-    for name in ["vert", "lvert", "rvert"] {
-        category.add_macro(MacroDef::symbol(name, ABS_BAR));
+    // `\vert` is the ASCII bar, deliberately: it is what an absolute value looks like,
+    // and `segment_plain` leaves it unclassified precisely because a bare bar is a
+    // delimiter as often as a relation. `\lvert` and `\rvert` say which half they are,
+    // so each is classed as that half and `\lvert \frac{a}{b} \rvert` hugs its fraction
+    // the way `(\frac{a}{b})` does; `\lVert` and `\rVert` likewise, while `\Vert` stays
+    // a row of `SYMBOLS`.
+    category.add_macro(MacroDef::symbol("vert", ABS_BAR));
+    for (name, text, cls) in [
+        ("lvert", ABS_BAR, OPENING),
+        ("rvert", ABS_BAR, CLOSING),
+        ("lVert", NORM_BAR, OPENING),
+        ("rVert", NORM_BAR, CLOSING),
+    ] {
+        category.add_macro(MacroDef::new(name).rule(handler(FixedAtom { text, cls })));
     }
     // `\|` is the double bar, and `\backslash` the character `\` itself.
     category.add_macro(MacroDef::symbol("|", NORM_BAR));
@@ -643,27 +656,76 @@ fn delimiters(category: &mut Category) {
     category.add_macro(MacroDef::symbol("rbrack", "]"));
     category.add_macro(MacroDef::symbol("lbrace", "{"));
     category.add_macro(MacroDef::symbol("rbrace", "}"));
-    // `\abs` and `\norm`: the two delimiter pairs an author writes as one macro over
-    // their content rather than as a left half and a right half. The same kind of
-    // convenience as `\ket` and `\braket`, which the library has defined ever since it
-    // ported v3's table — which is the whole argument for defining these.
-    //
-    // Each is the bar this module already resolves the halves to, on both sides of the
-    // rendered argument: `\abs{x}` is `\lvert x \rvert` written once, character for
-    // character. Both take the star `physics` gives them for `\left…\right`
-    // auto-sizing — plain text has one size, so it changes nothing, but declaring it
-    // is what stops `\abs*{x}` reading the `*` as its argument and printing `|*|𝑥`.
-    for (name, bar) in [("abs", ABS_BAR), ("norm", NORM_BAR)] {
-        category.add_macro(
-            MacroDef::new(name)
-                .star()
-                .arg("m", QUANTITY)
-                .rule(TextRule::Template(Template::new(format!(
-                    "{bar}{{{QUANTITY}}}{bar}"
-                )))),
-        );
+    // The delimiter pairs an author writes as one macro over their content rather
+    // than as a left half and a right half: `\abs` and `\norm`, and the bra-ket family
+    // the library has defined ever since it ported v3's table. Each is the halves this
+    // module already resolves, around the rendered argument: `\abs{x}` is
+    // `\lvert x \rvert` written once, atom for atom, which is what makes `|𝑎/𝑏|` hug
+    // its fraction. (A template could not: its text goes through the segmenter, where
+    // a bare `|` is left unclassified.) All take the star `physics` gives them for
+    // `\left…\right` auto-sizing — plain text has one size, so it changes nothing, but
+    // declaring it is what stops `\abs*{x}` reading the `*` as its argument and
+    // printing `|*|𝑥`.
+    use Piece::{Arg, Delim};
+    const DELIMITED: &[(&str, &[Piece])] = &[
+        ("abs", &[Delim(ABS_BAR, OPENING), Arg(QUANTITY), Delim(ABS_BAR, CLOSING)]),
+        ("norm", &[Delim(NORM_BAR, OPENING), Arg(QUANTITY), Delim(NORM_BAR, CLOSING)]),
+        ("ket", &[Delim(ABS_BAR, OPENING), Arg(STATE), Delim(RANGLE, CLOSING)]),
+        ("bra", &[Delim(LANGLE, OPENING), Arg(STATE), Delim(ABS_BAR, CLOSING)]),
+        (
+            "braket",
+            &[
+                Delim(LANGLE, OPENING),
+                Arg(BRA),
+                Delim(ABS_BAR, SEPARATING),
+                Arg(KET),
+                Delim(RANGLE, CLOSING),
+            ],
+        ),
+        (
+            "ketbra",
+            &[
+                Delim(ABS_BAR, OPENING),
+                Arg(KET),
+                Delim("\u{27e9}\u{27e8}", SEPARATING),
+                Arg(BRA),
+                Delim(ABS_BAR, CLOSING),
+            ],
+        ),
+    ];
+    for (name, pieces) in DELIMITED {
+        let mut definition = MacroDef::new(*name).star();
+        for piece in *pieces {
+            if let Arg(argument) = piece {
+                definition = definition.arg("m", argument);
+            }
+        }
+        category.add_macro(definition.rule(handler(Delimited { pieces })));
     }
 }
+
+/// The class pair of a delimiter that opens: an opening delimiter on both edges, as
+/// `(` is, so that it hugs what precedes it and closes off what follows.
+const OPENING: (AtomClass, AtomClass) = (AtomClass::Open, AtomClass::Open);
+
+/// The class pair of a delimiter that closes, the mirror image of [`OPENING`].
+const CLOSING: (AtomClass, AtomClass) = (AtomClass::Close, AtomClass::Close);
+
+/// The class pair of a delimiter standing between two contents — `\braket`'s bar,
+/// `\middle`'s — which closes the one off and opens the other.
+const SEPARATING: (AtomClass, AtomClass) = (AtomClass::Close, AtomClass::Open);
+
+/// The angle brackets a bra and a ket are drawn with, as `\langle` and `\rangle` are.
+const LANGLE: &str = "\u{27e8}";
+/// See [`LANGLE`].
+const RANGLE: &str = "\u{27e9}";
+
+/// The argument name `\bra` and `\ket` give their state.
+const STATE: &str = "state";
+/// The argument names `\braket` and `\ketbra` give their two states.
+const BRA: &str = "bra";
+/// See [`BRA`].
+const KET: &str = "ket";
 
 /// The argument name the sizing macros give their delimiter.
 const DELIMITER: &str = "delimiter";
@@ -672,8 +734,8 @@ const DELIMITER: &str = "delimiter";
 /// `\rvert` are, so that `\abs{x}` and `\lvert x \rvert` come out the same string.
 const ABS_BAR: &str = "|";
 
-/// The bar a norm is drawn with: U+2016 DOUBLE VERTICAL LINE, which is what `\Vert`,
-/// `\lVert` and `\rVert` are in [`SYMBOLS`] and what `\|` is above.
+/// The bar a norm is drawn with: U+2016 DOUBLE VERTICAL LINE, which is what `\Vert` is
+/// in [`SYMBOLS`] and what `\|`, `\lVert` and `\rVert` are above.
 const NORM_BAR: &str = "\u{2016}";
 
 /// The argument name `\abs` and `\norm` give the quantity between their bars.
@@ -823,9 +885,30 @@ impl TextHandler for Root {
     }
 }
 
-/// `\left(`, `\bigl[`, `\right.` — render the delimiter, forget the size.
+/// `\left(`, `\bigl[`, `\right.` — render the delimiter, forget the size, keep the
+/// side.
 #[derive(Debug)]
-struct SizedDelimiter;
+struct SizedDelimiter {
+    /// Which side of its contents the macro puts its delimiter on.
+    side: Side,
+}
+
+/// Which side of its contents a sizing macro stands on.
+///
+/// The macro's name says so where the delimiter itself may not: `\left|` is an opening
+/// delimiter and `\right|` a closing one, though a bare `|` is neither, and
+/// `\left| \frac{a}{b} \right|` reads `|𝑎/𝑏|` for it.
+#[derive(Clone, Copy, Debug)]
+enum Side {
+    /// `\left`, `\bigl` and relatives: the delimiter opens.
+    Left,
+    /// `\right`, `\bigr` and relatives: it closes.
+    Right,
+    /// `\middle`, `\bigm` and relatives: it closes one content off and opens the next.
+    Middle,
+    /// `\big` and its sizes, which say nothing: the delimiter keeps its own class.
+    Either,
+}
 
 impl TextHandler for SizedDelimiter {
     fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
@@ -834,9 +917,61 @@ impl TextHandler for SizedDelimiter {
         if math::inline_text(&rendered, cx.state(), cx.options()) == "." {
             return Ok(Flow::new());
         }
-        // Handed back as it came: the delimiter's own atom already carries the class
-        // that makes a bracket hug what it encloses.
-        Ok(rendered)
+        let cls = match self.side {
+            Side::Left => OPENING,
+            Side::Right => CLOSING,
+            Side::Middle => SEPARATING,
+            // Handed back as it came: the delimiter's own atom already carries the
+            // class that makes a bracket hug what it encloses.
+            Side::Either => return Ok(rendered),
+        };
+        let mut flow = Flow::new();
+        for item in rendered.into_items() {
+            flow.push(match item {
+                FlowItem::MathAtom(atom) => FlowItem::MathAtom(Atom { cls, ..atom }),
+                other => other,
+            });
+        }
+        Ok(flow)
+    }
+}
+
+/// A delimiter pair written as one macro over its contents: `\ket{x}` is `|x⟩`,
+/// `\braket{x}{y}` is `⟨x|y⟩`, `\abs{x}` is `|x|`.
+///
+/// Each delimiter is an atom of its own, classed as the half it is, around the
+/// argument's own atoms — so `2|𝑥|` stays tight and `|𝑎/𝑏⟩` closes its fraction off
+/// the way `(𝑎/𝑏)` does, while everything the engine does inside a formula still
+/// happens inside the bars. Outside a formula the atoms flatten, and `\ket{a}` is the
+/// text `|a⟩`.
+#[derive(Debug)]
+struct Delimited {
+    /// The delimiters and the arguments between them, in order.
+    pieces: &'static [Piece],
+}
+
+/// One part of a [`Delimited`] rendering.
+#[derive(Debug)]
+enum Piece {
+    /// A delimiter: its text, and the class pair it presents.
+    Delim(&'static str, (AtomClass, AtomClass)),
+    /// An argument, by name, rendered as the formula around it renders its own.
+    Arg(&'static str),
+}
+
+impl TextHandler for Delimited {
+    fn render(&self, _node: NodeView<'_>, cx: &mut RenderCx<'_, '_>) -> Result<Flow, RenderError> {
+        let mut flow = Flow::new();
+        for piece in self.pieces {
+            match piece {
+                Piece::Delim(text, cls) => {
+                    let atom = Atom::from_text(*text, *cls);
+                    flow.extend(math::atom(atom, cx.state(), cx.options()));
+                }
+                Piece::Arg(name) => flow.extend(cx.arg(name)?.unwrap_or_default()),
+            }
+        }
+        Ok(flow)
     }
 }
 

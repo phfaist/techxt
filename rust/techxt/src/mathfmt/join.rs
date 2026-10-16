@@ -116,7 +116,10 @@ const SELF_DELIMITED_CLASSES: [AtomClass; 2] = [AtomClass::Close, AtomClass::Blo
 /// edge** class of the piece on the right. The seven rules, first match wins:
 ///
 /// 1. Either side is a binary operator or a relation: `𝑎 + 𝑏`, `𝑥 = 𝑦`.
-/// 2. Either side has no visible extent on that edge: `√𝑥 2`, `𝑥^𝑞 𝑝`.
+/// 2. Either side has no visible extent on that edge: `√𝑥 2`, `𝑥^𝑞 𝑝` — unless the
+///    other side is a delimiter that closes the open edge off: a closing delimiter or
+///    punctuation after it, an opening delimiter before it. `(𝑎/𝑏)` and `𝑥^⋆,` show
+///    where the open edge ends without a space.
 /// 3. The left side is a large operator or a text fragment, *unless a delimiter
 ///    follows*: `sin 𝑥` but `sin(𝑥)`. A delimiter hugs what it encloses on both sides,
 ///    and a function name immediately followed by a *closing* delimiter essentially
@@ -144,7 +147,7 @@ fn needs_space(left: AtomClass, right: AtomClass, text_left: &str, text_right: &
     if matches!(left, Bin | Rel) || matches!(right, Bin | Rel) {
         return true; // 1
     }
-    if left == OpenEnd || right == OpenEnd {
+    if (left == OpenEnd && !matches!(right, Close | Punct)) || (right == OpenEnd && left != Open) {
         return true; // 2
     }
     if matches!(left, Op | Text) && !matches!(right, Open | Close) {
@@ -307,7 +310,8 @@ pub fn join_atoms(atoms: Vec<Atom>, display: bool) -> MathBox {
 ///    bare because it is one character — stays open-ended whatever its base was;
 /// 5. compute the separators, then let every script hug its base — and, where the
 ///    script had to use LaTeX notation, put a space in front of the base as well so
-///    that one can see where the base begins;
+///    that one can see where the base begins, unless an opening delimiter already
+///    shows it;
 /// 6. assemble, aligning baselines ([`baseline_join`]).
 pub fn join_atoms_with(atoms: Vec<Atom>, display: bool, delims: &MathWrapDelims) -> JoinedMath {
     let mut atoms = atoms;
@@ -393,6 +397,9 @@ pub fn join_atoms_with(atoms: Vec<Atom>, display: bool, delims: &MathWrapDelims)
         if SELF_DELIMITED_CLASSES.contains(&items[i - 1].cls_right) {
             continue; // the base already shows where it ends
         }
+        if items[i - 2].cls_right == AtomClass::Open {
+            continue; // the delimiter already shows where the base begins
+        }
         if !seps[i - 2].is_empty() {
             continue; // already separated
         }
@@ -456,7 +463,16 @@ mod tests {
     fn rule_2_open_ended_edges() {
         let frac = Atom::from_text("a/b", (AtomClass::OpenEnd, AtomClass::OpenEnd));
         assert_eq!(join(vec![frac.clone(), a("c", AtomClass::Ord)]), "a/b c");
-        assert_eq!(join(vec![a("c", AtomClass::Ord), frac]), "c a/b");
+        assert_eq!(join(vec![a("c", AtomClass::Ord), frac.clone()]), "c a/b");
+        // ... unless a delimiter closes the open edge off.
+        assert_eq!(
+            join(vec![a("(", AtomClass::Open), frac.clone(), a(")", AtomClass::Close)]),
+            "(a/b)"
+        );
+        assert_eq!(
+            join(vec![frac, a(",", AtomClass::Punct), a("c", AtomClass::Ord)]),
+            "a/b, c"
+        );
     }
 
     #[test]

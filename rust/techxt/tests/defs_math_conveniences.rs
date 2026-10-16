@@ -85,15 +85,34 @@ fn coloneqq_is_spaced_as_a_relation() {
 }
 
 #[test]
-fn the_bars_bind_as_tightly_as_the_ket_they_are_modelled_on() {
-    // Ordinary on both edges, like the bar itself: no space to the number in front,
-    // none between two of them.
+fn the_bars_are_delimiters_and_close_their_contents_off() {
+    // Delimiters hug what they meet: no space to the number in front, none between two
+    // of them.
     assert_eq!(text(r"$2\abs{x}$"), "2|𝑥|\n");
     assert_eq!(text(r"$\norm{u}\norm{v}$"), "‖𝑢‖‖𝑣‖\n");
-    // An argument whose own extent is unclear pushes the bars apart, exactly as it
-    // pushes `\ket`'s delimiters apart. Same mechanism, same answer.
-    assert_eq!(text(r"$\abs{\frac{a}{b}}$"), "| 𝑎/𝑏 |\n");
-    assert_eq!(text(r"$\ket{\frac{a}{b}}$"), "| 𝑎/𝑏 ⟩\n");
+    // An argument whose own extent is unclear is closed off by them rather than pushed
+    // away, exactly as `(\frac{a}{b})` is — and exactly as `\ket`'s delimiters do.
+    assert_eq!(text(r"$\abs{\frac{a}{b}}$"), "|𝑎/𝑏|\n");
+    assert_eq!(text(r"$\ket{\frac{a}{b}}$"), "|𝑎/𝑏⟩\n");
+    assert_eq!(text(r"$\abs{\frac{a}{b}}$"), text(r"$\lvert\frac{a}{b}\rvert$"));
+    assert_eq!(text(r"$\norm{\sqrt{x}}$"), text(r"$\lVert\sqrt{x}\rVert$"));
+    assert_eq!(text(r"$\norm{\sqrt{x}}$"), "‖√𝑥‖\n");
+}
+
+#[test]
+fn the_bra_ket_family_closes_its_contents_off_on_both_sides() {
+    assert_eq!(text(r"$\ket{\psi}\bra{\phi}$"), "|ψ⟩⟨ϕ|\n");
+    assert_eq!(text(r"$\ketbra{\psi}{\phi}$"), "|ψ⟩⟨ϕ|\n");
+    assert_eq!(text(r"$\bra{\frac{a}{b}}$"), "⟨𝑎/𝑏|\n");
+    assert_eq!(text(r"$\braket{\frac{a}{b}}{\frac{c}{d}}$"), "⟨𝑎/𝑏|𝑐/𝑑⟩\n");
+    assert_eq!(text(r"$\ketbra{\frac{a}{b}}{\sqrt{x}}$"), "|𝑎/𝑏⟩⟨√𝑥|\n");
+    // A bare script is open-ended too, and the base needs no space to show where it
+    // begins when a delimiter opens right before it.
+    assert_eq!(text(r"$\ket{x^q}$"), "|𝑥^𝑞⟩\n");
+    // The star `physics` gives them is absorbed, as `\abs*` is.
+    assert_eq!(text(r"$\ket*{\psi}\braket*{a}{b}$"), "|ψ⟩⟨𝑎|𝑏⟩\n");
+    // Outside a formula the same macros are plain text.
+    assert_eq!(text(r"\ket{a} and \braket{a}{b}"), "|a⟩ and ⟨a|b⟩\n");
 }
 
 // ------------------------------------------------------------------------ the star
@@ -133,8 +152,9 @@ fn a_document_may_mix_a_ket_with_an_abs() {
     assert_eq!(text(latex), "|⟨ϕ|ψ⟩| ≤ ‖ϕ‖‖ψ‖\n");
     assert_eq!(unknown(latex), Vec::<String>::new());
 
+    // An operator hugs the delimiter that follows it, as `sin(𝑥)` does.
     let definition = r"$\braket{\phi}{\psi} \coloneqq \sum_i \abs{c_i}^2$";
-    assert_eq!(text(definition), "⟨ϕ|ψ⟩ ≔ ∑ᵢ |𝑐ᵢ|²\n");
+    assert_eq!(text(definition), "⟨ϕ|ψ⟩ ≔ ∑ᵢ|𝑐ᵢ|²\n");
     assert_eq!(unknown(definition), Vec::<String>::new());
 }
 

@@ -339,6 +339,31 @@ fn an_empty_matrix_does_not_panic() {
 }
 
 #[test]
+fn a_delimiter_closes_an_open_edge_without_a_space() {
+    // An open-ended edge — a fraction's, a root's, a bare script's — gets a space so
+    // that one can see where it ends, unless a delimiter already closes it off.
+    assert_eq!(text(r"$(\frac{a}{b})$"), "(𝑎/𝑏)\n");
+    assert_eq!(text(r"$f(x^\star)$"), "𝑓(𝑥^⋆)\n");
+    assert_eq!(text(r"$d(x_n, x^\star)$"), "𝑑(𝑥ₙ, 𝑥^⋆)\n");
+    assert_eq!(
+        text(r"$(\sqrt{x}, \frac{a}{b}; x^\star)$"),
+        "(√𝑥, 𝑎/𝑏; 𝑥^⋆)\n"
+    );
+    // Where nothing closes it, the space stays.
+    assert_eq!(text(r"$\frac{a}{b} c$"), "𝑎/𝑏 𝑐\n");
+    assert_eq!(text(r"$2 x^\star)$"), "2 𝑥^⋆)\n");
+    // A bare bar is a delimiter as often as a relation, so it stays ordinary and is
+    // pushed away; `\left` and `\right` say which side theirs is on.
+    assert_eq!(text(r"$|\frac{a}{b}|$"), "| 𝑎/𝑏 |\n");
+    assert_eq!(text(r"$\left|\frac{a}{b}\right|$"), "|𝑎/𝑏|\n");
+    assert_eq!(text(r"$\bigl(\frac{a}{b}\bigr)$"), "(𝑎/𝑏)\n");
+    assert_eq!(
+        text(r"$\left\langle a \middle| \frac{c}{d} \right\rangle$"),
+        "⟨𝑎|𝑐/𝑑⟩\n"
+    );
+}
+
+#[test]
 fn a_display_matrix_composes_with_the_formula_around_it() {
     // The 2D baseline join: the surrounding content sits on the box's baseline row and
     // the other rows keep the column.
