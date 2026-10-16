@@ -143,17 +143,36 @@ fn a_superscript_followed_by_a_subscript_lets_the_subscript_bind_first() {
 }
 
 #[test]
-fn a_script_wraps_only_when_a_space_would_not_be_enough() {
-    assert_eq!(text("$x_{abc}$"), "𝑥_𝑎𝑏𝑐\n");
-    assert_eq!(text("$x_{abc} p$"), "𝑥_𝑎𝑏𝑐 𝑝\n");
-    assert_eq!(text("$x_{abc} = 1$"), "𝑥_𝑎𝑏𝑐 = 1\n");
-    // A second script on the same base: a space could not tell the two apart.
+fn a_script_in_latex_notation_wraps_anything_longer_than_one_character() {
+    // One character is clear as it stands; anything longer takes the delimiters,
+    // because `𝑒^-𝑖π/4` leaves the reader to guess where the exponent ends — the
+    // joiner hugs a sign, a slash and an implicit product, so nothing inside marks it.
+    assert_eq!(text("$x_{abc}$"), "𝑥_(𝑎𝑏𝑐)\n");
+    assert_eq!(text("$x_{abc} p$"), "𝑥_(𝑎𝑏𝑐)𝑝\n");
+    assert_eq!(text("$x_{abc} = 1$"), "𝑥_(𝑎𝑏𝑐) = 1\n");
+    assert_eq!(text(r"$e^{-i\pi/4}$"), "𝑒^(-𝑖π/4)\n");
+    assert_eq!(text(r"$x^{-1/2}, e_{-N}$"), "𝑥^(-1/2), 𝑒_(-𝑁)\n");
+    // Superscript and subscript follow the same rule.
+    assert_eq!(text(r"$e_{-i\pi/4}$"), "𝑒_(-𝑖π/4)\n");
+    // A second script on the same base.
     assert_eq!(text("$x_{abc}^2$"), "𝑥_(𝑎𝑏𝑐)²\n");
-    // And the delimiters are the configured ones.
+    // Fancy mode and Plain mode spell the fallback the same way.
+    let plain = with(|b| b.math_mode(MathMode::Plain));
+    assert_eq!(
+        plain.latex_to_text(r"$e^{-i\pi/4}$").expect("parses").text,
+        "𝑒^(-𝑖π/4)\n"
+    );
+    // The delimiters are the configured ones — or none, in which case a space is all
+    // the separation the script gets.
     let braces = with(|b| b.math_expression_in(MathWrapDelims::Braces));
     assert_eq!(
         braces.latex_to_text("$x_{abc}^2$").expect("parses").text,
         "𝑥_{𝑎𝑏𝑐}²\n"
+    );
+    let none = with(|b| b.math_expression_in(MathWrapDelims::None));
+    assert_eq!(
+        none.latex_to_text(r"$e^{-i\pi/4} p$").expect("parses").text,
+        "𝑒^-𝑖π/4 𝑝\n"
     );
 }
 
@@ -268,7 +287,7 @@ fn a_matrix_hugs_its_neighbours_because_it_delimits_itself() {
     // No retroactive space in front of a base that is already self-delimited.
     assert_eq!(
         text(r"$2\begin{pmatrix}1&2\end{pmatrix}^{qr}$"),
-        "2( 1  2 )^𝑞𝑟\n"
+        "2( 1  2 )^(𝑞𝑟)\n"
     );
 }
 

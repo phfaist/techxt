@@ -6,12 +6,11 @@ use super::boxes::MathBox;
 
 /// One piece of rendered math, together with how it wants to meet its neighbours.
 ///
-/// An atom is deliberately not a plain string: its final text can depend on what
-/// surrounds it. A [wrappable](AtomBody::Wrappable) body only learns whether it needs
-/// delimiters once its right neighbour is known, and a [block](AtomBody::Block) body
-/// renders differently inline and in display math. The joiner
-/// ([`join_atoms`](super::join_atoms)) is what turns a sequence of atoms into final
-/// text.
+/// An atom is deliberately not a plain string: its final text is not settled until it
+/// is joined. A [wrappable](AtomBody::Wrappable) body takes the delimiters the join is
+/// configured with, and a [block](AtomBody::Block) body renders differently inline and
+/// in display math. The joiner ([`join_atoms`](super::join_atoms)) is what turns a
+/// sequence of atoms into final text.
 #[derive(Clone, Debug)]
 pub struct Atom {
     /// The rendered contents, in whichever of the three shapes fits this atom.
@@ -49,8 +48,8 @@ impl Atom {
     /// Render this atom to plain text on a single line, ignoring its neighbours.
     ///
     /// This is the "no joiner available" rendering: a [wrappable](AtomBody::Wrappable)
-    /// body shows its contents without delimiters (outside a join there is no right
-    /// neighbour that could make the extent ambiguous), and a
+    /// body shows its contents without delimiters (which delimiters is the join's to
+    /// say), and a
     /// [block](AtomBody::Block) body has its rows joined with single spaces so that
     /// the result stays one line. The [layout engine](crate::layout) uses it as the
     /// fallback for a stray [`FlowItem::MathAtom`](crate::flow::FlowItem::MathAtom),
@@ -87,14 +86,15 @@ pub enum AtomBody {
     /// Finished text: a symbol, a variable, an operator name, an already-rendered
     /// sub-expression. What you see is what gets emitted.
     Str(Box<str>),
-    /// Contents that decide at join time whether they need delimiters around them.
+    /// Contents that take delimiters at join time, when they are more than one
+    /// character long.
     ///
     /// A script rendered in the `^(...)` fallback notation, or any other
     /// sub-expression whose extent is not self-evident. The joiner wraps `inner` in
-    /// the configured [math-expression delimiters](super::MathWrapDelims) when — and
-    /// only when — a separating space would still leave the extent ambiguous: another
-    /// script attaches to the same base, the contents contain a space, or the contents
-    /// are themselves [open-ended](AtomClass::OpenEnd).
+    /// the configured [math-expression delimiters](super::MathWrapDelims) unless it is
+    /// a single character — `𝑥^𝑞` is clear as it stands, `𝑥^𝑞𝑟` is not — or
+    /// wrapping is switched off ([`MathWrapDelims::None`](super::MathWrapDelims::None)),
+    /// in which case the class pair says how the bare contents meet their neighbours.
     ///
     /// Note that `\frac` is *not* built from this body: it decides on delimiters by
     /// itself, from its own contents rather than from its neighbours, and emits a
@@ -139,7 +139,7 @@ pub enum AtomClass {
     Punct,
     /// A rendering with no visible extent on that side, such as `x^q`, `a/b` or `√x`:
     /// whatever comes next would look as though it were part of it. This is what makes
-    /// the joiner add a space, or a wrappable body reach for its delimiters.
+    /// the joiner add a space.
     OpenEnd,
     /// A fragment of ordinary text (`\text{...}`), which the joiner treats as opaque.
     Text,

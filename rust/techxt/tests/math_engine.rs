@@ -249,21 +249,21 @@ fn an_empty_script_disappears() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn lazy_delimiters_appear_only_when_a_space_would_not_do() {
+fn a_wrappable_longer_than_one_character_takes_its_delimiters() {
     let base = || seg(&it("x"));
     let sub = || script_atom(&it("abc"), ScriptKind::Subscript, true);
 
-    // nothing follows: bare
+    // nothing follows: wrapped all the same, since the contents are three characters
     assert_eq!(
         join({
             let mut v = base();
             v.push(sub());
             v
         }),
-        "𝑥_𝑎𝑏𝑐"
+        "𝑥_(𝑎𝑏𝑐)"
     );
 
-    // an ordinary neighbour: a space suffices
+    // an ordinary neighbour hugs the closing delimiter, as it would any other
     assert_eq!(
         join({
             let mut v = base();
@@ -271,10 +271,10 @@ fn lazy_delimiters_appear_only_when_a_space_would_not_do() {
             v.extend(seg(&it("p")));
             v
         }),
-        "𝑥_𝑎𝑏𝑐 𝑝"
+        "𝑥_(𝑎𝑏𝑐)𝑝"
     );
 
-    // a relation already separates
+    // a relation is spaced as usual
     assert_eq!(
         join({
             let mut v = base();
@@ -282,10 +282,10 @@ fn lazy_delimiters_appear_only_when_a_space_would_not_do() {
             v.extend(seg("=1"));
             v
         }),
-        "𝑥_𝑎𝑏𝑐 = 1"
+        "𝑥_(𝑎𝑏𝑐) = 1"
     );
 
-    // a second script on the same base: delimiters
+    // a second script on the same base
     assert_eq!(
         join({
             let mut v = base();
@@ -373,7 +373,7 @@ fn a_matrix_base_needs_no_retroactive_space() {
         inline_matrix_atom(&[["1", "2"]], MatrixFence::Brackets),
         script_atom(&it("qr"), ScriptKind::Superscript, true),
     ];
-    assert_eq!(join(atoms), "2[ 1  2 ]^𝑞𝑟");
+    assert_eq!(join(atoms), "2[ 1  2 ]^(𝑞𝑟)");
 }
 
 #[test]

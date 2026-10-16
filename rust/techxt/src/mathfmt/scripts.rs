@@ -194,10 +194,13 @@ pub fn fmt_script_text(text: &str, kind: ScriptKind) -> Option<String> {
 ///    better. Pass `true` in `MathMode::Fancy`, where a joiner runs; in `Plain` mode no
 ///    joiner ever inserted a space, so there is nothing to undo.
 /// 3. **LaTeX's own notation**, as a [wrappable](AtomBody::Wrappable) with `^` or `_`
-///    as its prefix: `x^q`, and `x_(abc)` where the extent would otherwise be unclear.
-///    The atom is `(Script, OpenEnd)` — nothing shows where the script ends — and it is
-///    marked [`latex_notation`](ScriptInfo::latex_notation), which also makes the
-///    joiner put a space in front of the *base*, turning `4π𝑐𝑥^𝑞𝑝` into `4π𝑐 𝑥^𝑞 𝑝`.
+///    as its prefix: `x^q` for a single character, and `x^(-iπ/4)` — in the configured
+///    delimiters — for anything longer, since `x^-iπ/4` would leave the reader to
+///    guess where the exponent ends. The atom declares `(Script, OpenEnd)` — nothing
+///    shows where a bare `^q` ends, so the joiner spaces what follows it — and the
+///    join makes that edge a closing delimiter when it wraps. It is marked
+///    [`latex_notation`](ScriptInfo::latex_notation), which also makes the joiner put
+///    a space in front of the *base*, turning `4π𝑐𝑥^𝑞𝑝` into `4π𝑐 𝑥^𝑞 𝑝`.
 ///
 /// An empty argument (`$x^{}$`) produces an empty atom, which the joiner drops.
 ///

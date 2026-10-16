@@ -1,22 +1,20 @@
 //! The joiner: assembling a sequence of atoms into a finished formula.
 //!
 //! Rendering a formula is not concatenation. `4\pi c` has to read `4π𝑐`, tight, while
-//! `4\pi c x^q p` has to read `4π𝑐 𝑥^𝑞 𝑝`; `x_{abc}` needs no delimiters but
-//! `x_{abc}^2` does. What decides it is how neighbours meet, so the joiner works on
-//! [`Atom`]s — text plus edge classes — rather than on strings.
+//! `4\pi c x^q p` has to read `4π𝑐 𝑥^𝑞 𝑝` and `x_{abc}^2` has to read `𝑥_(𝑎𝑏𝑐)²`.
+//! What decides the spacing is how neighbours meet, so the joiner works on [`Atom`]s
+//! — text plus edge classes — rather than on strings.
 //!
-//! The join happens in **two passes**, because whether a piece encloses itself in
-//! delimiters depends on its neighbours while its edge classes depend on whether it
-//! did. Pass 1 has each piece realize itself against the classes its neighbours
-//! *declare* — the classes they present when they do not wrap, which is the
-//! conservative direction and always terminates. Pass 2 computes the separators from
-//! the classes the pieces actually presented.
+//! The join happens in **two passes**. Pass 1 has every atom realize itself: render
+//! to text and, for a [wrappable](AtomBody::Wrappable) body, commit to its
+//! delimiters — after which its right edge is a closing delimiter. The atoms that
+//! render to nothing are dropped there, so that none can leave a separator behind.
+//! Pass 2 computes the separators from the classes the realized pieces present.
 
 use alloc::{boxed::Box, string::String, vec::Vec};
 
 use super::atom::{Atom, AtomBody, AtomClass, ScriptInfo, ScriptKind};
 use super::boxes::{baseline_join, MathBox};
-use super::segment::classify_plain;
 
 /// The delimiters a sub-expression is wrapped in when its extent would otherwise be
 /// unclear ([`Options::math_expression_in`](crate::Options::math_expression_in)).
@@ -181,32 +179,7 @@ fn separator(left: AtomClass, right: AtomClass, text_left: &str, text_right: &st
     }
 }
 
-/// Whether a [wrappable](AtomBody::Wrappable) body has to reach for its delimiters,
-/// given what its right neighbour declares (v3 `_MathWrappablePiece.needs_wrapping`).
-///
-/// Deliberately short: wrap only when a separating space would still leave the extent
-/// of the contents ambiguous.
-///
-/// 1. Another **script attaches to the same base** — `x_{abc}^2`, where a space would
-///    not tell the subscript and the superscript apart.
-/// 2. The contents **contain a space**, so a space around them would not be seen.
-/// 3. The contents are themselves **open-ended**. The inner class
-///    is computed here rather than carried on the atom, by classifying the inner text;
-///    a plain classification never yields `OpenEnd`, so in practice this arm is the
-///    seam a future non-default inner class would use, exactly as in v3 where no call
-///    site overrides it either. (The classification's `upright_letters_are_op` flag
-///    cannot change the outcome for the same reason, so it is fixed at `true` here.)
-fn needs_wrapping(inner: &str, right_declared: Option<AtomClass>) -> bool {
-    if right_declared == Some(AtomClass::Script) {
-        return true;
-    }
-    if inner.contains(' ') {
-        return true;
-    }
-    classify_plain(inner, true).1 == AtomClass::OpenEnd
-}
-
-/// One atom after it has rendered itself against its neighbours.
+/// One atom after it has rendered itself.
 struct Realized {
     body: MathBox,
     cls_left: AtomClass,
@@ -214,33 +187,29 @@ struct Realized {
     script: Option<ScriptInfo>,
 }
 
-/// Render one atom against the class its right neighbour declares.
+/// Render one atom to text, and settle the classes it presents.
 ///
-/// The class its *left* neighbour declares is deliberately not consulted: no atom kind
-/// needs it today, and v3 accepts it for symmetry only.
-fn realize(
-    atom: &Atom,
-    right_declared: Option<AtomClass>,
-    display: bool,
-    delims: &MathWrapDelims,
-) -> Realized {
+/// A [wrappable](AtomBody::Wrappable) body takes its delimiters whenever they would
+/// change its text: whenever the contents are longer than one character and wrapping
+/// is not switched off ([`MathWrapDelims::wrap`]). `𝑥^𝑞` is clear as it stands, but
+/// `𝑥^-𝑖π/4` would leave the reader to guess where the exponent ends — the space the
+/// joiner puts after it marks the end, yet nobody reads a space as a closing
+/// delimiter. Wrapped, the atom's right edge *is* a closing delimiter; bare, it is
+/// whatever the atom declared, which for a script in LaTeX notation is open-ended, so
+/// that a space does separate `𝑥^𝑞` from what follows.
+fn realize(atom: &Atom, display: bool, delims: &MathWrapDelims) -> Realized {
     let (body, cls_left, cls_right) = match &atom.body {
         AtomBody::Str(text) => (MathBox::single_line(text.clone()), atom.cls.0, atom.cls.1),
         AtomBody::Wrappable { inner, prefix } => {
             let wrapped = delims.wrap(inner);
-            // A one-character body can never wrap, whatever follows it, because
-            // `wrap` returns it unchanged — hence the comparison before the question.
-            if wrapped != **inner && needs_wrapping(inner, right_declared) {
-                let mut text = String::from(&**prefix);
-                text.push_str(&wrapped);
-                // The wrapped class pair defaults to (cls.0, Close): a closing
-                // delimiter is now the last thing in the rendering.
-                (MathBox::single_line(text), atom.cls.0, AtomClass::Close)
+            let cls_right = if wrapped == **inner {
+                atom.cls.1
             } else {
-                let mut text = String::from(&**prefix);
-                text.push_str(inner);
-                (MathBox::single_line(text), atom.cls.0, atom.cls.1)
-            }
+                AtomClass::Close
+            };
+            let mut text = String::from(&**prefix);
+            text.push_str(&wrapped);
+            (MathBox::single_line(text), atom.cls.0, cls_right)
         }
         AtomBody::Block(math_box) => {
             let body = if display {
@@ -324,9 +293,9 @@ pub fn join_atoms(atoms: Vec<Atom>, display: bool) -> MathBox {
 /// The steps, in order:
 ///
 /// 1. drop the atoms that are empty already, then reorder superscript/subscript pairs;
-/// 2. realize every atom against its neighbours' declared classes, dropping the ones
-///    that turn out to render to nothing — a dropped atom cannot leave a spurious
-///    separator behind;
+/// 2. realize every atom — a wrappable body commits to its delimiters here — dropping
+///    the ones that turn out to render to nothing: a dropped atom cannot leave a
+///    spurious separator behind;
 /// 3. reclassify unary operators: a `Bin` that opens the formula, or follows a `Bin`,
 ///    `Rel`, `Open` or `Punct`, is a sign rather than an operation, so it binds tightly
 ///    to what follows (`-𝑥`, `(-𝑎, -𝑏)`) and does not push a preceding delimiter away.
@@ -334,8 +303,8 @@ pub fn join_atoms(atoms: Vec<Atom>, display: bool) -> MathBox {
 ///    the iteration order;
 /// 4. propagate the class of a base through its scripts: what `\sum_i` presents to
 ///    whatever follows is the large operator's class, not the subscript's, so `∑ᵢ 𝑦`
-///    keeps its space. A script with no visible extent of its own (the `^…` fallback)
-///    stays open-ended whatever its base was;
+///    keeps its space. A script with no visible extent of its own — the `^𝑞` fallback,
+///    bare because it is one character — stays open-ended whatever its base was;
 /// 5. compute the separators, then let every script hug its base — and, where the
 ///    script had to use LaTeX notation, put a space in front of the base as well so
 ///    that one can see where the base begins;
@@ -345,13 +314,10 @@ pub fn join_atoms_with(atoms: Vec<Atom>, display: bool, delims: &MathWrapDelims)
     drop_empty(&mut atoms);
     reorder_scripts(&mut atoms);
 
-    // Pass 1: every atom realizes itself against what its neighbours declare. The
-    // declared classes come from the *unrealized* atoms, on purpose: that is the
-    // conservative direction, and it is what makes the two passes terminate.
+    // Pass 1: every atom realizes itself.
     let mut items: Vec<Realized> = Vec::with_capacity(atoms.len());
-    for (i, atom) in atoms.iter().enumerate() {
-        let right_declared = atoms.get(i + 1).map(|a| a.cls.0);
-        let realized = realize(atom, right_declared, display, delims);
+    for atom in &atoms {
+        let realized = realize(atom, display, delims);
         if realized.body.is_blank() {
             continue;
         }
