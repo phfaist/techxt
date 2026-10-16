@@ -457,7 +457,7 @@ dependencies = [
 
 [[package]]
 name = "techxt"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proptest",
  "techy",
@@ -467,7 +467,7 @@ dependencies = [
 
 [[package]]
 name = "techxt-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "stacker",

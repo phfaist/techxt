@@ -31,7 +31,7 @@ doc = false
 # The CLI is a std program: it owns file and stream I/O, the sandboxed `\input`
 # resolver and the system clock, none of which the no_std library may touch.
 [dependencies]
-techxt = { path = "../techxt", version = "0.1.0" }
+techxt = { path = "../techxt", version = "0.1.1" }
 # No `techy` or `techy-xp` here, deliberately. Everything the CLI needs of them —
 # `SourceResolver` and `check_include_chain` for the sandboxed `\input` resolver,
 # `Recovery::Strict` for `--strict`, `Diagnostics` and `Severity` for the report — is
