@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 use techy::core::specs::{CallableSpec, SpecsProvider};
 use techy::core::NodeExtTypes;
 use techy::error::Recovery;
-use techy::latexlike::{BodyMarker, Mode};
+use techy::latexlike::{BodyMarker, Latexlike, LatexlikeDriver, Mode};
 use techy::source::SourceResolver;
 
 use crate::render::RenderLang;
@@ -91,6 +91,44 @@ pub trait ParseLang:
     ) -> Option<Arc<dyn CallableSpec<Self>>> {
         let _ = (definer, cx);
         None
+    }
+}
+
+/// techy's plain latexlike language: techxt's definitions, parsed without expansion.
+///
+/// This is the language for a converter that needs no techy-xp at all. It parses with
+/// techy's own [`LatexlikeDriver`] and nothing around it, so what a converter built
+/// for it does is fully described by the definitions it was given:
+///
+/// - **no settings** of its own ([`Settings`](ParseLang::Settings) is `()`);
+/// - **no frame**: the provider stack is the catch-all (when enabled), techy's builtin
+///   package, and the categories in push order — nothing below or above them;
+/// - **no definers**: every defining command is *declared* — `\newcommand{\x}{…}`
+///   consumes its arguments, so the definition's body never leaks into the text, and
+///   defines nothing, so a later `\x` is an unknown command.
+///
+/// The output is the one techy-xp's [`LatexlikeXp`](crate::convert::LatexlikeXp) gives
+/// with its definitions only declared
+/// ([`MacroDefinitions::Declared`](crate::convert::MacroDefinitions::Declared)): the same
+/// text, and the same diagnostics up to their source spans.
+///
+/// Build a converter for it through the generic door,
+/// [`ConverterBuilder::with_definitions`](crate::ConverterBuilder::with_definitions).
+impl ParseLang for Latexlike {
+    type Settings = ();
+
+    /// techy's latexlike driver under `recovery`, resolving `\input`-like references
+    /// through `source_resolver` when one was given.
+    fn make_driver(
+        recovery: Recovery,
+        source_resolver: Option<&Arc<dyn SourceResolver<Option<String>>>>,
+        _settings: &(),
+    ) -> LatexlikeDriver {
+        let driver = LatexlikeDriver::new(recovery);
+        match source_resolver {
+            Some(resolver) => driver.with_source_resolver(Arc::clone(resolver)),
+            None => driver,
+        }
     }
 }
 

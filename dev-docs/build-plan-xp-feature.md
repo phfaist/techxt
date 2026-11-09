@@ -902,3 +902,43 @@ entry.
   Sync", `lib.rs` "exactly one language") is Phase 4 scope. `def/rule.rs:36-40`
   `CallableKind::from_callable_type(CallableType)` keeps naming techy's concrete type: it
   is pre-existing public API that nothing in the crate calls, left as is.
+
+### 2026-11-09 — Phase 2 (a second language, and the tests that prove the seam)
+
+- Previous commit (Phase 1): `546eb4d`. The commit holding this entry is the Phase 2 commit.
+- Gates (run by the supervisor): G1 pass, G2 pass (**967 passed, 0 failed** = floor 953 +
+  14 new tests), G3 pass, G4 pass, G5 pass, G6 pass (61 tests). No `Cargo.lock` changed.
+- Added: `impl ParseLang for Latexlike` in `def/lang.rs` (always compiled);
+  `tests/lang_generic.rs` (10 tests, generic API + `Latexlike` only);
+  `tests/lang_parity.rs` (4 tests: the §5.9 parity contract over 54 documents × the three
+  `MathMode`s, a non-triviality check, and the two §5.8 cross-language dispatch tests).
+  Also the two rustfmt-shape nits deferred from Phase 1 (`def/entry.rs`, `def/spec.rs`).
+- Parity held on every document. The parity test discriminates: against an *honoured*
+  xp converter, three documents differ (`preamble-definers`, `definer-def`,
+  `definer-unbraced`).
+- Reviewer verdict: no Critical/Major defect. One fix round (test files only): the §5.8
+  cross-language case (a `Latexlike` tree rendered by a `LatexlikeXp` converter built from
+  an empty set, and the reverse) gained tests; a mutation check (pinning the downcast in
+  `embedded_rule` to one language) showed each direction fails exactly when it should.
+  Two tightenings: the "empty" renderer in `lang_generic.rs` is now a literally empty
+  `DefinitionSet::new()`; the parity `(Err, Err)` arm compares the two messages.
+- **Deviations:**
+  1. *The plan's §8 example `\newcommand\greet{Hi}\greet` is false as written.* The
+     declared shape in `DEFINERS` reads the name as a braced group, so the unbraced form
+     yields `"Hi\n"` with two missing-argument errors and two unknown-macro warnings, under
+     `Latexlike` and under xp-`Declared` identically (pre-existing behaviour; the parity
+     corpus pins it as `definer-unbraced` and `definer-def`). `lang_generic.rs` therefore
+     uses the braced form `\newcommand{\greet}{Hi}\greet`. **For the maintainer:** plain
+     `Latexlike` users now meet this declared shape by default; whether the unbraced
+     `\newcommand\x{…}` / `\def\x#1{…}` shapes should consume a bare control-sequence
+     name is a behaviour decision outside this plan's non-goals (no behaviour change).
+  2. "All three math modes" was read as the three `MathMode` options with the whole corpus
+     run under each; the math delimiter forms (`$`, `\(`, `\[`, `$$`) and the math
+     environments are covered by separate documents.
+  3. The Phase 2 implementer ran `rustfmt --emit stdout` on *copies* of its new files in
+     the scratchpad (never `cargo fmt`, never on repository files) and applied the
+     differences by hand. Reported here because the §2.1 rule's intent may cover it; later
+     agents were instructed not to run rustfmt in any form. A few lines of the parity
+     corpus table and of the module-doc coverage table exceed 100 columns (string literals
+     and comments, which rustfmt leaves alone).
+- Declined findings: none.

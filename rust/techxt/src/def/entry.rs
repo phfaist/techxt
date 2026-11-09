@@ -351,9 +351,7 @@ impl<L: ParseLang> MacroDef<L> {
     }
 
     /// The techy argument specs, in declaration order.
-    pub(crate) fn arg_specs(
-        &self,
-    ) -> Result<Vec<Arc<ArgumentSpec<L>>>, ArgumentCodeError> {
+    pub(crate) fn arg_specs(&self) -> Result<Vec<Arc<ArgumentSpec<L>>>, ArgumentCodeError> {
         self.args.build()
     }
 
@@ -477,9 +475,7 @@ impl<L: ParseLang> EnvDef<L> {
     }
 
     /// The techy argument specs, in declaration order.
-    pub(crate) fn arg_specs(
-        &self,
-    ) -> Result<Vec<Arc<ArgumentSpec<L>>>, ArgumentCodeError> {
+    pub(crate) fn arg_specs(&self) -> Result<Vec<Arc<ArgumentSpec<L>>>, ArgumentCodeError> {
         self.args.build()
     }
 
@@ -586,9 +582,7 @@ impl<L: ParseLang> SpecialsDef<L> {
     }
 
     /// The techy argument specs, in declaration order.
-    pub(crate) fn arg_specs(
-        &self,
-    ) -> Result<Vec<Arc<ArgumentSpec<L>>>, ArgumentCodeError> {
+    pub(crate) fn arg_specs(&self) -> Result<Vec<Arc<ArgumentSpec<L>>>, ArgumentCodeError> {
         self.args.build()
     }
 

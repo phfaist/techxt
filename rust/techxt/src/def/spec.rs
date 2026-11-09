@@ -417,9 +417,8 @@ impl<L: LatexlikeLang> EnvironmentBehavior<L> for TechxtEnvironmentBehavior<L> {
 ///
 /// The downcast is at the tree's own language, as every render-side downcast is.
 pub(crate) fn is_refusal<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> bool {
-    node.spec().is_some_and(|spec| {
-        (&**spec as &dyn Any).is::<techy_xp::presets::RefusalSpec<LLL>>()
-    })
+    node.spec()
+        .is_some_and(|spec| (&**spec as &dyn Any).is::<techy_xp::presets::RefusalSpec<LLL>>())
 }
 
 /// The techxt rule embedded in a callable node's spec, if it has one (dispatch step 2).
