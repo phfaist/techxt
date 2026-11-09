@@ -11,6 +11,8 @@
 //! fourteen hundred names, and the table is sorted precisely so that a caller answering
 //! a keystroke does a binary search rather than another walk of nineteen categories.
 
+#![cfg(feature = "xp")]
+
 use techxt::def::{
     CallableKind, Category, DefinitionSet, EnvDef, MacroDef, ModeVisibility, SpecialsDef, Template,
     TextRule,

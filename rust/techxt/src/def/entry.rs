@@ -155,9 +155,10 @@ type Modes = Option<Vec<Mode>>;
 /// and reads as one line of a table:
 ///
 /// ```
+/// use techxt::convert::LatexlikeXp;
 /// use techxt::def::{Category, EnvDef, MacroDef, Template, TextRule};
 ///
-/// let category: Category = Category::new("links")
+/// let category: Category<LatexlikeXp> = Category::new("links")
 ///     .with_macro(
 ///         MacroDef::new("href")
 ///             // A URL must never swallow a following expression, so it is a group and
@@ -198,7 +199,12 @@ type Modes = Option<Vec<Mode>>;
 /// An entry is built at the [`ParseLang`] its converter parses with, because the
 /// argument specs it holds are. The parameter is almost always inferred from the
 /// [`Category`](super::Category) or builder the entry reaches.
-pub struct MacroDef<L: ParseLang = techy_xp::lang::LatexlikeXp> {
+pub struct MacroDef<
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+> where
+    L: ParseLang,
+{
     name: Box<str>,
     args: Args<L>,
     rule: Option<TextRule>,
@@ -388,7 +394,12 @@ impl<L: ParseLang> MacroDef<L> {
 /// needs: [`math_body`](Self::math_body) parses the body as math,
 /// [`verbatim_body`](Self::verbatim_body) parses it as raw characters, and
 /// [`list_body`](Self::list_body) brings `\item` into scope for it.
-pub struct EnvDef<L: ParseLang = techy_xp::lang::LatexlikeXp> {
+pub struct EnvDef<
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+> where
+    L: ParseLang,
+{
     name: Box<str>,
     args: Args<L>,
     body: EnvBodyKind,
@@ -505,7 +516,12 @@ impl<L: ParseLang> EnvDef<L> {
 ///
 /// techy matches the **longest** registered trigger, and mode visibility is what keeps
 /// `---` out of math and `^` out of text.
-pub struct SpecialsDef<L: ParseLang = techy_xp::lang::LatexlikeXp> {
+pub struct SpecialsDef<
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+> where
+    L: ParseLang,
+{
     chars: Box<str>,
     args: Args<L>,
     rule: Option<TextRule>,

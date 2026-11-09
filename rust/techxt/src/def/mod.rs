@@ -53,9 +53,10 @@
 //! reference page.
 //!
 //! ```
+//! use techxt::convert::LatexlikeXp;
 //! use techxt::def::{CallableKind, DefinitionSet};
 //!
-//! let definitions: DefinitionSet = techxt::defs::standard();
+//! let definitions: DefinitionSet<LatexlikeXp> = techxt::defs::standard();
 //! let symbols = definitions.symbols();
 //! let alpha = symbols.get(CallableKind::Macro, "alpha").expect("the library has it");
 //! assert_eq!(alpha.replacement, Some("α"));

@@ -279,7 +279,7 @@ fn collect_scoped_children<'t, LLL: LatexlikeLang>(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "xp"))]
 mod tests {
     use super::*;
     use crate::convert::{Converter, StdDescentGuardInit};

@@ -4,6 +4,8 @@
 //! that no longer holds is worse than no example at all. These are the same two
 //! snippets, character for character below the `use` line.
 
+#![cfg(feature = "xp")]
+
 use techxt::Converter;
 
 #[test]

@@ -975,7 +975,7 @@ impl TextHandler for Delimited {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "xp"))]
 mod tests {
     use crate::Converter;
 

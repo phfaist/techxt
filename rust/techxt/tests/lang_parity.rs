@@ -41,6 +41,8 @@
 //! defining command (`preamble-definers`), unknown commands and environments
 //! (`unknown`), and malformed input (`malformed-*`), comments and paragraphs.
 
+#![cfg(feature = "xp")]
+
 use techy::latexlike::Latexlike;
 use techy_xp::lang::LatexlikeXp;
 

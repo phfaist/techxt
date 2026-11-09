@@ -12,6 +12,8 @@
 //! recursive definitions, definitions meeting math and the renderer — is the subject of
 //! `defs_definers.rs`, one file over.
 
+#![cfg(feature = "xp")]
+
 use techxt::convert::{MacroDefinitions, MapResolver, Severity, UnknownMacroResolution};
 use techxt::{Converter, ConverterBuilder};
 use techy_xp::lang::{DEFAULT_EXPANSION_COUNT_LIMIT, DEFAULT_EXPANSION_DEPTH_LIMIT};

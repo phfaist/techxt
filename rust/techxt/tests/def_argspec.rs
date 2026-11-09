@@ -5,6 +5,8 @@
 //! across a space. Both are built as techy `ArgumentSpec`s and handed to the entry
 //! builder directly, in declaration order with the coded arguments.
 
+#![cfg(feature = "xp")]
+
 use std::sync::Arc;
 
 use techy::core::constructs::{GroupArgumentParser, OptionalGroupArgumentParser};

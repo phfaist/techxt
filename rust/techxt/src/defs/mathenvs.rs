@@ -323,7 +323,7 @@ impl TextHandler for Block {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "xp"))]
 mod tests {
     use crate::Converter;
 

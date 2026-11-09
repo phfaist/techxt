@@ -1,6 +1,8 @@
 //! Building a definition set: shadowing order, argument codes, mode visibility, and
 //! every way a build can be refused.
 
+#![cfg(feature = "xp")]
+
 use std::borrow::Cow;
 
 use techxt::convert::BuildError;

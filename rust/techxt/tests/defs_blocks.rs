@@ -1,5 +1,7 @@
 //! Footnotes, theorems, quotations, floats and captions.
 
+#![cfg(feature = "xp")]
+
 use techxt::convert::FootnoteStyle;
 use techxt::Converter;
 

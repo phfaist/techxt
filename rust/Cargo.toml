@@ -38,8 +38,9 @@ bare_urls = "warn"
 
 # Dependency versions live here so the members stay in lockstep and a bump is a
 # one-line change. The runtime set is fixed: `techxt` may depend on exactly `techy`,
-# `techy-xp` and `unicode-width` (techy-xp's own deps are techy and `hashbrown`, both
-# already in the tree, so the crate graph gains no new node), `techxt-cli` on `techxt`
+# `unicode-width` and, behind its default `xp` feature, `techy-xp` (techy-xp's own deps
+# are techy and `hashbrown`, both already in the tree, so the crate graph gains no new
+# node), `techxt-cli` on `techxt`
 # and `clap` — plus, for the CLI only, `stacker`. The CLI does *not* depend on techy:
 # everything of techy's that it names — `SourceResolver`, the `Recovery` policy
 # `--strict` selects, the `Diagnostics` it filters and renders — is re-exported by

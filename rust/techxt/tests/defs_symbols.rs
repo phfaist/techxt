@@ -8,6 +8,8 @@
 //! mechanical port is most likely to get wrong — mode visibility and the shadowing
 //! order — are checked directly.
 
+#![cfg(feature = "xp")]
+
 use techxt::convert::UnknownMacroResolution;
 use techxt::def::DefinitionSet;
 use techxt::{defs, Converter};

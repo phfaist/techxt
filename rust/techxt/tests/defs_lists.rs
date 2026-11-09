@@ -1,5 +1,7 @@
 //! `defs::lists`: the five list environments, `\item`, and the markers they generate.
 
+#![cfg(feature = "xp")]
+
 use techxt::convert::{CounterStyle, CounterWrap, EnumFormat, ListStyle};
 use techxt::diag::{StrayItem, UnsupportedIgnored};
 use techxt::{Conversion, Converter};

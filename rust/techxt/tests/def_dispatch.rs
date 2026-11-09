@@ -8,6 +8,8 @@
 //! 3. the converter's name fallback table,
 //! 4. the unknown-construct policy.
 
+#![cfg(feature = "xp")]
+
 use std::borrow::Cow;
 use std::convert::Infallible;
 use std::sync::Arc;

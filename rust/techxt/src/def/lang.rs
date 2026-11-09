@@ -233,7 +233,13 @@ pub enum Definer {
 ///
 /// It borrows all three, so it lives exactly as long as the build that made it.
 #[non_exhaustive]
-pub struct SpecBuildCx<'a, L: ParseLang = techy_xp::lang::LatexlikeXp> {
+pub struct SpecBuildCx<
+    'a,
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+> where
+    L: ParseLang,
+{
     source_resolver: Option<&'a Arc<dyn SourceResolver<Option<String>>>>,
     driver: &'a L::Driver,
     settings: &'a L::Settings,

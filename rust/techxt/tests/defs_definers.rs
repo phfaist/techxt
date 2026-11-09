@@ -12,6 +12,8 @@
 //! definition than the one in force when it was written, `\NewDocumentCommand`'s `s`
 //! binding a literal `*`. A surprise pinned is a surprise that cannot regress quietly.
 
+#![cfg(feature = "xp")]
+
 use techxt::convert::MacroDefinitions;
 use techxt::Converter;
 

@@ -5,6 +5,8 @@
 //! non-empty output with exactly one newline, and a test that trims would stop checking
 //! the very thing layout guarantees.
 
+#![cfg(feature = "xp")]
+
 use techxt::convert::{MathMode, StdDescentGuardInit, UnknownEnvPolicy};
 use techxt::diag::{UnknownEnvironment, UnknownMacro};
 use techxt::Converter;

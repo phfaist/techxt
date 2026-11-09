@@ -43,7 +43,12 @@ use super::TextRule;
 ///
 /// Generic over the language it is registered at, and bounded by [`LatexlikeLang`]
 /// alone: the renderer names it at the language of whatever tree it folds.
-pub struct TechxtMacroSpec<L: LatexlikeLang = techy_xp::lang::LatexlikeXp> {
+pub struct TechxtMacroSpec<
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+> where
+    L: LatexlikeLang,
+{
     arguments: Vec<Arc<ArgumentSpec<L>>>,
     rule: Option<TextRule>,
 }
@@ -137,14 +142,21 @@ impl<L: LatexlikeLang> CallableSpec<L> for TechxtMacroSpec<L> {
 /// #[derive(Debug)]
 /// struct Bare;
 ///
-/// impl CallableSpecSource for Bare {
-///     fn callable_spec(&self, _cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<LatexlikeXp>>> {
+/// impl CallableSpecSource<LatexlikeXp> for Bare {
+///     fn callable_spec(
+///         &self,
+///         _cx: &SpecBuildCx<'_, LatexlikeXp>,
+///     ) -> Option<Arc<dyn CallableSpec<LatexlikeXp>>> {
 ///         Some(Arc::new(MacroSpec::new(Vec::new())))
 ///     }
 /// }
 /// ```
-pub trait CallableSpecSource<L: ParseLang = techy_xp::lang::LatexlikeXp>:
-    Send + Sync + core::fmt::Debug
+pub trait CallableSpecSource<
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+>: Send + Sync + core::fmt::Debug
+where
+    L: ParseLang,
 {
     /// The spec to register, or `None` to register the one techxt would have built.
     fn callable_spec(&self, cx: &SpecBuildCx<'_, L>) -> Option<Arc<dyn CallableSpec<L>>>;
@@ -158,7 +170,12 @@ pub trait CallableSpecSource<L: ParseLang = techy_xp::lang::LatexlikeXp>:
 /// each take one expression argument).
 ///
 /// Bounded by [`LatexlikeLang`] alone, as [`TechxtMacroSpec`] is and for the same reason.
-pub struct TechxtSpecialsSpec<L: LatexlikeLang = techy_xp::lang::LatexlikeXp> {
+pub struct TechxtSpecialsSpec<
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+> where
+    L: LatexlikeLang,
+{
     arguments: Vec<Arc<ArgumentSpec<L>>>,
     rule: Option<TextRule>,
 }
@@ -240,7 +257,12 @@ pub enum EnvBodyKind {
 /// [`body_state_delta`](EnvironmentBehavior::body_state_delta) here instead.
 ///
 /// Bounded by [`LatexlikeLang`] alone, as [`TechxtMacroSpec`] is and for the same reason.
-pub struct TechxtEnvironmentBehavior<L: LatexlikeLang = techy_xp::lang::LatexlikeXp> {
+pub struct TechxtEnvironmentBehavior<
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+> where
+    L: LatexlikeLang,
+{
     arguments: Vec<Arc<ArgumentSpec<L>>>,
     body: EnvBodyKind,
     body_behavior: BodyBehavior<L>,
@@ -416,9 +438,17 @@ impl<L: LatexlikeLang> EnvironmentBehavior<L> for TechxtEnvironmentBehavior<L> {
 /// decides that.
 ///
 /// The downcast is at the tree's own language, as every render-side downcast is.
+#[cfg(feature = "xp")]
 pub(crate) fn is_refusal<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> bool {
     node.spec()
         .is_some_and(|spec| (&**spec as &dyn Any).is::<techy_xp::presets::RefusalSpec<LLL>>())
+}
+
+/// Never: without the `xp` feature techy-xp's refusals do not exist, so no node is one
+/// (see the `xp` version of this function).
+#[cfg(not(feature = "xp"))]
+pub(crate) fn is_refusal<LLL: LatexlikeLang>(_node: NodeRef<'_, LLL>) -> bool {
+    false
 }
 
 /// The techxt rule embedded in a callable node's spec, if it has one (dispatch step 2).

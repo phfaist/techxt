@@ -417,6 +417,7 @@ pub mod flow;
 pub mod layout;
 pub mod mathfmt;
 pub mod render;
+#[cfg(feature = "xp")]
 mod xp;
 
 pub use convert::{Conversion, Converter, ConverterBuilder, Options};

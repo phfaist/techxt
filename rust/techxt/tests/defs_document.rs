@@ -1,6 +1,8 @@
 //! The document-furniture categories: `refs`, `links`, `graphics`, `titling`,
 //! `preamble` and `inputs`, plus the empty stub categories.
 
+#![cfg(feature = "xp")]
+
 use std::any::Any;
 use std::string::String;
 

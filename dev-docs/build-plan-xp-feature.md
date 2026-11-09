@@ -942,3 +942,47 @@ entry.
      corpus table and of the module-doc coverage table exceed 100 columns (string literals
      and comments, which rustfmt leaves alone).
 - Declined findings: none.
+
+### 2026-11-09 — Phase 3 (the feature)
+
+- Previous commit (Phase 2): `5069d9f`. The commit holding this entry is the Phase 3 commit.
+- Gates (run by the supervisor): G1–G6 pass with **G2 = 967 passed, 0 failed** (no test left
+  the default run); G7 pass, **G8 = 255 passed, 0 failed** (191 unit tests + `lang_generic`
+  10, `layout` 9, `layout_proptest` 8, `math_engine` 32, `math_proptest` 5), G9 pass,
+  G10 pass, G11 pass (feature-off tree: techy, hashbrown, techy-derive, unicode-width; no
+  techy-xp). G12 was also run early on this tree (tooling check, see Phase 4). No
+  `Cargo.lock` changed.
+- Done: `[features] default = ["xp"]`, `xp = ["dep:techy-xp"]`, techy-xp optional; the 12
+  default type parameters use the §5.4 pattern; the xp module, both re-exports, the xp
+  conveniences, `MacroDefinitions` and the two §5.8 bodies are gated; 32 integration test
+  files carry `#![cfg(feature = "xp")]` (the five named in §8 are ungated); unit-test
+  gating on the smallest unit (four whole modules, two single tests, one statement);
+  `ci.yml` gained G7–G10 steps in the clippy, test, MSRV and no_std jobs.
+- Verified by implementer and reviewer in scratch crates outside the repository: a bare
+  `Converter` (and `ConverterBuilder`, `DefinitionSet`) fails with E0107 "missing generics"
+  when the feature is off; `Converter<Latexlike>` via `with_definitions(defs::standard())`
+  compiles and gives the same text in both states, equal to `Converter::standard()`'s
+  with the feature on; `lang_generic.rs` passes in both states (10/10).
+- Reviewer verdict: no Critical/Major defect; additivity audit clean (every
+  `feature = "xp"` occurrence justified under §5.6; `cfg(not(feature = "xp"))` appears only
+  as the 12 undefaulted twins and the two §5.8 fallbacks).
+- **Known limitation (reviewer Minor 1, a property of §5.8 as written, not of the
+  implementation):** §5.8's fallbacks make one behaviour differ between feature states for a
+  consumer that depends on techy-xp *directly* while building techxt with the feature off:
+  rendering a `LatexlikeXp` tree it parsed itself, techy-xp refusal diagnostics are not
+  re-levelled to warnings (`at_techxt_severity` returns them unchanged) and `is_refusal`
+  is `false`. Reproduced: `A \ifx\a\b yes\fi B` parsed with `xp_language` and rendered
+  by `Converter<Latexlike>::tree_to_text` gives the same text in both states but two
+  "no text rule" warnings with the feature off and none with it on. The fallback cannot
+  recognise `RefusalSpec` without linking techy-xp, so §5.2 rule 4 cannot hold for this
+  one case. Phase 4 documents it in the `xp` feature section.
+- **Deviations:** (1) `DefinitionsChoice::resolve()` is a new private method: with only the
+  `Given` arm left in the feature-off build, the former `match` in `build()` trips clippy's
+  `infallible_destructuring_match`; the method body is the old match moved unchanged.
+  (2) `as_warning` (helper of `at_techxt_severity`) is gated and uses full paths rather
+  than a gated import: one `cfg` beyond the literal §5.6 list, dead code otherwise.
+  (3) Five doctests were switched from the bare default (`DefinitionSet`) to explicit
+  `DefinitionSet<LatexlikeXp>` on the supervisor's over-broad instruction; Phase 4 restores
+  the user-facing form (§5.10 / Appendix B), since doctests run under default features
+  only (§6 trap 9). (4) No CI step for G11 (`cargo tree`): the plan asks for G7–G10 only.
+- Declined findings: none.

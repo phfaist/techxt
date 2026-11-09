@@ -36,8 +36,6 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use techy::error::{DiagnosticData, DiagnosticInfo};
-
 use crate::def::{
     BuiltDefinitions, CallableKind, DefinitionSet, RuleTable, SpecBuildCx, TemplateError,
     TemplateScope, TextRule,
@@ -102,9 +100,11 @@ pub use techy::latexlike::EnvironmentSpec;
 /// document that defines a macro gets it expanded, and a document that defines none
 /// parses exactly as techy's own `Latexlike` parses it. Turn the definers off with
 /// [`ConverterBuilder::macro_definitions`].
+#[cfg(feature = "xp")]
 pub use techy_xp::lang::LatexlikeXp;
 /// The parse-time settings [`LatexlikeXp`] adds: what
 /// [`ConverterBuilder::language_settings`] takes for that language.
+#[cfg(feature = "xp")]
 pub use crate::xp::XpSettings;
 
 /// The diagnostics channel: the collection a [`Conversion`] carries, one entry of it,
@@ -200,7 +200,10 @@ pub struct Conversion {
 /// language's conveniences; any other language starts from
 /// [`ConverterBuilder::with_definitions`]. What it *renders* is independent of `L`:
 /// [`tree_to_text`](Self::tree_to_text) takes the tree of any [`RenderLang`].
-pub struct Converter<L: ParseLang = LatexlikeXp> {
+pub struct Converter<#[cfg(feature = "xp")] L = LatexlikeXp, #[cfg(not(feature = "xp"))] L>
+where
+    L: ParseLang,
+{
     inner: Arc<Inner<L>>,
 }
 
@@ -224,6 +227,7 @@ struct Inner<L: ParseLang> {
 }
 
 /// The conveniences of techy-xp's [`LatexlikeXp`], the default parse language.
+#[cfg(feature = "xp")]
 impl Converter<LatexlikeXp> {
     /// Start building a converter, from the shipped definitions.
     pub fn builder() -> ConverterBuilder<LatexlikeXp> {
@@ -481,6 +485,7 @@ fn merge(
 /// survive** — the payload, the identifier, the message and the span all do. What is lost
 /// is measurable and small: a refusal carries exactly one frame, titled *"unsupported
 /// ‘\ifx’"*, which says what the message already says.
+#[cfg(feature = "xp")]
 fn at_techxt_severity(diagnostic: &Diagnostic<Option<String>>) -> Diagnostic<Option<String>> {
     use techy_xp::presets::{
         CategoryCodeChangeUnsupported, ConditionalUnsupported, CounterCommandUnsupported,
@@ -511,10 +516,18 @@ fn at_techxt_severity(diagnostic: &Diagnostic<Option<String>>) -> Diagnostic<Opt
         .unwrap_or_else(|| diagnostic.clone())
 }
 
+/// The diagnostic unchanged: without the `xp` feature no parse raises a techy-xp refusal,
+/// so there is nothing to re-level (see the `xp` version of this function).
+#[cfg(not(feature = "xp"))]
+fn at_techxt_severity(diagnostic: &Diagnostic<Option<String>>) -> Diagnostic<Option<String>> {
+    diagnostic.clone()
+}
+
 /// The condition behind `data` as a warning, if `data` is a `T` at all (see
 /// [`at_techxt_severity`]).
-fn as_warning<T: DiagnosticInfo>(
-    data: &dyn DiagnosticData,
+#[cfg(feature = "xp")]
+fn as_warning<T: techy::error::DiagnosticInfo>(
+    data: &dyn techy::error::DiagnosticData,
     span: &SourceSpan<Option<String>>,
 ) -> Option<Diagnostic<Option<String>>> {
     data.downcast_ref::<T>()
@@ -559,7 +572,10 @@ impl techy::error::DiagnosticInfo for SuppressedSurplus {
 /// live in one impl block; techy-xp's [`LatexlikeXp`], the default, adds the
 /// argument-free [`new`](ConverterBuilder::new), its own three settings and their
 /// defaults in another. Each method name is in exactly one of the two.
-pub struct ConverterBuilder<L: ParseLang = LatexlikeXp> {
+pub struct ConverterBuilder<#[cfg(feature = "xp")] L = LatexlikeXp, #[cfg(not(feature = "xp"))] L>
+where
+    L: ParseLang,
+{
     options: Options,
     definitions: DefinitionsChoice<L>,
     overrides: Vec<(CallableKind, Box<str>, TextRule)>,
@@ -580,7 +596,19 @@ enum DefinitionsChoice<L: ParseLang> {
     /// A set the caller passed in.
     Given(DefinitionSet<L>),
     /// The shipped set, still to be made.
+    #[cfg(feature = "xp")]
     Shipped(fn() -> DefinitionSet<L>),
+}
+
+impl<L: ParseLang> DefinitionsChoice<L> {
+    /// The set to build from: the one given, or the shipped one, made now.
+    fn resolve(self) -> DefinitionSet<L> {
+        match self {
+            DefinitionsChoice::Given(definitions) => definitions,
+            #[cfg(feature = "xp")]
+            DefinitionsChoice::Shipped(make) => make(),
+        }
+    }
 }
 
 impl<L: ParseLang> core::fmt::Debug for ConverterBuilder<L> {
@@ -596,6 +624,7 @@ impl<L: ParseLang> core::fmt::Debug for ConverterBuilder<L> {
     }
 }
 
+#[cfg(feature = "xp")]
 impl Default for ConverterBuilder<LatexlikeXp> {
     fn default() -> ConverterBuilder<LatexlikeXp> {
         ConverterBuilder::new()
@@ -608,6 +637,7 @@ impl Default for ConverterBuilder<LatexlikeXp> {
 /// Each name here exists in this block alone, which is what lets
 /// `ConverterBuilder::new()` and `ConverterBuilder::DEFAULT_EXPANSION_DEPTH_LIMIT`
 /// resolve without naming the language.
+#[cfg(feature = "xp")]
 impl ConverterBuilder<LatexlikeXp> {
     /// The default of [`expansion_depth_limit`](Self::expansion_depth_limit): 64 nested
     /// expansions, where techy-xp's own default is 256.
@@ -972,10 +1002,7 @@ impl<L: ParseLang> ConverterBuilder<L> {
             source_resolver,
         } = self;
 
-        let definitions = match definitions {
-            DefinitionsChoice::Given(definitions) => definitions,
-            DefinitionsChoice::Shipped(make) => make(),
-        };
+        let definitions = definitions.resolve();
         // The definitions never see the recovery mode: what they need is the answer,
         // and resolving `FollowRecovery` is the builder's job.
         let unknown_macro_fallback = match unknown_macro_resolution {
@@ -1451,6 +1478,7 @@ pub enum UnknownMacroResolution {
 ///
 /// techy-xp implements no conditionals, category codes, registers or counters, so
 /// `\ifx`, `\catcode`, `\count` and `\setcounter` define nothing under either setting.
+#[cfg(feature = "xp")]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MacroDefinitions {
@@ -1537,7 +1565,9 @@ mod tests {
 
     #[test]
     fn converter_is_shareable() {
-        assert_send_sync::<Converter>();
+        assert_send_sync::<Converter<techy::latexlike::Latexlike>>();
+        #[cfg(feature = "xp")]
+        assert_send_sync::<Converter<LatexlikeXp>>();
         assert_send_sync::<Options>();
     }
 

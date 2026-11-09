@@ -1,6 +1,8 @@
 //! The public conversion API, the dispatch chain, the rule kinds and the
 //! unknown-construct policies.
 
+#![cfg(feature = "xp")]
+
 use std::borrow::Cow;
 use std::sync::Arc;
 

@@ -136,14 +136,14 @@ fn handler(handler: impl crate::def::TextHandler + 'static) -> crate::def::TextR
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Converter;
     use alloc::collections::BTreeSet;
     use alloc::string::String;
     use alloc::vec::Vec;
 
+    #[cfg(feature = "xp")]
     #[test]
     fn the_standard_set_builds() {
-        let converter = Converter::builder()
+        let converter = crate::Converter::builder()
             .definitions(standard())
             .build()
             .expect("the shipped definitions are well-formed");
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn the_categories_are_pushed_in_the_plans_order() {
-        let definitions: DefinitionSet = standard();
+        let definitions: DefinitionSet<techy::latexlike::Latexlike> = standard();
         let names: Vec<&str> = definitions.categories().map(|c| c.name()).collect();
         assert_eq!(
             names,
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn category_names_are_unique() {
-        let definitions: DefinitionSet = standard();
+        let definitions: DefinitionSet<techy::latexlike::Latexlike> = standard();
         let names: Vec<String> = definitions
             .categories()
             .map(|c| String::from(c.name()))
@@ -191,10 +191,11 @@ mod tests {
         assert_eq!(names.len(), unique.len());
     }
 
+    #[cfg(feature = "xp")]
     #[test]
     fn converter_standard_uses_the_shipped_library() {
         // Not the placeholder set any more: a heading numbers itself.
-        let converted = Converter::standard()
+        let converted = crate::Converter::standard()
             .latex_to_text(r"\section{Intro}")
             .expect("parses");
         assert_eq!(converted.text, "1 Intro\n-------\n");

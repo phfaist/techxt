@@ -44,7 +44,12 @@ const ITEM_MACRO: &str = "item";
 ///
 /// Like its entries, a category is built at the [`ParseLang`] its converter parses
 /// with; the parameter is inferred from what the category reaches.
-pub struct Category<L: ParseLang = techy_xp::lang::LatexlikeXp> {
+pub struct Category<
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+> where
+    L: ParseLang,
+{
     name: Box<str>,
     macros: Vec<MacroDef<L>>,
     environments: Vec<EnvDef<L>>,
@@ -173,7 +178,12 @@ impl<L: ParseLang> Category<L> {
 /// assert_eq!(converter.latex_to_text(r"\ldots")?.text, "…\n");
 /// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
-pub struct DefinitionSet<L: ParseLang = techy_xp::lang::LatexlikeXp> {
+pub struct DefinitionSet<
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+> where
+    L: ParseLang,
+{
     categories: Vec<Category<L>>,
 }
 
@@ -234,9 +244,10 @@ impl<L: ParseLang> DefinitionSet<L> {
     /// avoid.
     ///
     /// ```
+    /// use techxt::convert::LatexlikeXp;
     /// use techxt::def::{CallableKind, Category, DefinitionSet, MacroDef};
     ///
-    /// let mut definitions: DefinitionSet = DefinitionSet::new();
+    /// let mut definitions: DefinitionSet<LatexlikeXp> = DefinitionSet::new();
     /// definitions.push(Category::new("generated").with_macro(MacroDef::symbol("ldots", "...")));
     /// definitions.push(Category::new("curated").with_macro(MacroDef::symbol("ldots", "…")));
     ///

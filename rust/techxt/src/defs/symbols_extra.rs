@@ -218,7 +218,7 @@ mod tests {
     fn the_category_holds_the_whole_table() {
         // `Category` does not expose its entries, so the count is checked the only way
         // a category ever is: by building it and asking whether it built.
-        let category: Category = category();
+        let category: Category<techy::latexlike::Latexlike> = category();
         assert_eq!(category.name(), "symbols_extra");
     }
 }
