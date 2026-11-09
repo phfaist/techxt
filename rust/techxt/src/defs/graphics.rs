@@ -8,7 +8,7 @@
 //! fed to a search index, and `graphics` written solid would be indexed as a word of
 //! the document. Spaced out, it is unmistakably a marker.
 
-use crate::def::{Category, MacroDef, TextHandler};
+use crate::def::{Category, MacroDef, ParseLang, TextHandler};
 use crate::flow::{BlockKind, Flow, FlowItem};
 use crate::render::{NodeView, RenderCx, RenderError};
 
@@ -18,7 +18,7 @@ use super::handler;
 const INDENT: &str = "    ";
 
 /// The graphics category.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     Category::new("graphics").with_macro(
         MacroDef::new("includegraphics")
             .arg("o", "options")

@@ -84,9 +84,8 @@ use alloc::sync::Arc;
 
 use techy::core::specs::CallableSpec;
 use techy::latexlike::{argument_specs_named, BodyMarker, InputMacroSpec};
-use techy_xp::lang::LatexlikeXp;
 
-use crate::def::{CallableSpecSource, Category, MacroDef, SpecBuildCx, TextHandler};
+use crate::def::{CallableSpecSource, Category, MacroDef, ParseLang, SpecBuildCx, TextHandler};
 use crate::diag::InputNotResolved;
 use crate::flow::Flow;
 use crate::render::{NodeView, RenderCx, RenderError};
@@ -97,7 +96,7 @@ use super::handler;
 const FILENAME: &str = "filename";
 
 /// The inputs category.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("inputs");
     for name in ["input", "include"] {
         category.add_macro(
@@ -117,8 +116,8 @@ pub fn category() -> Category {
 #[derive(Debug)]
 struct Resolving;
 
-impl CallableSpecSource for Resolving {
-    fn callable_spec(&self, cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<LatexlikeXp>>> {
+impl<L: ParseLang> CallableSpecSource<L> for Resolving {
+    fn callable_spec(&self, cx: &SpecBuildCx<'_, L>) -> Option<Arc<dyn CallableSpec<L>>> {
         cx.source_resolver()?;
         // `InputMacroSpec::new`, not the `input_macro_spec` recipe: the recipe declares
         // the reference as a *chars-group*, which reads the braces raw and so never lets
@@ -129,9 +128,9 @@ impl CallableSpecSource for Resolving {
         // The name is techy's to choose — the reference is read from the argument called
         // `REFERENCE_ARGUMENT_NAME` — where the fallback spec is free to call it
         // `filename`.
-        let arguments = argument_specs_named::<LatexlikeXp, _, _, _>([(
+        let arguments = argument_specs_named::<L, _, _, _>([(
             "BracedOnly",
-            InputMacroSpec::<LatexlikeXp>::REFERENCE_ARGUMENT_NAME,
+            InputMacroSpec::<L>::REFERENCE_ARGUMENT_NAME,
         )])
         .expect("`BracedOnly` is one of techy's word codes");
         Some(Arc::new(

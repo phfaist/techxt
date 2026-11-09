@@ -53,15 +53,16 @@
 //! reference page.
 //!
 //! ```
-//! use techxt::def::CallableKind;
+//! use techxt::def::{CallableKind, DefinitionSet};
 //!
-//! let definitions = techxt::defs::standard();
+//! let definitions: DefinitionSet = techxt::defs::standard();
 //! let symbols = definitions.symbols();
 //! let alpha = symbols.get(CallableKind::Macro, "alpha").expect("the library has it");
 //! assert_eq!(alpha.replacement, Some("α"));
 //! ```
 
 mod entry;
+mod lang;
 mod rule;
 mod set;
 mod spec;
@@ -69,15 +70,16 @@ mod symbols;
 mod template;
 
 pub use entry::{EnvDef, MacroDef, SpecialsDef};
+pub use lang::{Definer, ParseLang, ScopeFrame, SpecBuildCx};
 pub use rule::{CallableKind, TextHandler, TextRule};
 pub use set::{Category, DefinitionSet};
 pub use spec::{
-    CallableSpecSource, EnvBodyKind, SpecBuildCx, TechxtEnvironmentBehavior, TechxtMacroSpec,
+    CallableSpecSource, EnvBodyKind, TechxtEnvironmentBehavior, TechxtMacroSpec,
     TechxtSpecialsSpec,
 };
 pub use symbols::{ModeVisibility, SymbolEntry, SymbolIndex};
 pub use template::{Template, TemplateError};
 
-pub(crate) use set::{BuiltDefinitions, RuleTable, ScopeFrame};
+pub(crate) use set::{BuiltDefinitions, RuleTable};
 pub(crate) use spec::{embedded_rule, is_refusal};
 pub(crate) use template::{ArgRef, Seg, TemplateScope};

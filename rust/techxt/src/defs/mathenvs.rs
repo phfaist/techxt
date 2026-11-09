@@ -54,7 +54,7 @@
 //! row separators the handler splits at. In any other formula `\\` is a new display
 //! line and `&` is nothing: there are no columns to align to.
 
-use crate::def::{Category, EnvDef, TextHandler, TextRule};
+use crate::def::{Category, EnvDef, ParseLang, TextHandler, TextRule};
 use crate::flow::Flow;
 use crate::mathfmt::{display_block_atom, inline_block_atom, Columns, MatrixFence};
 use crate::render::{math, MathCtx, NodeView, RenderCx, RenderError};
@@ -74,7 +74,7 @@ use super::tables::parse_alignments;
 /// );
 /// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("mathenvs");
     display_environments(&mut category);
     aligned_environments(&mut category);
@@ -89,7 +89,7 @@ pub fn category() -> Category {
 /// All of them render alike: plain text has no equation numbers to place and no page
 /// width to break a `multline` across, so what is left of each is "a formula,
 /// displayed" — and `\\` inside one starts the next line of it.
-fn display_environments(category: &mut Category) {
+fn display_environments<L: ParseLang>(category: &mut Category<L>) {
     for name in [
         "equation",
         "equation*",
@@ -128,7 +128,7 @@ fn display_environments(category: &mut Category) {
 
 /// The environments whose body is rows of cells aligned at `&`, drawn without
 /// delimiters.
-fn aligned_environments(category: &mut Category) {
+fn aligned_environments<L: ParseLang>(category: &mut Category<L>) {
     for name in [
         "align",
         "align*",
@@ -157,7 +157,7 @@ fn aligned_environments(category: &mut Category) {
 // ------------------------------------------------------------------ matrices
 
 /// The matrix family, plus `array`.
-fn matrices(category: &mut Category) {
+fn matrices<L: ParseLang>(category: &mut Category<L>) {
     for name in [
         "matrix",
         "pmatrix",

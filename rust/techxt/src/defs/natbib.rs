@@ -36,7 +36,7 @@
 
 use alloc::borrow::Cow;
 
-use crate::def::{Category, MacroDef, TextRule};
+use crate::def::{Category, MacroDef, ParseLang, TextRule};
 
 /// What every citation command renders as.
 const MARKER: &str = "<cit.>";
@@ -50,7 +50,7 @@ const MARKER: &str = "<cit.>";
 const KEY_LIST: &str = "BracedOnly";
 
 /// The natbib category.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("natbib");
 
     // The full shape: `\citet*[pre][post]{keys}`. The capitalized forms are natbib's
@@ -125,7 +125,7 @@ pub fn category() -> Category {
 /// point of this category — and discarding them keeps the output honest: with no
 /// bibliography there is no "(see Author, 2019, p. 5)" for a note to be part of, and a
 /// bare "see" or "p. 5" next to `<cit.>` reads as a sentence fragment.
-fn citation(definition: MacroDef) -> MacroDef {
+fn citation<L: ParseLang>(definition: MacroDef<L>) -> MacroDef<L> {
     definition
         .arg("o", "pre")
         .arg("o", "post")

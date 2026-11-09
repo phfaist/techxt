@@ -70,7 +70,7 @@ fn within_one_category_a_later_entry_replaces_an_earlier_one() {
 
 #[test]
 fn the_categories_can_be_read_back_in_push_order() {
-    let mut definitions = DefinitionSet::new();
+    let mut definitions: DefinitionSet = DefinitionSet::new();
     definitions.push(Category::new("one"));
     definitions.push(Category::new("two"));
     let names: Vec<&str> = definitions.categories().map(Category::name).collect();

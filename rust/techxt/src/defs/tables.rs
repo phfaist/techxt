@@ -34,7 +34,9 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::def::{CallableKind, Category, EnvDef, MacroDef, Template, TextHandler, TextRule};
+use crate::def::{
+    CallableKind, Category, EnvDef, MacroDef, ParseLang, Template, TextHandler, TextRule,
+};
 use crate::diag::UnsupportedIgnored;
 use crate::flow::{display_width, BlockKind, Flow, FlowItem};
 use crate::layout::render_inline;
@@ -58,7 +60,7 @@ const TABLE_ENVIRONMENTS: [&str; 4] = ["tabular", "tabular*", "tabularx", "longt
 /// The three environments differ only in the arguments that precede the column
 /// specification — a target width, a placement — and none of those means anything in
 /// plain text, so they are parsed and dropped and one handler serves all three.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("tables");
     category.add_env(
         EnvDef::new("tabular")

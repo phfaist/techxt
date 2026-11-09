@@ -29,7 +29,7 @@
 
 use alloc::string::String;
 
-use crate::def::{Category, EnvDef, MacroDef, TextHandler, TextRule};
+use crate::def::{Category, EnvDef, MacroDef, ParseLang, TextHandler, TextRule};
 use crate::flow::{BlockKind, Flow, FlowItem};
 use crate::layout::render_inline;
 use crate::render::{FloatKind, NodeView, RenderCx, RenderError};
@@ -66,7 +66,7 @@ const THEOREM_ENVIRONMENTS: [(&str, &str); 15] = [
 ];
 
 /// The theorems category.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("theorems");
     blocks(&mut category);
     floats(&mut category);
@@ -75,7 +75,7 @@ pub fn category() -> Category {
 }
 
 /// The environments that only change the shape of their body.
-fn blocks(category: &mut Category) {
+fn blocks<L: ParseLang>(category: &mut Category<L>) {
     // Alignment: a block of its own, no indent, no centring simulation.
     for name in ["center", "flushleft", "flushright"] {
         category.add_env(EnvDef::new(name).rule(handler(Block { indent: "" })));
@@ -121,7 +121,7 @@ fn blocks(category: &mut Category) {
 }
 
 /// The floats, and the caption that reads their state.
-fn floats(category: &mut Category) {
+fn floats<L: ParseLang>(category: &mut Category<L>) {
     for (name, kind) in [
         ("figure", FloatKind::Figure),
         ("figure*", FloatKind::Figure),
@@ -148,7 +148,7 @@ fn floats(category: &mut Category) {
 }
 
 /// The theorem-like environments.
-fn theorems(category: &mut Category) {
+fn theorems<L: ParseLang>(category: &mut Category<L>) {
     for (name, label) in THEOREM_ENVIRONMENTS {
         category.add_env(
             EnvDef::new(name)

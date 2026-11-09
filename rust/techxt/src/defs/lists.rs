@@ -39,7 +39,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::convert::{CounterStyle, CounterWrap, EnumFormat};
-use crate::def::{Category, EnvDef, MacroDef, TextHandler};
+use crate::def::{Category, EnvDef, MacroDef, ParseLang, TextHandler};
 use crate::diag::{StrayItem, UnsupportedIgnored};
 use crate::flow::{display_width, BlockKind, Flow, FlowItem};
 use crate::render::{ListCtx, ListKind, NodeView, RenderCx, RenderError};
@@ -65,7 +65,7 @@ const LABEL_GAP: &str = "  ";
 /// option list: parsed so that it cannot leak into the text, ignored because none of
 /// what it can say (`label=…`, `itemsep=…`, `resume`) has a plain-text meaning, and
 /// reported as ignored so that the reader of the diagnostics knows it was dropped.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("lists");
     for (name, kind) in [
         ("itemize", ListKind::Itemize),

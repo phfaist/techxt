@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 
 use techy::latexlike::Mode;
 
+use super::lang::ParseLang;
 use super::set::DefinitionSet;
 use super::{CallableKind, TextRule};
 
@@ -116,9 +117,9 @@ pub struct SymbolEntry<'a> {
 /// set lives.
 ///
 /// ```
-/// use techxt::def::{CallableKind, ModeVisibility};
+/// use techxt::def::{CallableKind, DefinitionSet, ModeVisibility};
 ///
-/// let definitions = techxt::defs::standard();
+/// let definitions: DefinitionSet = techxt::defs::standard();
 /// let symbols = definitions.symbols();
 ///
 /// let alpha = symbols.get(CallableKind::Macro, "alpha").expect("the library has it");
@@ -148,7 +149,7 @@ impl<'a> SymbolIndex<'a> {
     /// innermost-first resolution would have found. Its iteration order is the
     /// `(kind, name)` order the finished table promises, so nothing needs sorting
     /// afterwards.
-    pub(crate) fn build(set: &'a DefinitionSet) -> SymbolIndex<'a> {
+    pub(crate) fn build<L: ParseLang>(set: &'a DefinitionSet<L>) -> SymbolIndex<'a> {
         let mut resolved: BTreeMap<(CallableKind, &'a str), SymbolEntry<'a>> = BTreeMap::new();
         for category in set.categories() {
             let name = category.name();

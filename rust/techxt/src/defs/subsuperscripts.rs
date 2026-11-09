@@ -15,7 +15,7 @@
 //! put a space in front of the *base* when the notation fell back (`4π𝑐 𝑥^𝑞 𝑝`) and
 //! none when it did not (`4π𝑐𝑥²𝑝`).
 
-use crate::def::{Category, SpecialsDef, TextHandler, TextRule};
+use crate::def::{Category, ParseLang, SpecialsDef, TextHandler, TextRule};
 use crate::flow::Flow;
 use crate::mathfmt::{script_atom, ScriptKind};
 use crate::render::{math, NodeView, RenderCx, RenderError};
@@ -36,7 +36,7 @@ const SCRIPT: &str = "script";
 /// assert_eq!(converter.latex_to_text("a_b and a^b")?.text, "a_b and a^b\n");
 /// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("subsuperscripts");
     for (trigger, kind) in [("^", ScriptKind::Superscript), ("_", ScriptKind::Subscript)] {
         category.add_specials(

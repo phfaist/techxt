@@ -71,7 +71,7 @@
 
 use serde::Serialize;
 
-use techxt::def::{CallableKind, SymbolEntry};
+use techxt::def::{CallableKind, DefinitionSet, SymbolEntry};
 use techxt::defs;
 
 /// One suggestion, in the shape `web/src/worker/protocol.ts` declares.
@@ -159,7 +159,7 @@ impl SymbolTable {
     /// `definitions` among the settings it deliberately does not map), so the table is
     /// the same whatever options the document is being converted under.
     pub fn standard() -> SymbolTable {
-        let definitions = defs::standard();
+        let definitions: DefinitionSet = defs::standard();
         let index = definitions.symbols();
         let mut entries: Vec<Symbol> = index.entries().iter().map(Symbol::from).collect();
         // Sorted here rather than trusted from the index: the index sorts by techxt's

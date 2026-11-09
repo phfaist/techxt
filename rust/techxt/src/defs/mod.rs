@@ -62,7 +62,7 @@
 //! and a category of your own pushed after [`standard`]'s output overrides anything
 //! the library shipped.
 
-use crate::def::DefinitionSet;
+use crate::def::{DefinitionSet, ParseLang};
 
 pub mod accents;
 mod accents_data;
@@ -101,7 +101,7 @@ pub mod verbatim;
 /// assert_eq!(converter.latex_to_text(r"\textbf{hi}")?.text, "𝐡𝐢\n");
 /// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
-pub fn standard() -> DefinitionSet {
+pub fn standard<L: ParseLang>() -> DefinitionSet<L> {
     DefinitionSet::new()
         .with(symbols_extra::category())
         .with(base::category())
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn the_categories_are_pushed_in_the_plans_order() {
-        let definitions = standard();
+        let definitions: DefinitionSet = standard();
         let names: Vec<&str> = definitions.categories().map(|c| c.name()).collect();
         assert_eq!(
             names,
@@ -182,7 +182,8 @@ mod tests {
 
     #[test]
     fn category_names_are_unique() {
-        let names: Vec<String> = standard()
+        let definitions: DefinitionSet = standard();
+        let names: Vec<String> = definitions
             .categories()
             .map(|c| String::from(c.name()))
             .collect();

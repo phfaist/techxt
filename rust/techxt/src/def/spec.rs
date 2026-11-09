@@ -15,7 +15,6 @@
 //! Environments are different, and it matters: see [`TechxtEnvironmentBehavior`].
 
 use alloc::boxed::Box;
-use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::any::Any;
@@ -26,17 +25,14 @@ use techy::core::specs::{ArgumentSpec, CallableSpec, ScopeOp, SpecsProvider};
 use techy::core::ParsingStateDelta;
 use techy::error::ParseError;
 use techy::latexlike::{
-    EnvironmentBehavior, EnvironmentInvocation, EnvironmentSpec, LatexlikeLang, Mode,
+    EnvironmentBehavior, EnvironmentInvocation, EnvironmentSpec, LatexlikeLang, LatexlikeMode,
     VerbatimBehavior,
 };
 use techy::serialize::SerializableObject;
-use techy::source::SourceResolver;
-use techy_xp::lang::{LatexlikeXp, DEFAULT_GLOBAL_SCOPE_NAME, DEFAULT_LOCAL_SCOPE_NAME};
-use techy_xp::presets::RefusalSpec;
 
-use crate::convert::MacroDefinitions;
 use crate::render::ListKind;
 
+use super::lang::{ParseLang, SpecBuildCx};
 use super::TextRule;
 
 /// A macro definition as techy sees it: its arguments, plus the techxt rule that
@@ -44,13 +40,15 @@ use super::TextRule;
 ///
 /// Argument parsing is left entirely to techy's standard machinery — declaring the
 /// arguments is the whole of it, and everything else keeps its default behaviour.
-#[derive(Debug)]
-pub struct TechxtMacroSpec {
-    arguments: Vec<Arc<ArgumentSpec<LatexlikeXp>>>,
+///
+/// Generic over the language it is registered at, and bounded by [`LatexlikeLang`]
+/// alone: the renderer names it at the language of whatever tree it folds.
+pub struct TechxtMacroSpec<L: LatexlikeLang = techy_xp::lang::LatexlikeXp> {
+    arguments: Vec<Arc<ArgumentSpec<L>>>,
     rule: Option<TextRule>,
 }
 
-impl TechxtMacroSpec {
+impl<L: LatexlikeLang> TechxtMacroSpec<L> {
     /// A macro spec with these argument specs and this text rule.
     ///
     /// The rule is optional — pass `None` for a definition that says how the macro
@@ -59,9 +57,9 @@ impl TechxtMacroSpec {
     /// [`Options::unknown_macro`](crate::Options::unknown_macro), which is exactly what
     /// a parse-only entry should do.
     pub fn new(
-        arguments: Vec<Arc<ArgumentSpec<LatexlikeXp>>>,
+        arguments: Vec<Arc<ArgumentSpec<L>>>,
         rule: impl Into<Option<TextRule>>,
-    ) -> TechxtMacroSpec {
+    ) -> TechxtMacroSpec<L> {
         TechxtMacroSpec {
             arguments,
             rule: rule.into(),
@@ -74,12 +72,23 @@ impl TechxtMacroSpec {
     }
 }
 
+// Hand-written rather than derived: a derive would demand `L: Debug` of a language
+// that is only a marker type, and `CallableSpec<L>` needs `Debug` for every `L`.
+impl<L: LatexlikeLang> core::fmt::Debug for TechxtMacroSpec<L> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TechxtMacroSpec")
+            .field("arguments", &self.arguments)
+            .field("rule", &self.rule)
+            .finish()
+    }
+}
+
 // The `SerializableObject` supertrait of `CallableSpec` is fully defaulted; an empty
 // impl opts out of serialization, which techxt does not offer in v1.
-impl SerializableObject<LatexlikeXp> for TechxtMacroSpec {}
+impl<L: LatexlikeLang> SerializableObject<L> for TechxtMacroSpec<L> {}
 
-impl CallableSpec<LatexlikeXp> for TechxtMacroSpec {
-    fn arguments(&self) -> &[Arc<ArgumentSpec<LatexlikeXp>>] {
+impl<L: LatexlikeLang> CallableSpec<L> for TechxtMacroSpec<L> {
+    fn arguments(&self) -> &[Arc<ArgumentSpec<L>>] {
         &self.arguments
     }
 }
@@ -109,11 +118,12 @@ impl CallableSpec<LatexlikeXp> for TechxtMacroSpec {
 /// [`DefinitionSet`](super::DefinitionSet) builds from every entry that declares one.
 /// Declaring a rule alongside the spec is therefore still required, and still works.
 ///
-/// A spec from another *language* behaves identically, and by the same mechanism: the
-/// renderer folds the tree of any [`RenderLang`](crate::render::RenderLang), the
-/// downcast targets here stay concrete over [`LatexlikeXp`], and on a tree of plain
-/// techy's [`Latexlike`](techy::latexlike::Latexlike) they simply miss. Missing is the
-/// designed outcome, not a degradation: step 3 is what such a tree is rendered by.
+/// A spec from another *language*'s definitions behaves identically, and by the same
+/// mechanism: the renderer folds the tree of any [`RenderLang`](crate::render::RenderLang)
+/// and downcasts at that tree's own language, so a techxt spec is found whichever
+/// [`ParseLang`] it was registered at, and a spec that is not techxt's simply misses.
+/// Missing is the designed outcome, not a degradation: step 3 is what such a tree is
+/// rendered by.
 ///
 /// ```
 /// use std::sync::Arc;
@@ -133,113 +143,11 @@ impl CallableSpec<LatexlikeXp> for TechxtMacroSpec {
 ///     }
 /// }
 /// ```
-pub trait CallableSpecSource: Send + Sync + core::fmt::Debug {
+pub trait CallableSpecSource<L: ParseLang = techy_xp::lang::LatexlikeXp>:
+    Send + Sync + core::fmt::Debug
+{
     /// The spec to register, or `None` to register the one techxt would have built.
-    fn callable_spec(&self, cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<LatexlikeXp>>>;
-}
-
-/// What a [`CallableSpecSource`] may read about the converter being built.
-///
-/// Definitions are compiled once, when the converter is built, so this is where a spec
-/// that depends on the converter's own configuration — rather than only on what the
-/// definition declares — reads that configuration.
-#[non_exhaustive]
-#[derive(Clone)]
-pub struct SpecBuildCx {
-    source_resolver: Option<Arc<dyn SourceResolver<Option<String>>>>,
-    macro_definitions: MacroDefinitions,
-    local_scope: Box<str>,
-    global_scope: Box<str>,
-}
-
-impl SpecBuildCx {
-    /// A context describing a converter with nothing configured.
-    pub fn new() -> SpecBuildCx {
-        SpecBuildCx::default()
-    }
-
-    /// The resolver [`ConverterBuilder::source_resolver`](crate::ConverterBuilder::source_resolver)
-    /// was given, if any.
-    ///
-    /// Its *presence* is what an inclusion spec keys on: techy runs the resolver from
-    /// the parsing driver, so a spec needs the handle itself only if it resolves
-    /// something of its own.
-    pub fn source_resolver(&self) -> Option<&Arc<dyn SourceResolver<Option<String>>>> {
-        self.source_resolver.as_ref()
-    }
-
-    /// Whether this converter honours the macro-defining commands
-    /// ([`ConverterBuilder::macro_definitions`](crate::ConverterBuilder::macro_definitions)).
-    ///
-    /// It is what [`defs::preamble`](crate::defs::preamble)'s definer entries key on:
-    /// under [`Honored`](MacroDefinitions::Honored) each hands over the techy-xp definer
-    /// spec that actually makes the definition, and under
-    /// [`Declared`](MacroDefinitions::Declared) each declines, so the entry registers the
-    /// argument-consuming declaration it was written with instead.
-    pub fn macro_definitions(&self) -> MacroDefinitions {
-        self.macro_definitions
-    }
-
-    /// The name of the **local** definition scope this converter seeded — what a definer
-    /// spec must be built to write into.
-    ///
-    /// It is the driver's own
-    /// ([`XpDriver::local_scope_name`](techy_xp::lang::XpDriver::local_scope_name)),
-    /// read off the very driver the converter will parse with, so a spec built from it
-    /// cannot target a scope the seed does not hold. Writing into a scope the seed lacks
-    /// is not an error anywhere: techy creates it *innermost*, which silently inverts
-    /// techy-xp's ordering invariant.
-    pub fn local_scope_name(&self) -> &str {
-        &self.local_scope
-    }
-
-    /// The name of the **global** definition scope — `\gdef`'s target. See
-    /// [`local_scope_name`](Self::local_scope_name).
-    pub fn global_scope_name(&self) -> &str {
-        &self.global_scope
-    }
-
-    /// The context for a converter built this way.
-    pub(crate) fn for_converter(
-        source_resolver: Option<Arc<dyn SourceResolver<Option<String>>>>,
-        macro_definitions: MacroDefinitions,
-        local_scope: &str,
-        global_scope: &str,
-    ) -> SpecBuildCx {
-        SpecBuildCx {
-            source_resolver,
-            macro_definitions,
-            local_scope: local_scope.into(),
-            global_scope: global_scope.into(),
-        }
-    }
-}
-
-/// The two scope names default to techy-xp's own, which is what an
-/// [`XpDriver`](techy_xp::lang::XpDriver) nobody reconfigured answers — so a context
-/// built by hand agrees with the shipped converter.
-impl Default for SpecBuildCx {
-    fn default() -> SpecBuildCx {
-        SpecBuildCx {
-            source_resolver: None,
-            macro_definitions: MacroDefinitions::default(),
-            local_scope: DEFAULT_LOCAL_SCOPE_NAME.into(),
-            global_scope: DEFAULT_GLOBAL_SCOPE_NAME.into(),
-        }
-    }
-}
-
-// `SourceResolver` is not `Debug` (it is `Send + Sync + Any`), so the handle is
-// reported by presence, exactly as `ConverterBuilder` reports it.
-impl core::fmt::Debug for SpecBuildCx {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("SpecBuildCx")
-            .field("has_source_resolver", &self.source_resolver.is_some())
-            .field("macro_definitions", &self.macro_definitions)
-            .field("local_scope", &self.local_scope)
-            .field("global_scope", &self.global_scope)
-            .finish_non_exhaustive()
-    }
+    fn callable_spec(&self, cx: &SpecBuildCx<'_, L>) -> Option<Arc<dyn CallableSpec<L>>>;
 }
 
 /// A specials definition as techy sees it: its arguments, plus the techxt rule that
@@ -248,20 +156,21 @@ impl core::fmt::Debug for SpecBuildCx {
 /// Specials are keyed by the characters that trigger them rather than by a name, but
 /// they are otherwise ordinary callables and take arguments the same way (`^` and `_`
 /// each take one expression argument).
-#[derive(Debug)]
-pub struct TechxtSpecialsSpec {
-    arguments: Vec<Arc<ArgumentSpec<LatexlikeXp>>>,
+///
+/// Bounded by [`LatexlikeLang`] alone, as [`TechxtMacroSpec`] is and for the same reason.
+pub struct TechxtSpecialsSpec<L: LatexlikeLang = techy_xp::lang::LatexlikeXp> {
+    arguments: Vec<Arc<ArgumentSpec<L>>>,
     rule: Option<TextRule>,
 }
 
-impl TechxtSpecialsSpec {
+impl<L: LatexlikeLang> TechxtSpecialsSpec<L> {
     /// A specials spec with these argument specs and this text rule.
     ///
     /// As for [`TechxtMacroSpec::new`], the rule is optional.
     pub fn new(
-        arguments: Vec<Arc<ArgumentSpec<LatexlikeXp>>>,
+        arguments: Vec<Arc<ArgumentSpec<L>>>,
         rule: impl Into<Option<TextRule>>,
-    ) -> TechxtSpecialsSpec {
+    ) -> TechxtSpecialsSpec<L> {
         TechxtSpecialsSpec {
             arguments,
             rule: rule.into(),
@@ -274,10 +183,19 @@ impl TechxtSpecialsSpec {
     }
 }
 
-impl SerializableObject<LatexlikeXp> for TechxtSpecialsSpec {}
+impl<L: LatexlikeLang> core::fmt::Debug for TechxtSpecialsSpec<L> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TechxtSpecialsSpec")
+            .field("arguments", &self.arguments)
+            .field("rule", &self.rule)
+            .finish()
+    }
+}
 
-impl CallableSpec<LatexlikeXp> for TechxtSpecialsSpec {
-    fn arguments(&self) -> &[Arc<ArgumentSpec<LatexlikeXp>>] {
+impl<L: LatexlikeLang> SerializableObject<L> for TechxtSpecialsSpec<L> {}
+
+impl<L: LatexlikeLang> CallableSpec<L> for TechxtSpecialsSpec<L> {
+    fn arguments(&self) -> &[Arc<ArgumentSpec<L>>] {
         &self.arguments
     }
 }
@@ -320,13 +238,26 @@ pub enum EnvBodyKind {
 /// custom behaviour from the render-side downcast, silently costing the environment its
 /// rule. The body's state delta is implemented in
 /// [`body_state_delta`](EnvironmentBehavior::body_state_delta) here instead.
-#[derive(Debug)]
-pub struct TechxtEnvironmentBehavior {
-    arguments: Vec<Arc<ArgumentSpec<LatexlikeXp>>>,
+///
+/// Bounded by [`LatexlikeLang`] alone, as [`TechxtMacroSpec`] is and for the same reason.
+pub struct TechxtEnvironmentBehavior<L: LatexlikeLang = techy_xp::lang::LatexlikeXp> {
+    arguments: Vec<Arc<ArgumentSpec<L>>>,
     body: EnvBodyKind,
-    body_behavior: BodyBehavior,
-    body_provider: Option<Arc<dyn SpecsProvider<LatexlikeXp>>>,
+    body_behavior: BodyBehavior<L>,
+    body_provider: Option<Arc<dyn SpecsProvider<L>>>,
     rule: Option<TextRule>,
+}
+
+impl<L: LatexlikeLang> core::fmt::Debug for TechxtEnvironmentBehavior<L> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TechxtEnvironmentBehavior")
+            .field("arguments", &self.arguments)
+            .field("body", &self.body)
+            .field("body_behavior", &self.body_behavior)
+            .field("body_provider", &self.body_provider)
+            .field("rule", &self.rule)
+            .finish()
+    }
 }
 
 /// Which body parser an environment uses.
@@ -334,28 +265,36 @@ pub struct TechxtEnvironmentBehavior {
 /// [`EnvironmentBehavior::make_body_parser`]'s default builds techy's standard body
 /// parser, and that default is only reachable *through the trait* — hence a unit
 /// implementor to call it on, rather than a `None` branch that has nothing to call.
-#[derive(Debug)]
-enum BodyBehavior {
+enum BodyBehavior<L: LatexlikeLang> {
     Standard(StandardBody),
-    Verbatim(VerbatimBehavior<LatexlikeXp>),
+    Verbatim(VerbatimBehavior<L>),
+}
+
+impl<L: LatexlikeLang> core::fmt::Debug for BodyBehavior<L> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            BodyBehavior::Standard(standard) => f.debug_tuple("Standard").field(standard).finish(),
+            BodyBehavior::Verbatim(verbatim) => f.debug_tuple("Verbatim").field(verbatim).finish(),
+        }
+    }
 }
 
 /// A behaviour that overrides nothing, kept solely to reach the default body parser.
 #[derive(Debug)]
 struct StandardBody;
 
-impl EnvironmentBehavior<LatexlikeXp> for StandardBody {}
+impl<L: LatexlikeLang> EnvironmentBehavior<L> for StandardBody {}
 
-impl TechxtEnvironmentBehavior {
+impl<L: LatexlikeLang> TechxtEnvironmentBehavior<L> {
     /// An environment behaviour with these argument specs, body kind and text rule.
     ///
     /// As for [`TechxtMacroSpec::new`], the rule is optional: an environment may
     /// declare only how it parses.
     pub fn new(
-        arguments: Vec<Arc<ArgumentSpec<LatexlikeXp>>>,
+        arguments: Vec<Arc<ArgumentSpec<L>>>,
         body: EnvBodyKind,
         rule: impl Into<Option<TextRule>>,
-    ) -> TechxtEnvironmentBehavior {
+    ) -> TechxtEnvironmentBehavior<L> {
         let body_behavior = match body {
             // The verbatim body parser needs the argument specs too: it is the
             // behaviour's own `arguments()` that the composition parses, and the
@@ -382,8 +321,8 @@ impl TechxtEnvironmentBehavior {
     /// when the body ends.
     pub fn with_body_provider(
         mut self,
-        provider: Arc<dyn SpecsProvider<LatexlikeXp>>,
-    ) -> TechxtEnvironmentBehavior {
+        provider: Arc<dyn SpecsProvider<L>>,
+    ) -> TechxtEnvironmentBehavior<L> {
         self.body_provider = Some(provider);
         self
     }
@@ -405,7 +344,7 @@ impl TechxtEnvironmentBehavior {
     /// this object again then fails, silently costing the environment its rule. The
     /// body's state delta belongs in [`body_state_delta`](EnvironmentBehavior::body_state_delta)
     /// here instead.
-    pub fn into_spec(self) -> EnvironmentSpec<LatexlikeXp> {
+    pub fn into_spec(self) -> EnvironmentSpec<L> {
         EnvironmentSpec::from_behavior(Arc::new(self))
     }
 
@@ -414,35 +353,35 @@ impl TechxtEnvironmentBehavior {
     /// This is step 2 of the dispatch chain for environments: `spec` → the concrete
     /// [`EnvironmentSpec`] → its behaviour → this type.
     ///
-    /// Generic over the tree's language but downcasting to techxt's own concrete spec
-    /// type, which is the whole design: on a foreign tree — a plain-techy
-    /// [`Latexlike`](techy::latexlike::Latexlike) parse, say — the downcast simply
-    /// misses, and the environment's rule is found one step later, in the name fallback
-    /// table. The bound is [`LatexlikeLang`] rather than
+    /// The downcast is at the **tree's** language, so a behaviour registered by any
+    /// techxt converter is found again whatever language that converter parsed with;
+    /// on a node whose spec is not techxt's — a foreign definition, a plain-techy
+    /// default — it simply misses, and the environment's rule is found one step later,
+    /// in the name fallback table. The bound is [`LatexlikeLang`] rather than
     /// [`RenderLang`](crate::render::RenderLang): asking a node for its spec needs
     /// nothing of the tree's slots or of how its sources are tagged.
-    pub fn of<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> Option<&TechxtEnvironmentBehavior> {
+    pub fn of(node: NodeRef<'_, L>) -> Option<&TechxtEnvironmentBehavior<L>> {
         let spec = node.spec()?;
-        let environment = (&**spec as &dyn Any).downcast_ref::<EnvironmentSpec<LatexlikeXp>>()?;
-        (environment.behavior() as &dyn Any).downcast_ref::<TechxtEnvironmentBehavior>()
+        let environment = (&**spec as &dyn Any).downcast_ref::<EnvironmentSpec<L>>()?;
+        (environment.behavior() as &dyn Any).downcast_ref::<TechxtEnvironmentBehavior<L>>()
     }
 }
 
-impl EnvironmentBehavior<LatexlikeXp> for TechxtEnvironmentBehavior {
-    fn arguments(&self) -> &[Arc<ArgumentSpec<LatexlikeXp>>] {
+impl<L: LatexlikeLang> EnvironmentBehavior<L> for TechxtEnvironmentBehavior<L> {
+    fn arguments(&self) -> &[Arc<ArgumentSpec<L>>] {
         &self.arguments
     }
 
     fn body_state_delta(
         &self,
-        _invocation: EnvironmentInvocation<'_, LatexlikeXp>,
-    ) -> Result<Option<ParsingStateDelta<LatexlikeXp>>, ParseError<Option<String>>> {
+        _invocation: EnvironmentInvocation<'_, L>,
+    ) -> Result<Option<ParsingStateDelta<L>>, ParseError<L::SourceOrigin>> {
         let mut delta = ParsingStateDelta::new();
         let mut anything = false;
         if self.body == EnvBodyKind::Math {
             // Entering math is a mode change; *leaving* it is an event, never
             // `.mode(Mode::Text)` — see `techxt::render`'s notes on `\text{…}`.
-            delta = delta.mode(Mode::Math);
+            delta = delta.mode(L::ModeId::math_mode());
             anything = true;
         }
         if let Some(provider) = &self.body_provider {
@@ -454,10 +393,12 @@ impl EnvironmentBehavior<LatexlikeXp> for TechxtEnvironmentBehavior {
 
     fn make_body_parser<'p>(
         &'p self,
-        invocation: EnvironmentInvocation<'p, LatexlikeXp>,
-    ) -> Box<dyn ConstructParser<LatexlikeXp, Output = EnvironmentBody<LatexlikeXp>> + 'p> {
+        invocation: EnvironmentInvocation<'p, L>,
+    ) -> Box<dyn ConstructParser<L, Output = EnvironmentBody<L>> + 'p> {
         match &self.body_behavior {
-            BodyBehavior::Standard(standard) => standard.make_body_parser(invocation),
+            BodyBehavior::Standard(standard) => {
+                EnvironmentBehavior::<L>::make_body_parser(standard, invocation)
+            }
             BodyBehavior::Verbatim(verbatim) => verbatim.make_body_parser(invocation),
         }
     }
@@ -473,19 +414,25 @@ impl EnvironmentBehavior<LatexlikeXp> for TechxtEnvironmentBehavior {
 /// time, under a name that says less than the first report did — see
 /// [`rules::unknown`](crate::render). What it *renders* as is unchanged: the policy still
 /// decides that.
+///
+/// The downcast is at the tree's own language, as every render-side downcast is.
 pub(crate) fn is_refusal<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> bool {
-    node.spec()
-        .is_some_and(|spec| (&**spec as &dyn Any).is::<RefusalSpec<LatexlikeXp>>())
+    node.spec().is_some_and(|spec| {
+        (&**spec as &dyn Any).is::<techy_xp::presets::RefusalSpec<LLL>>()
+    })
 }
 
 /// The techxt rule embedded in a callable node's spec, if it has one (dispatch step 2).
+///
+/// Every downcast is at the **tree's** language `LLL`: a techxt spec registered by a
+/// converter built for that language is found, whichever converter now renders it.
 pub(crate) fn embedded_rule<LLL: LatexlikeLang>(node: NodeRef<'_, LLL>) -> Option<&TextRule> {
     let spec = node.spec()?;
     let object = &**spec as &dyn Any;
-    if let Some(macro_spec) = object.downcast_ref::<TechxtMacroSpec>() {
+    if let Some(macro_spec) = object.downcast_ref::<TechxtMacroSpec<LLL>>() {
         return macro_spec.rule.as_ref();
     }
-    if let Some(specials_spec) = object.downcast_ref::<TechxtSpecialsSpec>() {
+    if let Some(specials_spec) = object.downcast_ref::<TechxtSpecialsSpec<LLL>>() {
         return specials_spec.rule.as_ref();
     }
     TechxtEnvironmentBehavior::of(node).and_then(TechxtEnvironmentBehavior::rule)

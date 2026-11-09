@@ -863,3 +863,42 @@ entry.
   (both the clippy and the test half).
 - **G2 floor: 953 passed, 0 failed** (42 `test result:` lines across unit, integration
   and doc tests).
+
+### 2026-11-09 — Phase 1 (the generic parse side, behaviour-neutral)
+
+- Commit: see the next entry's "previous commit" or `git log` (the commit holding this
+  entry is the Phase 1 commit).
+- Gates (run by the supervisor): G1 pass, G2 pass (**953 passed, 0 failed**, = floor),
+  G3 pass, G4 pass, G5 pass, G6 pass (clippy and 61 tests). No `Cargo.lock` changed.
+- Reviewer verdict: no Critical/Major code defect; behaviour-neutral under default
+  features (provider stack order, `Declared` registration, scope names off the driver,
+  render-side bounds, hand-written `Clone`/`Debug`, docs all verified).
+- **Deviations:**
+  1. *Type annotations in tests, doctests and one example beyond the §8 Phase 1 exit
+     criterion.* §5.4 makes `defs::standard()`, `category()`, `DefinitionSet::new()` and
+     `Category::new()` generic, and a default type parameter never drives inference of a
+     function's type parameter (§6 trap 3), so every binding whose value never reaches a
+     typed place needs `: DefinitionSet` / `: Category`. No expectation changed. Sites:
+     `tests/def_build.rs:73`; `tests/def_symbols.rs:27,47,313,378,415`; `#[cfg(test)]` in
+     `src/defs/mod.rs` (two tests; one binding split out of a method chain) and
+     `src/defs/symbols_extra.rs:221`; doctests in `src/def/mod.rs`, `src/def/symbols.rs`,
+     `src/def/entry.rs`, `src/def/set.rs`.
+  2. *A second web-side change beyond §5.10:* `web/crate/examples/symbol_index.rs:24,27`
+     is the identical `defs::standard()` → `.symbols()` pattern, missed by the plan's
+     survey; it received the same one-line annotation plus the `DefinitionSet` import.
+     Allowed by the supervisor as the same pattern, not a new kind of change.
+  3. `MacroDefinitions` and the xp-conveniences impl blocks live in `convert.rs`, not in
+     the xp module (Phase 1 scope item 5 permits this; Phase 3 gates them in place).
+  4. `SpecBuildCx::with_source_resolver` is crate-private; only the driver+settings
+     constructor is public, as §5.3 asks. Open question for the maintainer: a hand-built
+     context cannot carry a resolver.
+- **API notes for the release notes:** `TechxtEnvironmentBehavior::of` is now
+  `of(NodeRef<'_, L>)` on `impl<L>` instead of a method-level `of<LLL>` (a turbofish
+  caller must change; plain calls infer); `ConverterBuilder`'s `Debug` output shows one
+  `language_settings` field in place of the three xp fields.
+- **Declined / deferred findings:** rustfmt-shape nits (three `arg_specs` signatures in
+  `def/entry.rs` now fit one line; `is_refusal`'s closure shape) are fixed in the Phase 2
+  commit rather than a Phase 1 fix round; stale prose (`Converter::language()` "Send +
+  Sync", `lib.rs` "exactly one language") is Phase 4 scope. `def/rule.rs:36-40`
+  `CallableKind::from_callable_type(CallableType)` keeps naming techy's concrete type: it
+  is pre-existing public API that nothing in the crate calls, left as is.

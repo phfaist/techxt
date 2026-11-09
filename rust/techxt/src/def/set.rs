@@ -14,16 +14,13 @@ use alloc::vec::Vec;
 
 use techy::core::specs::{CallableSpec, FallbackProvider, Package, ScopeOp, SpecsProvider};
 use techy::core::{FinalizeError, ParsingState, ParsingStateDelta};
-use techy::latexlike::{builtin_package, CallableType, MacroSpec};
-use techy_xp::lang::{LatexlikeXp, XpDriver};
-use techy_xp::presets::refusals_package;
+use techy::latexlike::{builtin_package, LatexlikeCallableType, MacroSpec};
 
 use crate::convert::BuildError;
 
 use super::entry::{EnvDef, MacroDef, SpecialsDef};
-use super::spec::{
-    EnvBodyKind, SpecBuildCx, TechxtEnvironmentBehavior, TechxtMacroSpec, TechxtSpecialsSpec,
-};
+use super::lang::{ParseLang, ScopeFrame, SpecBuildCx};
+use super::spec::{EnvBodyKind, TechxtEnvironmentBehavior, TechxtMacroSpec, TechxtSpecialsSpec};
 use super::symbols::SymbolIndex;
 use super::template::TemplateScope;
 use super::{CallableKind, TextRule};
@@ -44,17 +41,43 @@ const ITEM_MACRO: &str = "item";
 /// three of them knows exactly those three. A category's name is how it identifies
 /// itself to techy — it appears in parse diagnostics as the provider a definition came
 /// from — and two categories in one set may not share it.
-#[derive(Clone, Debug)]
-pub struct Category {
+///
+/// Like its entries, a category is built at the [`ParseLang`] its converter parses
+/// with; the parameter is inferred from what the category reaches.
+pub struct Category<L: ParseLang = techy_xp::lang::LatexlikeXp> {
     name: Box<str>,
-    macros: Vec<MacroDef>,
-    environments: Vec<EnvDef>,
-    specials: Vec<SpecialsDef>,
+    macros: Vec<MacroDef<L>>,
+    environments: Vec<EnvDef<L>>,
+    specials: Vec<SpecialsDef<L>>,
 }
 
-impl Category {
+// Hand-written rather than derived: a derive would demand `L: Clone` / `L: Debug` of a
+// language that is only a marker type.
+impl<L: ParseLang> Clone for Category<L> {
+    fn clone(&self) -> Category<L> {
+        Category {
+            name: self.name.clone(),
+            macros: self.macros.clone(),
+            environments: self.environments.clone(),
+            specials: self.specials.clone(),
+        }
+    }
+}
+
+impl<L: ParseLang> core::fmt::Debug for Category<L> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Category")
+            .field("name", &self.name)
+            .field("macros", &self.macros)
+            .field("environments", &self.environments)
+            .field("specials", &self.specials)
+            .finish()
+    }
+}
+
+impl<L: ParseLang> Category<L> {
     /// An empty category called `name`.
-    pub fn new(name: impl Into<Box<str>>) -> Category {
+    pub fn new(name: impl Into<Box<str>>) -> Category<L> {
         Category {
             name: name.into(),
             macros: Vec::new(),
@@ -64,34 +87,34 @@ impl Category {
     }
 
     /// Add a macro definition.
-    pub fn add_macro(&mut self, definition: MacroDef) {
+    pub fn add_macro(&mut self, definition: MacroDef<L>) {
         self.macros.push(definition);
     }
 
     /// Add an environment definition.
-    pub fn add_env(&mut self, definition: EnvDef) {
+    pub fn add_env(&mut self, definition: EnvDef<L>) {
         self.environments.push(definition);
     }
 
     /// Add a specials definition.
-    pub fn add_specials(&mut self, definition: SpecialsDef) {
+    pub fn add_specials(&mut self, definition: SpecialsDef<L>) {
         self.specials.push(definition);
     }
 
     /// Add a macro definition, for chaining.
-    pub fn with_macro(mut self, definition: MacroDef) -> Category {
+    pub fn with_macro(mut self, definition: MacroDef<L>) -> Category<L> {
         self.add_macro(definition);
         self
     }
 
     /// Add an environment definition, for chaining.
-    pub fn with_env(mut self, definition: EnvDef) -> Category {
+    pub fn with_env(mut self, definition: EnvDef<L>) -> Category<L> {
         self.add_env(definition);
         self
     }
 
     /// Add a specials definition, for chaining.
-    pub fn with_specials(mut self, definition: SpecialsDef) -> Category {
+    pub fn with_specials(mut self, definition: SpecialsDef<L>) -> Category<L> {
         self.add_specials(definition);
         self
     }
@@ -108,17 +131,17 @@ impl Category {
     /// name, the later one is the one that resolves. Reading a whole set back is what
     /// [`DefinitionSet::symbols`] is for; these three accessors are the raw material it
     /// is built from, and are what a caller interested in one category reaches for.
-    pub fn macros(&self) -> impl Iterator<Item = &MacroDef> {
+    pub fn macros(&self) -> impl Iterator<Item = &MacroDef<L>> {
         self.macros.iter()
     }
 
     /// The environment definitions, in declaration order.
-    pub fn environments(&self) -> impl Iterator<Item = &EnvDef> {
+    pub fn environments(&self) -> impl Iterator<Item = &EnvDef<L>> {
         self.environments.iter()
     }
 
     /// The specials definitions, in declaration order.
-    pub fn specials(&self) -> impl Iterator<Item = &SpecialsDef> {
+    pub fn specials(&self) -> impl Iterator<Item = &SpecialsDef<L>> {
         self.specials.iter()
     }
 }
@@ -150,14 +173,37 @@ impl Category {
 /// assert_eq!(converter.latex_to_text(r"\ldots")?.text, "…\n");
 /// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
-#[derive(Clone, Debug, Default)]
-pub struct DefinitionSet {
-    categories: Vec<Category>,
+pub struct DefinitionSet<L: ParseLang = techy_xp::lang::LatexlikeXp> {
+    categories: Vec<Category<L>>,
 }
 
-impl DefinitionSet {
+impl<L: ParseLang> Clone for DefinitionSet<L> {
+    fn clone(&self) -> DefinitionSet<L> {
+        DefinitionSet {
+            categories: self.categories.clone(),
+        }
+    }
+}
+
+impl<L: ParseLang> Default for DefinitionSet<L> {
+    fn default() -> DefinitionSet<L> {
+        DefinitionSet {
+            categories: Vec::new(),
+        }
+    }
+}
+
+impl<L: ParseLang> core::fmt::Debug for DefinitionSet<L> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DefinitionSet")
+            .field("categories", &self.categories)
+            .finish()
+    }
+}
+
+impl<L: ParseLang> DefinitionSet<L> {
     /// An empty set, knowing nothing at all.
-    pub fn new() -> DefinitionSet {
+    pub fn new() -> DefinitionSet<L> {
         DefinitionSet::default()
     }
 
@@ -165,18 +211,18 @@ impl DefinitionSet {
     ///
     /// Order is meaning: this category's definitions shadow the definitions of every
     /// category pushed before it (see the [type documentation](Self)).
-    pub fn push(&mut self, category: Category) {
+    pub fn push(&mut self, category: Category<L>) {
         self.categories.push(category);
     }
 
     /// Add a category, for chaining.
-    pub fn with(mut self, category: Category) -> DefinitionSet {
+    pub fn with(mut self, category: Category<L>) -> DefinitionSet<L> {
         self.push(category);
         self
     }
 
     /// The categories, outermost (first pushed) first.
-    pub fn categories(&self) -> impl Iterator<Item = &Category> {
+    pub fn categories(&self) -> impl Iterator<Item = &Category<L>> {
         self.categories.iter()
     }
 
@@ -190,7 +236,7 @@ impl DefinitionSet {
     /// ```
     /// use techxt::def::{CallableKind, Category, DefinitionSet, MacroDef};
     ///
-    /// let mut definitions = DefinitionSet::new();
+    /// let mut definitions: DefinitionSet = DefinitionSet::new();
     /// definitions.push(Category::new("generated").with_macro(MacroDef::symbol("ldots", "...")));
     /// definitions.push(Category::new("curated").with_macro(MacroDef::symbol("ldots", "…")));
     ///
@@ -216,7 +262,7 @@ impl DefinitionSet {
     /// read back out of them: `cx` is what an entry's own
     /// [`CallableSpecSource`](super::CallableSpecSource) may consult,
     /// `unknown_macro_fallback` says whether the catch-all provider is registered, and
-    /// `frame` carries the providers techy-xp contributes around the categories. The set
+    /// `frame` carries the providers the language contributes around the categories. The set
     /// deliberately does not look at the recovery mode itself — the builder has already
     /// resolved that question.
     ///
@@ -226,21 +272,21 @@ impl DefinitionSet {
     /// |---|---|---|
     /// | outermost | `techxt-unknown` (optional) | shadowed by everything, so it answers only for a name nothing else claims |
     /// | | techy's `builtin` | `\begin`/`\end`, above the catch-all or no environment would parse |
-    /// | | [`frame.shipped`](ScopeFrame) — techy-xp's refusals | below every category, so a name techxt declares itself wins over the refusal |
+    /// | | [`frame.below`](ScopeFrame) — techy-xp's refusals, when honoured | below every category, so a name techxt declares itself wins over the refusal |
     /// | | one package per [`Category`], in push order | later categories shadow earlier ones |
     /// | | the **global** definition scope | above every package: `\gdef\frac` must shadow a package's `\frac` |
     /// | innermost | the **local** definition scope | above the global one, so a later `\def` shadows an earlier `\gdef` |
     ///
-    /// The last two are [`frame.definition_scopes`](ScopeFrame), and their order is not
-    /// a detail: techy-xp's own seed states the invariant, and a stack that breaks it
+    /// The last two are [`frame.above`](ScopeFrame) for techy-xp's language, and their order
+    /// is not a detail: techy-xp's own seed states the invariant, and a stack that breaks it
     /// parses without complaint and answers wrongly. `the_provider_stack_is_ordered_as_techy_xp_requires`
     /// in `tests/defs_macros.rs` pins the whole shape.
     pub(crate) fn build(
         &self,
-        cx: &SpecBuildCx,
+        cx: &SpecBuildCx<'_, L>,
         unknown_macro_fallback: bool,
-        frame: &ScopeFrame,
-    ) -> Result<BuiltDefinitions, BuildError> {
+        frame: &ScopeFrame<L>,
+    ) -> Result<BuiltDefinitions<L>, BuildError> {
         self.check_category_names()?;
 
         // The `\item` package is built first because every list environment's body
@@ -248,9 +294,8 @@ impl DefinitionSet {
         let item = self.item_provider(cx)?;
 
         let mut fallback = RuleTable::new();
-        let mut providers: Vec<Arc<dyn SpecsProvider<LatexlikeXp>>> = Vec::with_capacity(
-            self.categories.len() + 2 + frame.shipped.len() + frame.definition_scopes.len(),
-        );
+        let mut providers: Vec<Arc<dyn SpecsProvider<L>>> =
+            Vec::with_capacity(self.categories.len() + 2 + frame.below.len() + frame.above.len());
 
         // Outermost: the catch-all that gives an unresolvable command a spec, so that
         // it reaches the renderer as a callable node and techxt's unknown-macro policy
@@ -259,17 +304,17 @@ impl DefinitionSet {
         // is registered at all is the converter's call: without it an unclaimed command
         // is techy's own unresolvable-command error.
         if unknown_macro_fallback {
-            providers.push(Arc::new(unknown_command_provider()));
+            providers.push(Arc::new(unknown_command_provider::<L>()));
         }
         // Then techy's own `\begin`/`\end`. The whole-stack replacement discards the
         // seed's copy of them, and they have to sit *above* the catch-all: below it,
         // the catch-all would answer for `\begin` and no environment would parse.
-        providers.push(builtin_package());
-        // techy-xp's shipped packages, in the place techy-xp's own seed gives them:
-        // below every host provider, so a name techxt declares wins over a refusal of
-        // the same name (`\setcounter` is declared here and dropped silently, which is
-        // the answer techxt wants for it).
-        providers.extend(frame.shipped.iter().map(Arc::clone));
+        providers.push(builtin_package::<L>());
+        // The language's providers below the categories — techy-xp's shipped packages,
+        // in the place techy-xp's own seed gives them: below every host provider, so a
+        // name techxt declares wins over a refusal of the same name (`\setcounter` is
+        // declared here and dropped silently, which is the answer techxt wants for it).
+        providers.extend(frame.below.iter().map(Arc::clone));
 
         for category in &self.categories {
             providers.push(Arc::new(self.build_category(
@@ -280,13 +325,14 @@ impl DefinitionSet {
             )?));
         }
 
-        // Innermost, after every package: the two definition scopes, in techy-xp's push
-        // order. See the type documentation for what a stack that omits or reorders them
-        // does instead of failing.
-        providers.extend(frame.definition_scopes.iter().map(Arc::clone));
+        // Innermost, after every package: the language's providers above the categories
+        // — techy-xp's two definition scopes, in its push order. See the type
+        // documentation for what a stack that omits or reorders them does instead of
+        // failing.
+        providers.extend(frame.above.iter().map(Arc::clone));
 
         let delta = ParsingStateDelta::new().scope_op(ScopeOp::ReplaceStack(providers));
-        let state = ParsingState::<LatexlikeXp>::lang_initial()?
+        let state = ParsingState::<L>::lang_initial()?
             .derived(&delta)
             // A scope-op failure here is a techxt bug, not a caller's mistake — the op
             // is a whole-stack replacement, which targets no name and cannot miss — but
@@ -324,8 +370,8 @@ impl DefinitionSet {
     /// its own, and a top-level definition (or the unknown-macro policy) applies.
     fn item_provider(
         &self,
-        cx: &SpecBuildCx,
-    ) -> Result<Option<Arc<dyn SpecsProvider<LatexlikeXp>>>, BuildError> {
+        cx: &SpecBuildCx<'_, L>,
+    ) -> Result<Option<Arc<dyn SpecsProvider<L>>>, BuildError> {
         let Some(definition) = self.categories.iter().rev().find_map(|category| {
             category
                 .macros
@@ -335,9 +381,9 @@ impl DefinitionSet {
         }) else {
             return Ok(None);
         };
-        let mut package = Package::<LatexlikeXp>::new(ITEM_PACKAGE);
+        let mut package = Package::<L>::new(ITEM_PACKAGE);
         package.insert_in_modes(
-            CallableType::Macro,
+            L::CallableTypeId::macro_callable(),
             ITEM_MACRO,
             macro_spec(definition, cx)?,
             definition.modes(),
@@ -349,12 +395,12 @@ impl DefinitionSet {
     /// goes.
     fn build_category(
         &self,
-        category: &Category,
-        item: Option<&Arc<dyn SpecsProvider<LatexlikeXp>>>,
+        category: &Category<L>,
+        item: Option<&Arc<dyn SpecsProvider<L>>>,
         fallback: &mut RuleTable,
-        cx: &SpecBuildCx,
-    ) -> Result<Package<LatexlikeXp>, BuildError> {
-        let mut package = Package::<LatexlikeXp>::new(category.name.clone());
+        cx: &SpecBuildCx<'_, L>,
+    ) -> Result<Package<L>, BuildError> {
+        let mut package = Package::<L>::new(category.name.clone());
 
         for definition in &category.macros {
             let spec = macro_spec(definition, cx)?;
@@ -362,7 +408,7 @@ impl DefinitionSet {
                 fallback.insert(CallableKind::Macro, definition.name(), rule.clone());
             }
             package.insert_in_modes(
-                CallableType::Macro,
+                L::CallableTypeId::macro_callable(),
                 definition.name(),
                 spec,
                 definition.modes(),
@@ -386,7 +432,7 @@ impl DefinitionSet {
                 fallback.insert(CallableKind::Environment, definition.name(), rule);
             }
             package.insert(
-                CallableType::Environment,
+                L::CallableTypeId::environment_callable(),
                 definition.name(),
                 behavior.into_spec(),
             );
@@ -404,7 +450,7 @@ impl DefinitionSet {
                 fallback.insert(CallableKind::Specials, definition.trigger(), rule);
             }
             package.insert_specials_in_modes(
-                CallableType::Specials,
+                L::CallableTypeId::specials_callable(),
                 definition.trigger(),
                 TechxtSpecialsSpec::new(arguments, rule),
                 definition.modes(),
@@ -423,10 +469,10 @@ impl DefinitionSet {
 /// built from the same entry either way. The declarations are validated in both cases:
 /// a template that names an argument the entry does not declare is a build error
 /// whoever ends up parsing the invocation.
-fn macro_spec(
-    definition: &MacroDef,
-    cx: &SpecBuildCx,
-) -> Result<Arc<dyn CallableSpec<LatexlikeXp>>, BuildError> {
+fn macro_spec<L: ParseLang>(
+    definition: &MacroDef<L>,
+    cx: &SpecBuildCx<'_, L>,
+) -> Result<Arc<dyn CallableSpec<L>>, BuildError> {
     let arguments = definition.arg_specs()?;
     let rule = validated_rule(
         definition.name(),
@@ -439,7 +485,7 @@ fn macro_spec(
             return Ok(spec);
         }
     }
-    Ok(Arc::new(TechxtMacroSpec::new(arguments, rule)))
+    Ok(Arc::new(TechxtMacroSpec::<L>::new(arguments, rule)))
 }
 
 /// Check a rule's template against the entry it belongs to, and hand the rule back.
@@ -475,57 +521,19 @@ fn validated_rule(
 /// [`Options::unknown_macro`](crate::Options::unknown_macro): the generic spec takes no
 /// arguments, so `\foo{x}` is an unknown macro followed by an ordinary group, and `x`
 /// survives under every policy.
-fn unknown_command_provider() -> FallbackProvider<LatexlikeXp> {
-    let mut provider = FallbackProvider::<LatexlikeXp>::new(UNKNOWN_PACKAGE);
+fn unknown_command_provider<L: ParseLang>() -> FallbackProvider<L> {
+    let mut provider = FallbackProvider::<L>::new(UNKNOWN_PACKAGE);
     // One shared singleton for every unknown name: specs are de-keyed, so an unknown
     // macro costs no allocation of its own.
-    let spec: Arc<dyn CallableSpec<LatexlikeXp>> = Arc::new(MacroSpec::new(Vec::new()));
-    provider.set(CallableType::Macro, spec);
+    let spec: Arc<dyn CallableSpec<L>> = Arc::new(MacroSpec::<L>::new(Vec::new()));
+    provider.set(L::CallableTypeId::macro_callable(), spec);
     provider
 }
 
-/// The providers techy-xp contributes around techxt's own categories.
-///
-/// Both halves come off the very [`XpDriver`] the converter will parse with, which is
-/// the point of passing a driver rather than two strings: the definer specs write into
-/// scopes **by name**, the driver's leak hook keys `\gdef`'s escape on the global one's
-/// name, and a seed that names them differently is not an error anywhere — techy creates
-/// a missing scope *innermost*, which inverts the ordering silently. Reading both off one
-/// object is what makes them agree by construction.
-pub(crate) struct ScopeFrame {
-    /// Pushed below every category: techy-xp's refusals package.
-    pub(crate) shipped: Vec<Arc<dyn SpecsProvider<LatexlikeXp>>>,
-    /// Pushed innermost, after every package: the global and the local definition scope,
-    /// in that order.
-    pub(crate) definition_scopes: Vec<Arc<dyn SpecsProvider<LatexlikeXp>>>,
-}
-
-impl ScopeFrame {
-    /// The frame for a converter that honours the macro-defining commands: the two
-    /// definition scopes the definers write into, and the refusals package that turns
-    /// techy-xp's non-goals into diagnosed commands rather than unknown ones.
-    pub(crate) fn honored(driver: &XpDriver<LatexlikeXp>) -> ScopeFrame {
-        ScopeFrame {
-            shipped: alloc::vec![refusals_package::<LatexlikeXp>()],
-            definition_scopes: driver.definition_scope_providers().to_vec(),
-        }
-    }
-
-    /// The frame for a converter that only *declares* them: nothing at all, which is the
-    /// stack techxt built before the definers were wired
-    /// ([`MacroDefinitions::Declared`](crate::convert::MacroDefinitions::Declared)).
-    pub(crate) fn declared() -> ScopeFrame {
-        ScopeFrame {
-            shipped: Vec::new(),
-            definition_scopes: Vec::new(),
-        }
-    }
-}
-
 /// What building a [`DefinitionSet`] produces.
-pub(crate) struct BuiltDefinitions {
+pub(crate) struct BuiltDefinitions<L: ParseLang> {
     /// The parsing state the packages make, ready for `Language::new`.
-    pub(crate) state: ParsingState<LatexlikeXp>,
+    pub(crate) state: ParsingState<L>,
     /// Dispatch step 3: every rule, keyed by kind and name.
     pub(crate) fallback: RuleTable,
 }
