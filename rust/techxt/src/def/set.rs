@@ -244,10 +244,9 @@ impl<L: ParseLang> DefinitionSet<L> {
     /// avoid.
     ///
     /// ```
-    /// use techxt::convert::LatexlikeXp;
     /// use techxt::def::{CallableKind, Category, DefinitionSet, MacroDef};
     ///
-    /// let mut definitions: DefinitionSet<LatexlikeXp> = DefinitionSet::new();
+    /// let mut definitions: DefinitionSet = DefinitionSet::new();
     /// definitions.push(Category::new("generated").with_macro(MacroDef::symbol("ldots", "...")));
     /// definitions.push(Category::new("curated").with_macro(MacroDef::symbol("ldots", "…")));
     ///

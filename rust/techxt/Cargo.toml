@@ -23,8 +23,9 @@ default = ["xp"]
 xp = ["dep:techy-xp"]
 
 # At most three runtime dependencies, all no_std + alloc: techy and unicode-width
-# always, and techy-xp (which brings techy's own map choice, hashbrown, as the one
-# transitive addition) with the `xp` feature.
+# always, and techy-xp with the `xp` feature. techy-xp's own dependencies are techy and
+# techy's map choice, hashbrown, which techy already puts in the tree, so the feature
+# adds no other crate.
 #
 # techy default features are empty (its only feature, `serde`, is opt-in), so nothing
 # has to be turned off here to keep the no_std build honest; the CI `no_std` job

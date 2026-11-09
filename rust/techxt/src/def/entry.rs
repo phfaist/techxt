@@ -155,10 +155,9 @@ type Modes = Option<Vec<Mode>>;
 /// and reads as one line of a table:
 ///
 /// ```
-/// use techxt::convert::LatexlikeXp;
 /// use techxt::def::{Category, EnvDef, MacroDef, Template, TextRule};
 ///
-/// let category: Category<LatexlikeXp> = Category::new("links")
+/// let category: Category = Category::new("links")
 ///     .with_macro(
 ///         MacroDef::new("href")
 ///             // A URL must never swallow a following expression, so it is a group and

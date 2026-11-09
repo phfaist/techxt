@@ -142,11 +142,8 @@ impl<L: LatexlikeLang> CallableSpec<L> for TechxtMacroSpec<L> {
 /// #[derive(Debug)]
 /// struct Bare;
 ///
-/// impl CallableSpecSource<LatexlikeXp> for Bare {
-///     fn callable_spec(
-///         &self,
-///         _cx: &SpecBuildCx<'_, LatexlikeXp>,
-///     ) -> Option<Arc<dyn CallableSpec<LatexlikeXp>>> {
+/// impl CallableSpecSource for Bare {
+///     fn callable_spec(&self, _cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<LatexlikeXp>>> {
 ///         Some(Arc::new(MacroSpec::new(Vec::new())))
 ///     }
 /// }

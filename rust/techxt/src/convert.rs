@@ -1,9 +1,10 @@
 //! The public conversion API: [`Converter`], its builder, and its [`Options`].
 //!
 //! A [`Converter`] holds a parsing language and a set of definitions, and converts as
-//! many documents as you like. It is immutable, `Clone + Send + Sync`, and cheap to
-//! clone (its internals are shared); everything a single conversion accumulates lives in
-//! a per-run renderer, so one converter can serve many threads at once.
+//! many documents as you like. It is immutable, `Clone` for every parse language and
+//! `Send + Sync` for both shipped ones, and cheap to clone (its internals are shared);
+//! everything a single conversion accumulates lives in a per-run renderer, so one
+//! converter can serve many threads at once.
 //!
 //! ```
 //! use techxt::Converter;
@@ -72,7 +73,7 @@ pub use techy::core::node::{NodeId, NodeRef, NodeSlice, NodeTree};
 
 /// The bound [`Converter::tree_to_text`] takes its tree under: any latexlike language
 /// whose sources are origin-tagged and whose body slots are marked, not only the
-/// [`LatexlikeXp`] this converter parses with.
+/// [`ParseLang`] the converter parses with.
 ///
 /// It is auto-implemented — see [`RenderLang`] for what those two facts are, and why
 /// they are the only ones techxt's render side is concrete about.
@@ -91,7 +92,8 @@ pub use techy::latexlike::LatexlikeLang;
 pub use techy::core::specs::{ArgumentSpec, CallableSpec};
 /// See [`ArgumentSpec`].
 pub use techy::latexlike::EnvironmentSpec;
-/// The parsing language every techxt type is concrete over: techy's latexlike preset
+/// techy-xp's parsing language, available with the `xp` feature and then the default
+/// parse language of every techxt type that takes one: techy's latexlike preset
 /// carrying techy-xp's expanding token reader, which is what `\newcommand` and `\def`
 /// are honored through.
 ///
@@ -195,9 +197,11 @@ pub struct Conversion {
 ///
 /// # The parse language
 ///
-/// A converter parses with one [`ParseLang`], `L`, which defaults to techy-xp's
-/// [`LatexlikeXp`]. [`standard`](Self::standard) and [`builder`](Self::builder) are that
-/// language's conveniences; any other language starts from
+/// A converter parses with one [`ParseLang`], `L`. With the `xp` feature (on by
+/// default) `L` defaults to techy-xp's [`LatexlikeXp`], and
+/// [`standard`](Self::standard) and [`builder`](Self::builder) are that language's
+/// conveniences; without it there is no default, and every converter — techy's plain
+/// [`Latexlike`](techy::latexlike::Latexlike) included — starts from
 /// [`ConverterBuilder::with_definitions`]. What it *renders* is independent of `L`:
 /// [`tree_to_text`](Self::tree_to_text) takes the tree of any [`RenderLang`].
 pub struct Converter<#[cfg(feature = "xp")] L = LatexlikeXp, #[cfg(not(feature = "xp"))] L>
@@ -226,7 +230,8 @@ struct Inner<L: ParseLang> {
     descent_guard: StdDescentGuardInit,
 }
 
-/// The conveniences of techy-xp's [`LatexlikeXp`], the default parse language.
+/// The conveniences of techy-xp's [`LatexlikeXp`], the default parse language under
+/// the `xp` feature.
 #[cfg(feature = "xp")]
 impl Converter<LatexlikeXp> {
     /// Start building a converter, from the shipped definitions.
@@ -330,8 +335,10 @@ impl<L: ParseLang> Converter<L> {
 
     /// The parsing language this converter uses.
     ///
-    /// It is `Send + Sync` and reusable; parse with it directly when you want the tree
-    /// as well as the text.
+    /// It is reusable, and `Send + Sync` whenever `L`'s driver and parsing state are —
+    /// which they are for both shipped languages, techy's
+    /// [`Latexlike`](techy::latexlike::Latexlike) and techy-xp's [`LatexlikeXp`]. Parse
+    /// with it directly when you want the tree as well as the text.
     pub fn language(&self) -> &Language<L> {
         &self.inner.language
     }
@@ -569,9 +576,10 @@ impl techy::error::DiagnosticInfo for SuppressedSurplus {
 ///
 /// The builder is generic over the parse language `L`, like the [`Converter`] it builds.
 /// [`with_definitions`](Self::with_definitions) and every setter shared by all languages
-/// live in one impl block; techy-xp's [`LatexlikeXp`], the default, adds the
-/// argument-free [`new`](ConverterBuilder::new), its own three settings and their
-/// defaults in another. Each method name is in exactly one of the two.
+/// live in one impl block. With the `xp` feature, techy-xp's [`LatexlikeXp`] — then the
+/// default `L` — adds the argument-free [`new`](ConverterBuilder::new), its own three
+/// settings and their defaults in another. Each method name is in exactly one of the
+/// two.
 pub struct ConverterBuilder<#[cfg(feature = "xp")] L = LatexlikeXp, #[cfg(not(feature = "xp"))] L>
 where
     L: ParseLang,

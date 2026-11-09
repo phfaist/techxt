@@ -25,10 +25,11 @@
 //!
 //! `\newcommand`, `\renewcommand`, `\providecommand`, `\newenvironment`,
 //! `\renewenvironment`, `\def`, `\gdef`, `\let`, `\edef`, `\xdef`,
-//! `\NewDocumentCommand` and `\DeclareMathOperator` are the `DEFINERS` table, and each
-//! is registered as the definer spec that actually makes the definition. A later use of
-//! the defined macro is expanded by the token reader techy-xp puts under techxt's
-//! parser, so
+//! `\NewDocumentCommand` and `\DeclareMathOperator` are the `DEFINERS` table. Under
+//! techy-xp's [`LatexlikeXp`](crate::convert::LatexlikeXp) — the default parse language
+//! with the `xp` feature — each is registered as the definer spec that actually makes
+//! the definition. A later use of the defined macro is expanded by the token reader
+//! techy-xp puts under techxt's parser, so
 //! `\newcommand\greet[1]{Hello #1!}\greet{world}` converts to `Hello world!` — the
 //! definition itself still renders as nothing, which is what a definer contributes to a
 //! document's text.
@@ -42,6 +43,13 @@
 //! );
 //! # Ok::<(), Box<dyn core::error::Error>>(())
 //! ```
+//!
+//! Whether a definer is honoured is the parse language's decision, not this module's:
+//! each entry asks [`ParseLang::definer_spec`], and where the language declines, the
+//! entry registers the argument shape written beside it (see *A declared definition's
+//! name and body are read as characters* below), which consumes the definition and
+//! defines nothing. techy's plain [`Latexlike`](techy::latexlike::Latexlike) always
+//! declines; `LatexlikeXp` declines when told to (*Turning it off*, below).
 //!
 //! Each definer parses its invocation the way *it* defines, not the way this module's
 //! own table declares: the name form (`{\x}` or `\x`), the parameter declaration
@@ -118,7 +126,8 @@
 //! [`ConverterBuilder::macro_definitions`](crate::ConverterBuilder::macro_definitions)
 //! takes [`MacroDefinitions::Declared`](crate::convert::MacroDefinitions::Declared), and
 //! every entry of that table then falls back to the argument-consuming declaration
-//! written beside it — the shapes below, which are what techxt 0.1.0 registered.
+//! written beside it — the shapes below, which are what techxt 0.1.0 registered, and
+//! what a converter for techy's plain `Latexlike` always registers.
 //!
 //! # A declared definition's name and body are read as characters
 //!

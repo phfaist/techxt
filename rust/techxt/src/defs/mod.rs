@@ -24,8 +24,13 @@
 //! # Ok::<(), Box<dyn core::error::Error>>(())
 //! ```
 //!
-//! There are no cargo features to pick between: a build that never names a module
-//! drops it through dead-code elimination.
+//! The modules are not cargo features to pick between (the crate's one feature, `xp`,
+//! is about the parse language): a build that never names a module can drop it through
+//! dead-code elimination. Hand the set to
+//! [`ConverterBuilder::with_definitions`](crate::ConverterBuilder::with_definitions) to
+//! keep that true. `Converter::builder()`, as above, records [`standard`] as its default
+//! choice; [`definitions`](crate::ConverterBuilder::definitions) replaces that choice
+//! before anything is built, but the builder still names the library.
 //!
 //! # How much LaTeX this covers
 //!
@@ -43,10 +48,13 @@
 //! itself when met:
 //!
 //! - **TeX's conditionals** (`\if…\else\fi`), and with them category codes, registers
-//!   and counters. Macro *definition* is no longer on this list — [`preamble`] seeds
-//!   techy-xp's definers, so `\newcommand` and `\def` are honoured —
-//!   but a conditional is outside techy-xp's scope by design, and reaching one raises
-//!   `techy-xp.presets.conditional-unsupported` and renders as nothing.
+//!   and counters. Macro *definition* is no longer on this list — under techy-xp's
+//!   language (the `xp` feature) [`preamble`] seeds techy-xp's definers, so
+//!   `\newcommand` and `\def` are honoured — but a conditional is outside techy-xp's
+//!   scope by design, and there reaching one raises
+//!   `techy-xp.presets.conditional-unsupported` and renders as nothing. Under techy's
+//!   plain `Latexlike`, or with the definitions only declared, a conditional is an
+//!   unknown macro instead (`techxt.unknown-macro`).
 //! - **`tabbing`**, whose `\=` and `\>` collide with the accent macros of
 //!   [`accents`] — it would have to be a mode of its own, and it is rare in documents
 //!   written this century.

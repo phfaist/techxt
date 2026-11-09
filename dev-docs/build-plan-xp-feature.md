@@ -986,3 +986,156 @@ entry.
   the user-facing form (§5.10 / Appendix B), since doctests run under default features
   only (§6 trap 9). (4) No CI step for G11 (`cargo tree`): the plan asks for G7–G10 only.
 - Declined findings: none.
+
+### 2026-11-09 — Phase 4 (documentation, consumers, final verification) and FINAL REPORT
+
+- Previous commit (Phase 3): `9e93be7`. The commit holding this entry is the Phase 4 commit
+  and the last of the run.
+- Gates on the final tree (run by the supervisor): G1 pass, **G2 = 968 passed, 0 failed**
+  (967 + the new generic-API doctest), G3 pass (fresh `target/doc`), G4 pass, G5 pass,
+  G6 pass (61 tests), G7 pass, **G8 = 255 passed, 0 failed**, G9 pass, G10 pass, G11 pass
+  (no techy-xp), **G12 pass**: `npm ci`, `npm run wasm`, size check, `npm run typecheck`,
+  `npm test` all green (run on the Phase 4 tree before the documentation-only fix
+  round, which changed comments, doctests and two TOML comments only). wasm module: **937 987 B raw** (ceiling 1 100 000), **364 614 B gzipped**
+  (ceiling 415 000). G12 note: wasm-pack 0.15.1 could not download binaryen from GitHub in
+  this container, so `wasm-opt` came from the distribution package binaryen **108**, not the
+  117 that CI's wasm-pack ships; the sizes above are therefore indicative, and CI's own run
+  is the authoritative one. The web app's TypeScript and `web.yml` were not touched.
+- Reviewer verdict: no code behaviour changed (mechanical check: every changed line under
+  `rust/`, `web/`, `.github` is a comment or doctest); the new doctest passes; PLAN.md
+  amendments are append-only in the file's style. Two Major findings, both false
+  statements in the new prose, fixed in one documentation-only fix round and re-checked
+  by the same reviewer: (1) `lib.rs` claimed a defining command under `Latexlike` never
+  leaks into the text — true only for the braced-name form; (2) the "One dependency for an
+  embedder" paragraph claimed every upstream type is re-exported, but `Latexlike` is not
+  (now stated as the exception; see open question 1). Minors fixed in the same round: the
+  "it only adds" list completed against §5.6; the conditionals passages qualified (under
+  `Latexlike` or declared definitions a conditional is an unknown macro); the
+  `rust/Cargo.toml` techy-xp comment qualified; the `defs/mod.rs` builder wording made
+  precise; the new doctest asserts the `techxt.unknown-macro` diagnostic. The reviewer's
+  re-check left one false clause (`\setcounter` listed among the primitives techy-xp
+  refuses, although `defs::preamble` declares it and consumes it silently in every
+  configuration); the supervisor fixed that clause directly and re-ran G3 and the doctests
+  (76 passed).
+- Correction to the Phase 3 entry's "known limitation": `at_techxt_severity` is applied only
+  on the `latex_to_text` path, so a consumer rendering its own `LatexlikeXp` tree through
+  `tree_to_text`/`tree_to_flow` never had its parse diagnostics re-levelled in either state.
+  The one observable difference between states on that path is `is_refusal == false`:
+  each techy-xp refusal is additionally reported as `techxt.unknown-macro`. `lib.rs` states
+  it that way.
+- Deviations: (1) a third append-only amendment in `dev-docs/PLAN.md` §17, where the M10
+  amendment said the parse side "remains omitted, by design"; (2) the `rust/techxt/Cargo.toml`
+  comment claiming techy-xp brings hashbrown "as the one transitive addition" was false
+  (hashbrown comes through techy) and was corrected.
+
+#### Final report (§10)
+
+**Phases completed and commits** (branch `claude/focused-cori-m6rbe1`; `xp-feature` points at
+the same final commit):
+
+| Phase | Commit | Subject |
+|---|---|---|
+| 0 | `44fde5d` | Record the Phase 0 baseline |
+| 1 | `546eb4d` | Make the parse side generic over a ParseLang |
+| 2 | `5069d9f` | Add Latexlike as a ParseLang and the tests that prove the seam |
+| 3 | `9e93be7` | Put techy-xp behind a default-on xp cargo feature |
+| 4 | *(this commit)* | Make the prose true again; final verification |
+
+**Gates, final tree:** G1–G12 all passed (details above). No gate was weakened; no test
+expectation changed; `cargo fmt` was never run.
+
+**Test counts:** floor 953 (Phase 0). Final: **968** with default features
+(953 + 14 Phase 2 tests + 1 Phase 4 doctest); **255** with the feature off
+(`--lib --tests`: 191 unit tests + `lang_generic` 10 + `layout` 9 + `layout_proptest` 8 +
+`math_engine` 32 + `math_proptest` 5).
+
+**Public API changes** (a **0.2.0** change: inference of generic functions changes and
+`SpecBuildCx::new()`/`Default` are removed; the version is left alone for the maintainer):
+
+- New cargo feature `xp`, **on by default**, = `dep:techy-xp`. `techy-xp` is now optional.
+- New trait `techxt::def::ParseLang` (re-exported as `techxt::convert::ParseLang`), with
+  `type Settings`, `make_driver`, `scope_frame` (default: none) and `definer_spec`
+  (default: `None`). Implemented for `techy::latexlike::Latexlike` (always) and for
+  `techy_xp::lang::LatexlikeXp` (with `xp`).
+- New public types in `techxt::def`: `ScopeFrame<L>` (`below`/`above` provider lists,
+  `none()`), `#[non_exhaustive] enum Definer` (12 variants, formerly private in
+  `defs::preamble`), and `SpecBuildCx<'a, L>` with a public `new(&L::Driver, &L::Settings)`
+  and accessors `source_resolver()`, `driver()`, `settings()`. **Removed:** the argument-free
+  `SpecBuildCx::new()` and its `Default` impl.
+- New xp-only type `XpSettings` (`techxt::convert::XpSettings`, `#[non_exhaustive]`, fields
+  `macro_definitions`, `expansion_depth_limit`, `expansion_count_limit`; defaults
+  `Honored`/64/2000) and the xp-only compatibility accessors on
+  `SpecBuildCx<'_, LatexlikeXp>`: `macro_definitions()`, `local_scope_name()`,
+  `global_scope_name()`.
+- Generic over `L: ParseLang`, defaulting to `LatexlikeXp` only with `xp`: `Converter<L>`,
+  `ConverterBuilder<L>`, `MacroDef<L>`, `EnvDef<L>`, `SpecialsDef<L>`, `Category<L>`,
+  `DefinitionSet<L>`, `SpecBuildCx<'a, L>`, trait `CallableSpecSource<L>`. Generic over
+  `L: LatexlikeLang` (same default rule): `TechxtMacroSpec<L>`, `TechxtSpecialsSpec<L>`,
+  `TechxtEnvironmentBehavior<L>`. Without `xp` there is no default: a bare `Converter`,
+  `ConverterBuilder` or `DefinitionSet` fails to compile (E0107).
+- `defs::standard()` and every `defs::<module>::category()` are generic functions
+  (`standard<L: ParseLang>() -> DefinitionSet<L>`). A result that never reaches a typed place
+  now needs an annotation: `let definitions: DefinitionSet = defs::standard();` (this was the
+  one consumer change, applied in `web/crate/src/complete.rs` and, the same pattern, in
+  `web/crate/examples/symbol_index.rs`).
+- New always-present constructors/setters on `ConverterBuilder<L>`:
+  `with_definitions(DefinitionSet<L>)` and `language_settings(L::Settings)`; `build()` is
+  generic. The xp-only block (`impl ConverterBuilder<LatexlikeXp>`) keeps `new()`, `Default`,
+  `DEFAULT_EXPANSION_DEPTH_LIMIT`, `DEFAULT_EXPANSION_COUNT_LIMIT`, `macro_definitions`,
+  `expansion_depth_limit`, `expansion_count_limit`; `impl Converter<LatexlikeXp>` keeps
+  `builder()` and `standard()`. `MacroDefinitions` and the `techxt::convert::LatexlikeXp`
+  re-export are xp-only.
+- `TechxtEnvironmentBehavior::of` is now `of(NodeRef<'_, L>)` on `impl<L>` (was a
+  method-level `of<LLL>`); turbofish callers must change, plain calls infer.
+- `ConverterBuilder`'s `Debug` output shows one `language_settings` field in place of the
+  three xp fields.
+- `Converter<L>` is `Clone` for every `L`; `Send + Sync` for both shipped languages
+  (asserted in tests).
+- Behaviour under default features is unchanged (the full pre-existing suite passes with no
+  expectation edited); the §5.9 parity contract between `Converter<Latexlike>` and
+  `Converter<LatexlikeXp>`-with-declared-definers is pinned by `tests/lang_parity.rs`.
+
+**Deviations from the plan** (all detailed in the phase entries above): branch name
+(`claude/focused-cori-m6rbe1`, with `xp-feature` at the same commit); type annotations in
+tests/doctests and one example beyond the Phase 1 exit criterion (forced by §5.4 inference);
+the plan's §8 `\newcommand\greet{Hi}\greet` example is false under the declared shape (braced
+form used; unbraced and `\def` shapes pinned by the parity corpus); the Phase 2 implementer
+ran `rustfmt --emit stdout` on scratch copies (never on repository files); private
+`DefinitionsChoice::resolve()` and the gated `as_warning` helper (one `cfg` beyond the literal
+§5.6 list); the doctests round-trip (explicit `LatexlikeXp` in Phase 3, restored to the
+user-facing bare form in Phase 4); a third PLAN.md amendment; the hashbrown comment fix.
+The §5.8 known limitation (above, as corrected) is a property of the plan's design.
+
+**Declined review findings:** none declined outright. Deferred as out of scope and left for
+the maintainer: `def/rule.rs` `CallableKind::from_callable_type(CallableType)` still names
+techy's concrete type (pre-existing public API, uncalled in the crate); a pre-existing
+113-column doc line in `convert.rs` (`definitions()`); a few >100-column string/comment lines
+in `tests/lang_parity.rs` (rustfmt leaves them alone).
+
+**Phase 4 measurements** (report only; release, `lto = true`, `codegen-units = 1`,
+`opt-level = 3`, `panic = "abort"`, x86_64 Linux, stable 1.97, in throwaway crates outside
+the repository):
+
+| Binary | Unstripped | Stripped | `nm -C \| grep -c techy_xp` |
+|---|---|---|---|
+| (a) `Converter<Latexlike>`, techxt with `default-features = false` | 1 726 328 B | 1 469 232 B | **0** |
+| (b) `Converter::standard()`, default features | 2 350 920 B | 1 976 032 B | 998 |
+
+Difference after strip: 506 800 B (≈ 495 KiB). `cargo tree -e normal` for (a) contains no
+techy-xp. wasm (G12): 937 987 B raw / 364 614 B gzipped (ceilings 1 100 000 / 415 000), with
+the binaryen-version caveat above.
+
+**Open questions for the maintainer** (not decided here; the plan asks not to guess):
+1. `techy::latexlike::Latexlike` is not re-exported from `techxt::convert`, so a feature-off
+   user needs a direct `techy` dependency to name the language, which undercuts the "one
+   dependency for an embedder" promise. A `pub use techy::latexlike::Latexlike;` would fix it
+   (an API addition, outside this plan).
+2. `SpecBuildCx::with_source_resolver` is crate-private; a hand-built context cannot carry a
+   resolver.
+3. The declared shapes of `\newcommand\x{…}` (unbraced name) and `\def\x#1{…}` let the body
+   leak into the text with missing-argument errors (pre-existing `Declared` behaviour, now
+   the default for plain `Latexlike` users).
+
+**Still to do by hand:** run rustfmt (`cargo fmt --all`) and review its diff; bump techxt to
+0.2.0; push/merge as desired (the session pushed only its own branch and `xp-feature`);
+rerun G12 in CI for the authoritative wasm size (binaryen 117).
