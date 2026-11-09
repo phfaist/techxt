@@ -851,4 +851,15 @@ The supervisor appends one entry per phase boundary: date, phase, commit, each g
 result, the test count, deviations, declined findings. The final report (§10) is the last
 entry.
 
-*(empty)*
+### 2026-11-09 — Phase 0 (setup and baseline)
+
+- Branch: the cloud session's designated working branch `claude/focused-cori-m6rbe1`
+  (created from `main` at `a7c0b53`; it carries this plan as `95b3df0`). Deviation from
+  §2.3's name `xp-feature`: the session harness requires its own branch name; `xp-feature`
+  is created at the same final commit so both names resolve to this work.
+- Toolchains installed per §3: stable (clippy), 1.86, targets `thumbv7em-none-eabihf` and
+  `wasm32-unknown-unknown`; `cargo fetch` in `rust/` and `web/crate/`.
+- Gates on the untouched tree: G1 pass, G2 pass, G3 pass, G4 pass, G5 pass, G6 pass
+  (both the clippy and the test half).
+- **G2 floor: 953 passed, 0 failed** (42 `test result:` lines across unit, integration
+  and doc tests).
