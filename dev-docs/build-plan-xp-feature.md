@@ -2,8 +2,7 @@
 
 **Written:** 2026-11-09, against `main` at `a7c0b53` (techxt 0.1.1, techy 0.1.3, techy-xp 0.1.0).
 **Audience:** a supervisor agent running in a cloud session, and the implementer and
-reviewer agents it launches. Nobody is available to answer questions during the run, so
-this document is meant to be complete. Where it is not, §9.6 says what to do.
+reviewer agents it launches.
 
 Sections marked **(normative)** are decisions. Do not change them; if one proves
 unimplementable, stop and report (§9.6). Everything else is guidance: deviate when the
