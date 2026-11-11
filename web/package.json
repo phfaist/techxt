@@ -1,7 +1,7 @@
 {
   "name": "techxt-web",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "techxt in the browser — a static, installable LaTeX-to-text converter",
   "license": "MIT OR Apache-2.0",
