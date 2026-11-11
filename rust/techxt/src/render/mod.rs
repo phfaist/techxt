@@ -38,11 +38,11 @@
 //! (return instructions and let the driver descend), and finish like this:
 //!
 //! ```
+//! use techxt::convert::TreeRecomposer;
 //! use techxt::flow::Flow;
 //! use techxt::layout::{render, LayoutOptions};
 //! use techxt::render::RenderState;
 //! use techxt::Converter;
-//! use techy::recompose::TreeRecomposer;
 //!
 //! let converter = Converter::standard();
 //! let tree = converter.language().parse("a b").expect("parses").tree;

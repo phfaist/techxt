@@ -132,14 +132,13 @@ extension) behind the one cargo feature, `xp`. That feature is on by default: it
 techy-xp's `LatexlikeXp` the default parse language, which honours `\newcommand`,
 `\def` and their relatives, and it provides the argument-free `Converter::standard()`
 and `Converter::builder()`. With `default-features = false`, techy-xp is neither
-compiled nor linked, and a converter parses with techy's plain `Latexlike` (named
-through a `techy` dependency of your own; techxt does not re-export it), where the
+compiled nor linked, and a converter parses with techy's plain `Latexlike`, where the
 defining commands define nothing. Their declared shape reads a braced name, so
 `\newcommand{\x}{…}` is consumed whole, while the unbraced `\newcommand\x{…}` and
 `\def\x#1{…}` are not and leak their bodies beside missing-argument errors:
 
 ```rust
-use techy::latexlike::Latexlike;
+use techxt::convert::Latexlike;
 use techxt::{defs, Converter, ConverterBuilder};
 
 let converter: Converter<Latexlike> = ConverterBuilder::with_definitions(defs::standard())
@@ -148,6 +147,12 @@ let converter: Converter<Latexlike> = ConverterBuilder::with_definitions(defs::s
 ```
 
 This form compiles, and means the same, with the feature on as well.
+
+An embedder needs no `techy` or `techy-xp` dependency of its own. `techxt::convert`
+re-exports the upstream types a conversion names, `Latexlike` among them, and the two
+crates are re-exported whole as `techxt::techy` and (with `xp`) `techxt::techy_xp` for
+everything else, such as the driver and packages a tree of your own is parsed with.
+Those paths always name the copy techxt itself is built against.
 
 ## License
 

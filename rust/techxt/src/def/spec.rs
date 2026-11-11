@@ -133,10 +133,9 @@ impl<L: LatexlikeLang> CallableSpec<L> for TechxtMacroSpec<L> {
 /// ```
 /// use std::sync::Arc;
 ///
+/// use techxt::convert::{CallableSpec, LatexlikeXp};
 /// use techxt::def::{CallableSpecSource, SpecBuildCx};
-/// use techy::core::specs::CallableSpec;
-/// use techy::latexlike::MacroSpec;
-/// use techy_xp::lang::LatexlikeXp;
+/// use techxt::techy::latexlike::MacroSpec;
 ///
 /// /// Registers a macro that takes no arguments at all, whatever else it declares.
 /// #[derive(Debug)]

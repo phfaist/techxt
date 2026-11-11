@@ -89,8 +89,8 @@ use techy::source::SourceSpan;
 /// through [`diagnose`](Self::diagnose) and the two can never drift apart.
 ///
 /// ```
+/// use techxt::convert::Severity;
 /// use techxt::diag::{StrayItem, TechxtCondition};
-/// use techy::error::Severity;
 ///
 /// assert_eq!(StrayItem::SEVERITY, Severity::Warning);
 /// ```

@@ -13,7 +13,7 @@
 //! let conversion = converter.latex_to_text("Hello  {brave}\n world.")?;
 //! assert_eq!(conversion.text, "Hello brave world.\n");
 //! assert!(conversion.diagnostics.is_empty());
-//! # Ok::<(), techy::error::ParseError<Option<String>>>(())
+//! # Ok::<(), techxt::convert::ParseError<Option<String>>>(())
 //! ```
 //!
 //! # Three layers
@@ -49,13 +49,17 @@ pub use crate::mathfmt::{FontStyle, FontStyleKind, MathWrapDelims, MatrixDelims}
 
 // --------------------------------------------------- techy and techy-xp, re-exported
 //
-// Every techy (and techy-xp) type that appears in techxt's own public API is
-// re-exported here, so that using techxt takes one dependency and not three. They are
-// the upstream types, not aliases: a `SourceResolver` implemented against
-// `techxt::convert` is the very trait techy's parser calls, and a `Diagnostics`
-// returned by a conversion is the one techy built. Naming `techy` or
-// `techy_xp` directly keeps working and is exactly equivalent — this is a convenience
-// and a semver statement, not an abstraction layer.
+// The techy (and techy-xp) types a conversion names are re-exported here, so that using
+// techxt takes one dependency and not three. They are the upstream types, not aliases:
+// a `SourceResolver` implemented against `techxt::convert` is the very trait techy's
+// parser calls, and a `Diagnostics` returned by a conversion is the one techy built.
+// This is a convenience and a semver statement, not an abstraction layer.
+//
+// The list is the everyday surface, not all of either crate. The rest — a driver, a
+// package, a spec type — is reached through the crates themselves, re-exported whole
+// at the crate root as `techxt::techy` and `techxt::techy_xp`. Naming `techy` or
+// `techy_xp` through a dependency of one's own is equivalent to both for as long as
+// cargo resolves it to the copy techxt is built against.
 
 /// techy's descent guard, re-exported so that embedders configuring
 /// [`ConverterBuilder::descent_guard`] need not name `techy::core` themselves.
@@ -92,6 +96,13 @@ pub use techy::latexlike::LatexlikeLang;
 pub use techy::core::specs::{ArgumentSpec, CallableSpec};
 /// See [`ArgumentSpec`].
 pub use techy::latexlike::EnvironmentSpec;
+/// techy's plain parsing language: the ready-made [`ParseLang`] that needs no techy-xp,
+/// always available, and the one a converter is built for with the `xp` feature off.
+///
+/// It parses without expansion, so a defining command such as `\newcommand` is
+/// declared and defines nothing. A converter for it starts from
+/// [`ConverterBuilder::with_definitions`], and means the same with the feature on.
+pub use techy::latexlike::Latexlike;
 /// techy-xp's parsing language, available with the `xp` feature and then the default
 /// parse language of every techxt type that takes one: techy's latexlike preset
 /// carrying techy-xp's expanding token reader, which is what `\newcommand` and `\def`
@@ -201,7 +212,7 @@ pub struct Conversion {
 /// default) `L` defaults to techy-xp's [`LatexlikeXp`], and
 /// [`standard`](Self::standard) and [`builder`](Self::builder) are that language's
 /// conveniences; without it there is no default, and every converter — techy's plain
-/// [`Latexlike`](techy::latexlike::Latexlike) included — starts from
+/// [`Latexlike`] included — starts from
 /// [`ConverterBuilder::with_definitions`]. What it *renders* is independent of `L`:
 /// [`tree_to_text`](Self::tree_to_text) takes the tree of any [`RenderLang`].
 pub struct Converter<#[cfg(feature = "xp")] L = LatexlikeXp, #[cfg(not(feature = "xp"))] L>
@@ -246,7 +257,7 @@ impl Converter<LatexlikeXp> {
     /// use techxt::Converter;
     /// let converter = Converter::standard();
     /// assert_eq!(converter.latex_to_text("one\n\n\n\ntwo")?.text, "one\n\ntwo\n");
-    /// # Ok::<(), techy::error::ParseError<Option<String>>>(())
+    /// # Ok::<(), techxt::convert::ParseError<Option<String>>>(())
     /// ```
     pub fn standard() -> Converter<LatexlikeXp> {
         // The only inputs are techxt's own tables, so a failure here is a bug in this
@@ -288,7 +299,7 @@ impl<L: ParseLang> Converter<L> {
     /// marked. A converter's own [`language`](Self::language) is its parse language `L`,
     /// and a tree it parsed is the inferred case; but rendering reads *payloads* and no
     /// techy-xp facility, so a tree parsed by anybody's latexlike language — plain
-    /// techy's [`Latexlike`](techy::latexlike::Latexlike), a language of your own —
+    /// techy's [`Latexlike`], a language of your own —
     /// converts through the same rules. What such a tree cannot carry is techxt's rules
     /// *inside* its specs, so its constructs are matched by name instead.
     pub fn tree_to_text<LLL: RenderLang>(&self, tree: &NodeTree<LLL>) -> Conversion {
@@ -337,7 +348,7 @@ impl<L: ParseLang> Converter<L> {
     ///
     /// It is reusable, and `Send + Sync` whenever `L`'s driver and parsing state are —
     /// which they are for both shipped languages, techy's
-    /// [`Latexlike`](techy::latexlike::Latexlike) and techy-xp's [`LatexlikeXp`]. Parse
+    /// [`Latexlike`] and techy-xp's [`LatexlikeXp`]. Parse
     /// with it directly when you want the tree as well as the text.
     pub fn language(&self) -> &Language<L> {
         &self.inner.language
@@ -962,9 +973,8 @@ impl<L: ParseLang> ConverterBuilder<L> {
     /// `core.specs.unresolvable-command`.
     ///
     /// ```
-    /// use techxt::convert::UnknownMacroResolution;
+    /// use techxt::convert::{Recovery, UnknownMacroResolution};
     /// use techxt::Converter;
-    /// use techy::error::Recovery;
     ///
     /// let strict = Converter::builder().recovery(Recovery::Strict).build()?;
     /// assert!(strict.latex_to_text(r"\nosuchmacro").is_err());

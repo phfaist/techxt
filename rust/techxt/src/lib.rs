@@ -256,13 +256,18 @@
 //! and fall back to the unknown-construct policies from there.
 //!
 //! ```
-//! use techy::core::specs::Package;
-//! use techy::core::{Language, ParsingState};
-//! use techy::error::Recovery;
-//! use techy::latexlike::{argument_specs_named, CallableType, Latexlike, LatexlikeDriver, MacroSpec};
+//! // `techxt::techy` is the techy this techxt is built on, so a tree parsed through it
+//! // is one techxt renders, with no `techy` dependency of your own to keep in step.
+//! use techxt::techy::core::specs::Package;
+//! use techxt::techy::core::{Language, ParsingState};
+//! use techxt::techy::error::Recovery;
+//! use techxt::techy::latexlike::{
+//!     argument_specs_named, CallableType, Latexlike, LatexlikeDriver, MacroSpec,
+//! };
 //! use techxt::Converter;
 //!
-//! // Somebody else's parser: plain techy, its own vocabulary, no techxt in sight.
+//! // Somebody else's parser: plain techy and its own vocabulary, with none of techxt's
+//! // definitions.
 //! let mut theirs = Package::<Latexlike>::new("theirs");
 //! let one_argument = argument_specs_named::<Latexlike, _, _, _>([("m", "text")])?;
 //! theirs.insert(CallableType::Macro, "textbf", MacroSpec::new(one_argument));
@@ -326,7 +331,7 @@
 //! [`ConverterBuilder::with_definitions`], which takes its definitions explicitly:
 //!
 //! ```
-//! use techy::latexlike::Latexlike;
+//! use techxt::convert::Latexlike;
 //! use techxt::{defs, Converter, ConverterBuilder};
 //!
 //! let converter: Converter<Latexlike> =
@@ -369,18 +374,26 @@
 //! through dead-code elimination (see *Extending: definitions of your own* for the
 //! constructor that keeps that true).
 //!
-//! **One dependency for an embedder:** every upstream type that appears in techxt's
-//! public API — [`Diagnostics`](convert::Diagnostics), [`Severity`](convert::Severity),
+//! **One dependency for an embedder:** the upstream types a conversion names —
+//! [`Diagnostics`](convert::Diagnostics), [`Severity`](convert::Severity),
 //! [`Recovery`](convert::Recovery), [`SourceResolver`](convert::SourceResolver),
 //! [`NodeRef`](convert::NodeRef), [`TreeRecomposer`](convert::TreeRecomposer),
-//! [`LatexlikeLang`](convert::LatexlikeLang), techy-xp's
-//! [`LatexlikeXp`](convert::LatexlikeXp) (with the `xp` feature) and the rest — is
-//! re-exported from [`convert`].
-//! They are the upstream crates' own types, not wrappers, so naming `techy` or
-//! `techy_xp` directly stays exactly equivalent. One exception: techy's plain
-//! [`Latexlike`](techy::latexlike::Latexlike), the ready-made parse language with the
-//! feature off, is not re-exported, so an embedder that names it does so through a
-//! `techy` dependency of its own.
+//! [`LatexlikeLang`](convert::LatexlikeLang), the two shipped parse languages (techy's
+//! plain [`Latexlike`](convert::Latexlike) and, with the `xp` feature, techy-xp's
+//! [`LatexlikeXp`](convert::LatexlikeXp)) and the rest — are re-exported from
+//! [`convert`]. Everything else of the two crates is reached through the crates
+//! themselves, which techxt re-exports whole at its root: `techxt::techy` and, with the
+//! `xp` feature, `techxt::techy_xp`. That is where the driver, the packages and the
+//! parsing state a tree of your own is parsed with come from, and the spec types a
+//! definition of your own registers.
+//!
+//! They are the upstream crates' own items, not wrappers, and the copy techxt itself
+//! is built against: `techxt::techy::latexlike::Latexlike` is by construction the type
+//! [`ParseLang`](def::ParseLang) is implemented for. Naming `techy` or `techy_xp`
+//! through a dependency of your own is exactly equivalent for as long as cargo resolves
+//! it to that same copy, and names a different, incompatible set of types once it does
+//! not — after a semver-incompatible release of either that techxt has moved to and
+//! your requirement has not. Going through techxt's re-exports cannot drift.
 //!
 //! **No-panic policy:** this library never panics on document input, no matter how
 //! malformed. A caller contract violation (for instance an out-of-range index passed to
@@ -495,3 +508,20 @@ pub mod render;
 mod xp;
 
 pub use convert::{Conversion, Converter, ConverterBuilder, Options};
+
+/// The techy crate techxt is built on, whole.
+///
+/// [`convert`] re-exports the techy types a conversion names; this is the rest of
+/// techy — the driver, the packages and the parsing state a tree of your own is parsed
+/// with, the spec types a definition of your own registers. Reached as
+/// `techxt::techy::…` it is the very copy techxt was built against, whichever techy
+/// release that is, so `techxt::techy::latexlike::Latexlike` is by construction the
+/// type [`ParseLang`](def::ParseLang) is implemented for. A `techy` dependency of your
+/// own names the same items only for as long as cargo resolves the two requirements to
+/// one copy.
+pub use techy;
+/// The techy-xp crate behind the `xp` feature, whole, for the same reason as [`techy`]:
+/// `techxt::techy_xp::…` is the copy techxt's [`LatexlikeXp`](convert::LatexlikeXp)
+/// comes from.
+#[cfg(feature = "xp")]
+pub use techy_xp;

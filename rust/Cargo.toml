@@ -44,7 +44,9 @@ bare_urls = "warn"
 # and `clap` — plus, for the CLI only, `stacker`. The CLI does *not* depend on techy:
 # everything of techy's that it names — `SourceResolver`, the `Recovery` policy
 # `--strict` selects, the `Diagnostics` it filters and renders — is re-exported by
-# `techxt::convert`, which is what keeps an embedder at one dependency.
+# `techxt::convert`, which is what keeps an embedder at one dependency. An embedder that
+# needs more of techy than that list reaches it as `techxt::techy` (and `techxt::techy_xp`):
+# the two crates re-exported whole, at the versions pinned below.
 [workspace.dependencies]
 techy = "0.1"
 # Macro definition and expansion for techy's latexlike preset, behind techxt's

@@ -15,7 +15,7 @@
 //!     converter.latex_to_text(r"\href{https://ex.org/a_b}{link}")?.text,
 //!     "link <https://ex.org/a_b>\n",
 //! );
-//! # Ok::<(), techy::error::ParseError<Option<String>>>(())
+//! # Ok::<(), techxt::convert::ParseError<Option<String>>>(())
 //! ```
 
 use crate::def::{Category, MacroDef, ParseLang, Template, TextRule};

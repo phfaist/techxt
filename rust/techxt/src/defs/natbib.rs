@@ -31,7 +31,7 @@
 //!     converter.latex_to_text(r"As shown in \citet*[chap.~2]{knuth1984}.")?.text,
 //!     "As shown in <cit.>.\n",
 //! );
-//! # Ok::<(), techy::error::ParseError<Option<String>>>(())
+//! # Ok::<(), techxt::convert::ParseError<Option<String>>>(())
 //! ```
 
 use alloc::borrow::Cow;
