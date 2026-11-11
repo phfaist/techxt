@@ -2,7 +2,7 @@
 #
 # `ci.yml` stays untouched and `rust/`-scoped. This workflow exists because
 # `web/crate` deliberately lives outside the `rust/` workspace, so
-# `cd rust && cargo …` cannot see it: the fmt/clippy/test steps below are the gates
+# `cd rust && cargo …` cannot see it: the clippy/test steps below are the gates
 # the binding would otherwise lose by being a standalone package.
 #
 # Same toolchain philosophy as `ci.yml`: the runner's own rustup, and no third-party
@@ -17,8 +17,15 @@ name: Web
 # that includes techy-xp, whose revision can move without a byte of `rust/techxt/**`
 # changing. A build the app's own gates never saw is exactly what the filters exist to
 # prevent.
+#
+# Pushes run on `main` only, as in `ci.yml`: a branch is checked by its pull request,
+# and only `main` deploys. Without the filter, every push to a branch with an open pull
+# request ran this job twice, and built a Pages artifact nothing would deploy. Both
+# filters must match for a push to run: a push to `main` that touches none of the
+# paths does not.
 on:
   push:
+    branches: [main]
     paths:
       - "web/**"
       - "rust/techxt/**"
@@ -108,7 +115,7 @@ jobs:
 
       - name: Install the stable toolchain and the wasm target
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup toolchain install stable --profile minimal --component clippy
           rustup default stable
           rustup target add wasm32-unknown-unknown
 
@@ -127,13 +134,19 @@ jobs:
       # The gates `web/crate` loses by living outside the `rust/` workspace (D1).
       # `[lints]` in its manifest copies `rust/`'s policy, so `missing_docs` is denied
       # here too.
-      - name: Formatting (web/crate)
-        working-directory: web/crate
-        run: cargo fmt --all --check
-
       - name: Clippy (web/crate)
         working-directory: web/crate
         run: cargo clippy --all-targets -- -D warnings
+
+      # The same lints for the wasm target, which is the build that ships. On the host
+      # the `cfg(target_arch = "wasm32")` code in `src/lib.rs` is compiled out and
+      # `tests/wasm.rs` and `tests/wasm_completion.rs` are empty, and `wasm-pack build`
+      # below compiles the library alone — so without this step that code is never
+      # linted and those two tests are never compiled. They are still not *run*: that
+      # needs a headless browser (see `tests/wasm.rs`).
+      - name: Clippy for the wasm target (web/crate)
+        working-directory: web/crate
+        run: cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
 
       - name: Tests (web/crate)
         working-directory: web/crate
@@ -233,11 +246,13 @@ jobs:
           pip install --quiet fonttools brotli
           python3 web/tools/coverage_check.py --check
 
-      # The numbers live in `fetch_fonts.py`, beside the fonts they are
-      # about, so CI and a developer running the script locally cannot disagree —
-      # and so the reason a budget moved sits next to the value.
+      # The numbers live in `fetch_fonts.py`, beside the fonts they are about,
+      # so CI and a developer running the script locally cannot disagree — and
+      # so the reason a budget moved sits next to the value. The script appends
+      # its table to the job summary itself by detecting the GITHUB_STEP_SUMMARY
+      # env variable
       - name: Assert the font budget
-        run: python3 web/tools/fetch_fonts.py --budget | tee -a "$GITHUB_STEP_SUMMARY"
+        run: python3 web/tools/fetch_fonts.py --budget
 
       # The committed faces are what ships; a file edited in place would otherwise
       # never be noticed.

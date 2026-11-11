@@ -75,6 +75,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
+import os
 import re
 import sys
 import tarfile
@@ -716,15 +717,21 @@ def check() -> int:
 
 
 def report_budget(fail: bool) -> int:
-    """Print the font size table; with ``fail``, make a breach an exit code."""
+    """Print the font size table; with ``fail``, make a breach an exit code.
+
+    ``fail`` is the CI gate, ``--budget``, which also appends the table to
+    ``$GITHUB_STEP_SUMMARY`` when that variable is set — as ``coverage_check.py`` does
+    with its gap lists — so that the workflow step is the bare command, with no pipe
+    to swallow the exit code.
+    """
     total = 0
     over: list[str] = []
     missing: list[str] = []
-    print("\nfont budget (web/PLAN.md §11 step 6):")
+    table: list[str] = []
     for face in FACES:
         path = FONTS / face.output
         if not path.exists():
-            print(f"  {face.output}: MISSING")
+            table.append(f"  {face.output}: MISSING")
             missing.append(face.output)
             continue
         size = path.stat().st_size
@@ -732,15 +739,23 @@ def report_budget(fail: bool) -> int:
         mark = "  OVER" if size > MAX_FILE_BYTES else ""
         if size > MAX_FILE_BYTES:
             over.append(face.output)
-        print(f"  {face.output:<32} {thousands(size):>11} bytes{mark}")
-    print(
+        table.append(f"  {face.output:<32} {thousands(size):>11} bytes{mark}")
+    table.append(
         f"  {'total':<32} {thousands(total):>11} bytes"
         + (f"  OVER (budget {thousands(MAX_TOTAL_BYTES)})" if total > MAX_TOTAL_BYTES else "")
     )
-    print(
+    table.append(
         f"  budget: {thousands(MAX_FILE_BYTES)} bytes per file,"
         f" {thousands(MAX_TOTAL_BYTES)} bytes total"
     )
+    print("\nfont budget (web/PLAN.md §11 step 6):")
+    print("\n".join(table))
+    step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if fail and step_summary:
+        with open(step_summary, "a", encoding="utf-8") as handle:
+            handle.write(
+                "## Font budget (web/PLAN.md §11 step 6)\n\n```\n" + "\n".join(table) + "\n```\n"
+            )
     if not over and not missing and total <= MAX_TOTAL_BYTES:
         return 0
     if fail:

@@ -5,11 +5,16 @@
 # obvious shell lines that anyone can reproduce locally, and CI gains no dependency
 # that can disappear or change behavior under it. Only `actions/checkout` and
 # `actions/cache`, both first-party, are used.
+#
+# Two jobs, split by toolchain rather than by gate: every stable-toolchain gate shares
+# one runner, so the dependency graph is compiled once instead of once per gate, and
+# the declared minimum toolchain gets a runner of its own.
 
 name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -29,27 +34,15 @@ defaults:
     working-directory: rust
 
 jobs:
-  fmt:
-    name: Formatting
+  stable:
+    name: Clippy, tests, docs, no_std
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # The bare-metal target is for the no_std gate at the end of this job.
       - name: Install the stable toolchain
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt
-          rustup default stable
-      # No cache: rustfmt parses the sources and never builds a dependency.
-      - name: Check the formatting
-        run: cargo fmt --all --check
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install the stable toolchain
-        run: |
-          rustup toolchain install stable --profile minimal --component clippy
+          rustup toolchain install stable --profile minimal --component clippy --target thumbv7em-none-eabihf
           rustup default stable
       - uses: actions/cache@v4
         with:
@@ -59,32 +52,19 @@ jobs:
             ~/.cargo/git/db
           key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
           restore-keys: cargo-${{ runner.os }}-
+
       # `--all-targets` so tests, examples and benches are linted too, not just the
       # library a consumer compiles.
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       # The same lints with techxt's default `xp` feature off: code that compiles in one
       # feature state only (an import used by xp-only code, say) warns in the other.
+      # Because the library is `#![no_std]` outside of `cfg(test)`, this also rejects
+      # any `std::` path in the no-xp library code, which is why the no_std gate below
+      # need only build the xp state.
       - name: Clippy without the xp feature
         run: cargo clippy -p techxt --no-default-features --all-targets -- -D warnings
 
-  test:
-    name: Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install the stable toolchain
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
-          restore-keys: cargo-${{ runner.os }}-
       # Unit tests, the integration tests under techxt/tests/, and the doctests —
       # every public API example in the docs is executed here.
       - name: Test the workspace
@@ -95,23 +75,6 @@ jobs:
       - name: Test techxt without the xp feature
         run: cargo test -p techxt --no-default-features --lib --tests
 
-  doc:
-    name: Documentation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install the stable toolchain
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
-          restore-keys: cargo-${{ runner.os }}-
       # `-D warnings` on top of the workspace lint policy (missing_docs and
       # rustdoc::broken_intra_doc_links are already deny in Cargo.toml): it promotes
       # the remaining rustdoc warnings — bare URLs, private intra-doc links, invalid
@@ -120,6 +83,19 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps
+
+      # The library is `#![no_std]` outside of `cfg(test)`, so a `std::` path in its own
+      # code already fails every host build above. What only a std-less target catches
+      # is a *dependency* that links std — techy or techy-xp gaining a default `std`
+      # feature, say. This target has no std at all, so such a dependency fails here;
+      # it also supports atomics, which techy's `Arc`-shared objects need.
+      #
+      # `check` rather than `build`: a library has no link step, and a missing `std`
+      # crate is an error at metadata time. Only the default (xp) feature state: turning
+      # `xp` off only removes a dependency, which cannot bring std in.
+      # Only the library: `techxt-cli` is a std program by design.
+      - name: Check the library for a std-less target
+        run: cargo check -p techxt --target thumbv7em-none-eabihf
 
   msrv:
     name: MSRV (1.86)
@@ -142,37 +118,10 @@ jobs:
       # declared minimum as well: a contributor on the MSRV must be able to run the
       # suite. `check` rather than `test` — the gate is that everything *builds*
       # there; how the tests behave is the stable job's business.
+      #
+      # Default features only. The no-xp state is a subset of this crate graph (no
+      # techy-xp, no new dependency versions), so the only thing it could add here is
+      # code behind `cfg(not(feature = "xp"))` using an API newer than 1.86 — judged too
+      # unlikely to be worth a second invocation.
       - name: Check on the declared minimum toolchain
         run: cargo check --workspace --all-targets
-      # And techxt with its default `xp` feature off, which is a different crate graph
-      # (no techy-xp) and a different set of cfg-gated items.
-      - name: Check without the xp feature on the declared minimum toolchain
-        run: cargo check -p techxt --no-default-features --all-targets
-
-  no-std:
-    name: no_std (thumbv7em-none-eabihf)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install the stable toolchain with the bare-metal target
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          rustup target add thumbv7em-none-eabihf
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: cargo-nostd-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
-          restore-keys: cargo-nostd-${{ runner.os }}-
-      # The library is `#![no_std]` outside of `cfg(test)`. This target
-      # has no std at all, so any `std::` path or std-linking dependency fails the
-      # build here; it also supports atomics, which techy's `Arc`-shared objects need.
-      # Only the library: `techxt-cli` is a std program by design.
-      - name: Build the library for a std-less target
-        run: cargo build -p techxt --target thumbv7em-none-eabihf
-      # The crate stays no_std + alloc in both states of its default `xp` feature.
-      - name: Build the library for a std-less target without the xp feature
-        run: cargo build -p techxt --no-default-features --target thumbv7em-none-eabihf
