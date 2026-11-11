@@ -81,7 +81,8 @@
 //! **Nothing silent.** Unknown constructs, skipped content and handler problems produce
 //! structured diagnostics carrying source positions, alongside the converted text.
 //!
-//! **Reusable, immutable converter.** A converter is `Clone + Send + Sync` and holds no
+//! **Reusable, immutable converter.** A converter is `Clone + Send + Sync` (for both
+//! shipped parse languages; see *Languages, and the `xp` feature* below) and holds no
 //! per-document state; all per-run state lives in a separate structure, so one converter
 //! can convert many documents concurrently.
 //!
@@ -148,8 +149,12 @@
 //! ```
 //!
 //! Assemble a set from single modules ([`defs::base`], [`defs::accents`], …) when the
-//! shipped library is more than the document needs; a build that never mentions a
-//! module drops it. To change one construct without touching a category, use
+//! shipped library is more than the document needs, and hand it to
+//! [`ConverterBuilder::with_definitions`]: that constructor names only the set it is
+//! given, so a build that never mentions a module can drop it. [`Converter::builder`]
+//! and [`Converter::standard`] start from [`defs::standard`] instead, and a build that
+//! calls them should expect to carry the whole library. To change one construct without
+//! touching a category, use
 //! [`ConverterBuilder::override_macro`] and its siblings, which sit at the front of the
 //! dispatch chain.
 //!
@@ -239,15 +244,14 @@
 //!
 //! ## Converting a tree parsed elsewhere
 //!
-//! A converter *parses* with exactly one language — techy-xp's
-//! [`LatexlikeXp`](convert::LatexlikeXp), the latexlike preset carrying the expanding
-//! token reader — but it *renders* a tree of any latexlike language.
-//! [`Converter::tree_to_text`], [`Converter::tree_to_flow`] and the renderer behind
-//! [`Converter::renderer`] are generic over [`RenderLang`](render::RenderLang), an
-//! auto-implemented bound that both techy-xp's `LatexlikeXp` and techy's own
-//! [`Latexlike`](techy::latexlike::Latexlike) satisfy, and that asks for nothing of
-//! techy-xp's. So a tree parsed by somebody else's plain-techy setup converts through
-//! the same rules, handlers included; what such a tree cannot carry is a techxt rule
+//! A converter *parses* with the one language it was built for — its parse language `L`
+//! (see the next section) — but it *renders* a tree of any latexlike language, whatever
+//! `L` is. [`Converter::tree_to_text`], [`Converter::tree_to_flow`] and the renderer
+//! behind [`Converter::renderer`] are generic over [`RenderLang`](render::RenderLang),
+//! an auto-implemented bound that both techy-xp's [`LatexlikeXp`](convert::LatexlikeXp)
+//! and techy's own [`Latexlike`](techy::latexlike::Latexlike) satisfy, and that asks for
+//! nothing of techy-xp's. So a tree parsed by somebody else's plain-techy setup converts
+//! through the same rules, handlers included; what such a tree cannot carry is a techxt rule
 //! *inside* its specs, so its constructs are matched by name instead (dispatch step 3)
 //! and fall back to the unknown-construct policies from there.
 //!
@@ -287,6 +291,66 @@
 //! [`TextRule::Content`](def::TextRule::Content) and positional template references
 //! never mind the names.
 //!
+//! ## Languages, and the `xp` feature
+//!
+//! A converter parses with one *parse language* `L`, a [`ParseLang`](def::ParseLang):
+//! [`Converter`], [`ConverterBuilder`] and the definition types of [`def`] all carry it
+//! as a type parameter, and the definitions register everything they parse with *at*
+//! that language. techxt ships two:
+//!
+//! - techy's plain [`Latexlike`](techy::latexlike::Latexlike), always available. It
+//!   parses without expansion: a defining command such as `\newcommand` is *declared*
+//!   and defines nothing. The declared shape reads a braced name, so
+//!   `\newcommand{\greet}{Hi}` is consumed whole and never leaks into the text; the
+//!   unbraced `\newcommand\greet{Hi}` and `\def\x#1{…}` are not, and their bodies
+//!   reach the text beside missing-argument errors. [`defs::preamble`] states the
+//!   restriction.
+//! - techy-xp's [`LatexlikeXp`](convert::LatexlikeXp), with the `xp` cargo feature. Its
+//!   expanding token reader honours the defining commands, within the two expansion
+//!   budgets, and it is the default `L`.
+//!
+//! The `xp` feature is on by default, and it only adds: the `LatexlikeXp` language and
+//! its [`XpSettings`](convert::XpSettings); the default type parameters that make a
+//! bare `Converter` (or `DefinitionSet`, `MacroDef`, …) mean the `LatexlikeXp` one; and
+//! that language's conveniences — [`Converter::standard`], [`Converter::builder`],
+//! [`ConverterBuilder::new`] and `Default` for its builder,
+//! [`macro_definitions`](ConverterBuilder::macro_definitions) with the
+//! [`MacroDefinitions`](convert::MacroDefinitions) it takes, the two budget setters and
+//! their `DEFAULT_EXPANSION_*_LIMIT` constants, and the
+//! [`SpecBuildCx`](def::SpecBuildCx) accessors `macro_definitions()`,
+//! `local_scope_name()` and `global_scope_name()`. Turned off
+//! (`default-features = false`), techy-xp is neither compiled nor linked, and there is
+//! **no default language**: a bare `Converter` does not compile, so that one spelling
+//! can never mean two different parsers depending on what else is in the dependency
+//! graph. A converter then starts from the generic door,
+//! [`ConverterBuilder::with_definitions`], which takes its definitions explicitly:
+//!
+//! ```
+//! use techy::latexlike::Latexlike;
+//! use techxt::{defs, Converter, ConverterBuilder};
+//!
+//! let converter: Converter<Latexlike> =
+//!     ConverterBuilder::with_definitions(defs::standard()).build()?;
+//! assert_eq!(converter.latex_to_text(r"\textbf{hi} $x^2$")?.text, "𝐡𝐢 𝑥²\n");
+//!
+//! // Declared, not honoured: the definition is consumed, and `\greet` stays unknown.
+//! let conversion = converter.latex_to_text(r"\newcommand{\greet}{Hi}\greet")?;
+//! assert_eq!(conversion.text, "");
+//! let reported: Vec<&str> = conversion.diagnostics.iter().map(|d| d.identifier()).collect();
+//! assert_eq!(reported, ["techxt.unknown-macro"]);
+//! # Ok::<(), Box<dyn core::error::Error>>(())
+//! ```
+//!
+//! Code written against the generic API alone, like this example, compiles and behaves
+//! the same with the feature on or off. Both shipped languages make a `Clone + Send +
+//! Sync` converter.
+//!
+//! One case does differ between the two states. A consumer that depends on techy-xp
+//! directly, builds techxt with the feature off, and renders a `LatexlikeXp` tree it
+//! parsed itself gets techy-xp's refusals (`\ifx`, `\catcode`, …) reported a second
+//! time, as unknown macros: recognising a refusal's spec takes techy-xp, so without
+//! the feature techxt treats it as any other foreign spec without a rule.
+//!
 //! ## Crate dependencies and panic policy
 //!
 //! **no_std + alloc:** the crate depends on `core` and `alloc` only, and builds for
@@ -295,22 +359,28 @@
 //! `\input`, writing the result — belongs to the embedder; the `techxt` command-line
 //! program in the `techxt-cli` crate is one such embedder.
 //!
-//! **Minimal dependencies:** the runtime dependencies are exactly [`techy`] (the parser),
-//! [`techy_xp`] (techy's latexlike preset carrying macro expansion) and
+//! **Minimal dependencies:** the runtime dependencies are [`techy`] (the parser) and
 //! [`unicode-width`](https://docs.rs/unicode-width) (display width of the rendered
-//! text, for column accounting in the layout engine). techy-xp adds no crate to the tree
-//! that techy had not already put there. There are no cargo features: the
-//! definition library is plain Rust modules that a user references explicitly, so a
-//! build that never mentions a module drops it through dead-code elimination.
+//! text, for column accounting in the layout engine), plus, with the `xp` feature,
+//! [`techy_xp`] (techy's latexlike preset carrying macro expansion). techy-xp adds no
+//! crate to the tree that techy had not already put there. `xp` is the one cargo
+//! feature; the definition library is plain Rust modules that a user references
+//! explicitly, not features, so a build that never mentions a module can drop it
+//! through dead-code elimination (see *Extending: definitions of your own* for the
+//! constructor that keeps that true).
 //!
 //! **One dependency for an embedder:** every upstream type that appears in techxt's
 //! public API — [`Diagnostics`](convert::Diagnostics), [`Severity`](convert::Severity),
 //! [`Recovery`](convert::Recovery), [`SourceResolver`](convert::SourceResolver),
 //! [`NodeRef`](convert::NodeRef), [`TreeRecomposer`](convert::TreeRecomposer),
 //! [`LatexlikeLang`](convert::LatexlikeLang), techy-xp's
-//! [`LatexlikeXp`](convert::LatexlikeXp) and the rest — is re-exported from [`convert`].
+//! [`LatexlikeXp`](convert::LatexlikeXp) (with the `xp` feature) and the rest — is
+//! re-exported from [`convert`].
 //! They are the upstream crates' own types, not wrappers, so naming `techy` or
-//! `techy_xp` directly stays exactly equivalent.
+//! `techy_xp` directly stays exactly equivalent. One exception: techy's plain
+//! [`Latexlike`](techy::latexlike::Latexlike), the ready-made parse language with the
+//! feature off, is not re-exported, so an embedder that names it does so through a
+//! `techy` dependency of its own.
 //!
 //! **No-panic policy:** this library never panics on document input, no matter how
 //! malformed. A caller contract violation (for instance an out-of-range index passed to
@@ -344,7 +414,8 @@
 //! links, graphics, titling, the preamble and the `document` environment, `\input`
 //! with a caller-supplied resolver, and a symbol table of about 1000 entries.
 //!
-//! **Macro definitions are honoured**: `\newcommand`, `\renewcommand`, `\providecommand`,
+//! **Macro definitions are honoured** (with the default `xp` feature, by
+//! [`LatexlikeXp`](convert::LatexlikeXp)): `\newcommand`, `\renewcommand`, `\providecommand`,
 //! `\newenvironment`, `\renewenvironment`, `\def`, `\gdef`, `\let`, `\edef`, `\xdef` and
 //! `\NewDocumentCommand` define, and a later use of the defined macro expands, through
 //! [`techy_xp`]'s token reader. Definitions are scoped as TeX scopes them, and
@@ -371,10 +442,14 @@
 //! - **Label and reference resolution.** `\ref`, `\eqref` and `\cite` render markers
 //!   (`<ref>`, `<cit.>`) rather than numbers: resolving them needs a second pass over
 //!   the document, and citations need the bibliography besides. See [`defs::refs`].
-//! - **TeX's conditionals, category codes, registers and counters.** `\ifx`, `\catcode`,
-//!   `\count` and `\setcounter` are read and reported rather than acted on — techy-xp
+//! - **TeX's conditionals, category codes, registers and counters.** `\ifx`, `\catcode`
+//!   and `\count` are read and reported rather than acted on. Under
+//!   [`LatexlikeXp`](convert::LatexlikeXp) with its definitions honoured, techy-xp
 //!   declines them by design, and a document reaching one is told which feature is
-//!   missing rather than left to guess. See [`defs::preamble`].
+//!   missing rather than left to guess; under techy's plain `Latexlike`, or with the
+//!   definitions only declared, each is an unknown macro (`techxt.unknown-macro`). The
+//!   counter commands `\setcounter` and `\addtocounter` are declared by
+//!   [`defs::preamble`] and consumed silently in every configuration.
 //! - **Numbering beyond headings.** Theorems, figures, tables and equations are not
 //!   numbered, and counters (`\arabic{page}`) render as nothing; heading numbers are
 //!   the one exception. See [`defs::theorems`].
@@ -393,14 +468,13 @@
 //!   [`NodeSlice`](convert::NodeSlice): techy's recomposer takes a whole tree, and its
 //!   context has no public constructor. Convert the tree, or drive the renderer
 //!   yourself as shown above.
-//! - **Generalization of the parse side, and of the tree annotation.** The render side
-//!   is generic over the language (see *Converting a tree parsed elsewhere* above); the
-//!   parse side is not, by design. A converter parses with techy-xp's
-//!   [`LatexlikeXp`](convert::LatexlikeXp) alone — techy's latexlike preset plus the
-//!   expanding reader the definers of [`defs::preamble`] write into — and every spec
-//!   type in [`def`] is built for it, because the definers, the refusals and the
-//!   expansion budgets are techy-xp's and have no counterpart in a language that does
-//!   not expand. The tree annotation stays `()` on both sides.
+//! - **Generalization over the source origin and the tree annotation.** Both sides are
+//!   generic over the language — the render side over any
+//!   [`RenderLang`](render::RenderLang), the parse side over any
+//!   [`ParseLang`](def::ParseLang) (see *Languages, and the `xp` feature* above) — but
+//!   both require sources tagged with an `Option<String>` origin, so a language with an
+//!   origin type of its own is not one techxt renders or parses with. The tree
+//!   annotation stays `()` on both sides.
 //! - **Python and JavaScript bindings.** Planned as sibling folders (`python/`, `js/`)
 //!   of the repository root; the module-based organization of [`defs`] was chosen with
 //!   wasm dead-code elimination in mind.
@@ -417,5 +491,7 @@ pub mod flow;
 pub mod layout;
 pub mod mathfmt;
 pub mod render;
+#[cfg(feature = "xp")]
+mod xp;
 
 pub use convert::{Conversion, Converter, ConverterBuilder, Options};

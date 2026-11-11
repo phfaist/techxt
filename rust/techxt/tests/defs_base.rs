@@ -1,5 +1,7 @@
 //! `defs::base`: escapes, spacing, ligatures, breaks and the miscellaneous text macros.
 
+#![cfg(feature = "xp")]
+
 use techxt::def::{Category, DefinitionSet, MacroDef, TextRule};
 use techxt::diag::{MisplacedAlignment, UnsupportedIgnored};
 use techxt::Converter;

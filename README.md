@@ -125,10 +125,29 @@ cargo test --workspace
 cargo build -p techxt --target thumbv7em-none-eabihf   # the no_std proof
 ```
 
-The library is `no_std` + `alloc` and its runtime dependencies are exactly
-[`techy`](https://github.com/phfaist/techy),
+The library is `no_std` + `alloc` and its runtime dependencies are
+[`techy`](https://github.com/phfaist/techy) and `unicode-width`, plus
 [`techy-xp`](https://github.com/phfaist/techy-xp) (techy's macro-token expansion
-extension) and `unicode-width`; there are no cargo features.
+extension) behind the one cargo feature, `xp`. That feature is on by default: it makes
+techy-xp's `LatexlikeXp` the default parse language, which honours `\newcommand`,
+`\def` and their relatives, and it provides the argument-free `Converter::standard()`
+and `Converter::builder()`. With `default-features = false`, techy-xp is neither
+compiled nor linked, and a converter parses with techy's plain `Latexlike` (named
+through a `techy` dependency of your own; techxt does not re-export it), where the
+defining commands define nothing. Their declared shape reads a braced name, so
+`\newcommand{\x}{…}` is consumed whole, while the unbraced `\newcommand\x{…}` and
+`\def\x#1{…}` are not and leak their bodies beside missing-argument errors:
+
+```rust
+use techy::latexlike::Latexlike;
+use techxt::{defs, Converter, ConverterBuilder};
+
+let converter: Converter<Latexlike> = ConverterBuilder::with_definitions(defs::standard())
+    .build()
+    .expect("a well-formed definition set builds");
+```
+
+This form compiles, and means the same, with the feature on as well.
 
 ## License
 

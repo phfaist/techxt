@@ -18,10 +18,10 @@
 //! # Ok::<(), techy::error::ParseError<Option<String>>>(())
 //! ```
 
-use crate::def::{Category, MacroDef, Template, TextRule};
+use crate::def::{Category, MacroDef, ParseLang, Template, TextRule};
 
 /// The links category.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     Category::new("links")
         .with_macro(
             MacroDef::new("url")

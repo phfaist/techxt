@@ -28,7 +28,7 @@ use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::def::{Category, MacroDef, TextHandler, TextRule};
+use crate::def::{Category, MacroDef, ParseLang, TextHandler, TextRule};
 use crate::flow::{display_width, Flow, FlowItem};
 use crate::layout::render_inline;
 use crate::render::{NodeView, RenderCx, RenderError};
@@ -43,7 +43,7 @@ const INDENT: &str = "    ";
 /// The three field macros are declared with a leading optional argument, which is the
 /// "short" form the AMS classes and beamer accept; the field itself is the mandatory
 /// one.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     Category::new("titling")
         .with_macro(field("title", Field::Title))
         .with_macro(field("author", Field::Author))
@@ -79,7 +79,7 @@ enum Field {
 }
 
 /// A field macro: `[short form]{value}`, rendering nothing and recording the value.
-fn field(name: &str, which: Field) -> MacroDef {
+fn field<L: ParseLang>(name: &str, which: Field) -> MacroDef<L> {
     MacroDef::new(name)
         .arg("o", "short")
         .arg("m", "value")

@@ -63,6 +63,10 @@ jobs:
       # library a consumer compiles.
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # The same lints with techxt's default `xp` feature off: code that compiles in one
+      # feature state only (an import used by xp-only code, say) warns in the other.
+      - name: Clippy without the xp feature
+        run: cargo clippy -p techxt --no-default-features --all-targets -- -D warnings
 
   test:
     name: Tests
@@ -85,6 +89,11 @@ jobs:
       # every public API example in the docs is executed here.
       - name: Test the workspace
         run: cargo test --workspace
+      # techxt with its default `xp` feature off: the unit and integration tests that do
+      # not need techy-xp (the rest are gated on the feature). Not the doctests — they
+      # use the xp conveniences, and the run above executes them.
+      - name: Test techxt without the xp feature
+        run: cargo test -p techxt --no-default-features --lib --tests
 
   doc:
     name: Documentation
@@ -135,6 +144,10 @@ jobs:
       # there; how the tests behave is the stable job's business.
       - name: Check on the declared minimum toolchain
         run: cargo check --workspace --all-targets
+      # And techxt with its default `xp` feature off, which is a different crate graph
+      # (no techy-xp) and a different set of cfg-gated items.
+      - name: Check without the xp feature on the declared minimum toolchain
+        run: cargo check -p techxt --no-default-features --all-targets
 
   no-std:
     name: no_std (thumbv7em-none-eabihf)
@@ -160,3 +173,6 @@ jobs:
       # Only the library: `techxt-cli` is a std program by design.
       - name: Build the library for a std-less target
         run: cargo build -p techxt --target thumbv7em-none-eabihf
+      # The crate stays no_std + alloc in both states of its default `xp` feature.
+      - name: Build the library for a std-less target without the xp feature
+        run: cargo build -p techxt --no-default-features --target thumbv7em-none-eabihf

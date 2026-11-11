@@ -1,5 +1,7 @@
 //! `defs::accents`: the accent macros and the first-character rule.
 
+#![cfg(feature = "xp")]
+
 use techxt::Converter;
 
 fn text(latex: &str) -> String {

@@ -3,6 +3,8 @@
 //! What these are about is that raw content survives *exactly*: the layout engine never
 //! wraps it, never trims it, never collapses its spaces and never styles its letters.
 
+#![cfg(feature = "xp")]
+
 use techxt::Converter;
 
 fn text(latex: &str) -> String {

@@ -34,7 +34,7 @@
 use alloc::string::String;
 
 use crate::convert::HeadingStyle;
-use crate::def::{Category, MacroDef, TextRule};
+use crate::def::{Category, MacroDef, ParseLang, TextRule};
 use crate::flow::{display_width, Flow, FlowItem};
 use crate::render::{NodeView, RenderCx, RenderError};
 
@@ -53,7 +53,7 @@ const SECTION: usize = 2;
 const DEEPEST_NUMBERED: usize = 4;
 
 /// The sectioning category.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("sectioning");
     for (level, name) in [
         "part",
@@ -91,7 +91,7 @@ pub fn category() -> Category {
 /// techxt does not do. Headings after it keep counting in the numbers they were up to
 /// (lettered numbering is left to a later version), and the appendix's own heading
 /// text is rendered exactly as it was written.
-fn structure(category: &mut Category) {
+fn structure<L: ParseLang>(category: &mut Category<L>) {
     for name in [
         "tableofcontents",
         "listoffigures",

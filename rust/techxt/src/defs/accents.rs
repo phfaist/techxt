@@ -23,7 +23,7 @@
 
 use alloc::string::String;
 
-use crate::def::{Category, MacroDef, TextHandler};
+use crate::def::{Category, MacroDef, ParseLang, TextHandler};
 use crate::flow::Flow;
 use crate::render::{NodeView, RenderCx, RenderError};
 
@@ -44,7 +44,7 @@ const DOTLESS_J: char = '\u{237}';
 /// One entry per row of the generated table, all with the same shape: one mandatory
 /// argument (so that `\c c` works through TeX's single-expression fallback as well as
 /// `\c{c}`), and a handler carrying the combining mark.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("accents");
     for &(name, mark) in ACCENTS {
         category.add_macro(

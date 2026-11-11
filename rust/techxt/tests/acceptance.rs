@@ -26,6 +26,8 @@
 //! | 10–15, 23 | `math_examples.rs`, `math_engine.rs`, `defs_math.rs` |
 //! | 18, 19, 21, 22 | `defs_blocks.rs`, `defs_verbatim.rs`, `defs_tables.rs`, `defs_lists.rs` |
 
+#![cfg(feature = "xp")]
+
 use techxt::convert::{MathMode, MatrixDelims};
 use techxt::Converter;
 

@@ -32,13 +32,12 @@ use alloc::sync::Arc;
 use techy::core::constructs::OptionalGroupArgumentParser;
 use techy::core::specs::ArgumentSpec;
 use techy::core::token::GroupRule;
-use techy::latexlike::GroupType;
-use techy_xp::lang::LatexlikeXp;
+use techy::latexlike::LatexlikeGroupType;
 
-use crate::def::{Category, EnvDef, MacroDef, Template, TextRule};
+use crate::def::{Category, EnvDef, MacroDef, ParseLang, Template, TextRule};
 
 /// The verbatim category.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("verbatim");
     for name in ["verbatim", "verbatim*", "alltt"] {
         category.add_env(EnvDef::new(name).verbatim_body().rule(TextRule::Content));
@@ -82,9 +81,9 @@ pub fn category() -> Category {
 /// says what LaTeX means here: `\begin{lstlisting}[language=C]` has options,
 /// `\begin{lstlisting}` followed by a newline and a `[` does not. pylatexenc spells the
 /// same requirement `allow_pre_space=False`, for the same reason.
-fn adjacent_options() -> ArgumentSpec<LatexlikeXp> {
+fn adjacent_options<L: ParseLang>() -> ArgumentSpec<L> {
     let delimiters = Arc::new(GroupRule {
-        group_type: GroupType::Content,
+        group_type: L::GroupTypeId::content_group(),
         open: String::from("["),
         close: String::from("]"),
     });

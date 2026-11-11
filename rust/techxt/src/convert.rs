@@ -1,9 +1,10 @@
 //! The public conversion API: [`Converter`], its builder, and its [`Options`].
 //!
 //! A [`Converter`] holds a parsing language and a set of definitions, and converts as
-//! many documents as you like. It is immutable, `Clone + Send + Sync`, and cheap to
-//! clone (its internals are shared); everything a single conversion accumulates lives in
-//! a per-run renderer, so one converter can serve many threads at once.
+//! many documents as you like. It is immutable, `Clone` for every parse language and
+//! `Send + Sync` for both shipped ones, and cheap to clone (its internals are shared);
+//! everything a single conversion accumulates lives in a per-run renderer, so one
+//! converter can serve many threads at once.
 //!
 //! ```
 //! use techxt::Converter;
@@ -36,18 +37,9 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use techy::error::{DiagnosticData, DiagnosticInfo};
-use techy::latexlike::LatexlikeDriver;
-use techy_xp::lang::XpDriver;
-use techy_xp::presets::{
-    CategoryCodeChangeUnsupported, ConditionalUnsupported, CounterCommandUnsupported,
-    CsNameUnsupported, ExpandAfterUnsupported, NoExpandUnsupported, RegisterAllocationUnsupported,
-    RegisterUnsupported,
-};
-
 use crate::def::{
-    BuiltDefinitions, CallableKind, DefinitionSet, RuleTable, ScopeFrame, SpecBuildCx,
-    TemplateError, TemplateScope, TextRule,
+    BuiltDefinitions, CallableKind, DefinitionSet, RuleTable, SpecBuildCx, TemplateError,
+    TemplateScope, TextRule,
 };
 use crate::flow::Flow;
 use crate::layout::{render_with_regions, LayoutOptions};
@@ -81,11 +73,15 @@ pub use techy::core::node::{NodeId, NodeRef, NodeSlice, NodeTree};
 
 /// The bound [`Converter::tree_to_text`] takes its tree under: any latexlike language
 /// whose sources are origin-tagged and whose body slots are marked, not only the
-/// [`LatexlikeXp`] this converter parses with.
+/// [`ParseLang`] the converter parses with.
 ///
 /// It is auto-implemented — see [`RenderLang`] for what those two facts are, and why
 /// they are the only ones techxt's render side is concrete about.
 pub use crate::render::RenderLang;
+/// The bound a [`Converter`] and its [`ConverterBuilder`] take their *parse* language
+/// under: a [`RenderLang`] that techxt's definitions can parse with. See [`ParseLang`]
+/// for what that asks.
+pub use crate::def::ParseLang;
 /// The language family [`RenderLang`] refines, and the trait an embedder reads that
 /// bound through.
 pub use techy::latexlike::LatexlikeLang;
@@ -96,7 +92,8 @@ pub use techy::latexlike::LatexlikeLang;
 pub use techy::core::specs::{ArgumentSpec, CallableSpec};
 /// See [`ArgumentSpec`].
 pub use techy::latexlike::EnvironmentSpec;
-/// The parsing language every techxt type is concrete over: techy's latexlike preset
+/// techy-xp's parsing language, available with the `xp` feature and then the default
+/// parse language of every techxt type that takes one: techy's latexlike preset
 /// carrying techy-xp's expanding token reader, which is what `\newcommand` and `\def`
 /// are honored through.
 ///
@@ -105,7 +102,12 @@ pub use techy::latexlike::EnvironmentSpec;
 /// document that defines a macro gets it expanded, and a document that defines none
 /// parses exactly as techy's own `Latexlike` parses it. Turn the definers off with
 /// [`ConverterBuilder::macro_definitions`].
+#[cfg(feature = "xp")]
 pub use techy_xp::lang::LatexlikeXp;
+/// The parse-time settings [`LatexlikeXp`] adds: what
+/// [`ConverterBuilder::language_settings`] takes for that language.
+#[cfg(feature = "xp")]
+pub use crate::xp::XpSettings;
 
 /// The diagnostics channel: the collection a [`Conversion`] carries, one entry of it,
 /// the severity to filter by, and the parse error [`Converter::latex_to_text`] can fail
@@ -192,13 +194,35 @@ pub struct Conversion {
 /// options, or with [`builder`](Self::builder) to choose both. A converter is immutable
 /// and shared: cloning it is an atomic increment, and converting two documents at once
 /// from two threads is exactly what it is designed for.
-#[derive(Clone)]
-pub struct Converter {
-    inner: Arc<Inner>,
+///
+/// # The parse language
+///
+/// A converter parses with one [`ParseLang`], `L`. With the `xp` feature (on by
+/// default) `L` defaults to techy-xp's [`LatexlikeXp`], and
+/// [`standard`](Self::standard) and [`builder`](Self::builder) are that language's
+/// conveniences; without it there is no default, and every converter — techy's plain
+/// [`Latexlike`](techy::latexlike::Latexlike) included — starts from
+/// [`ConverterBuilder::with_definitions`]. What it *renders* is independent of `L`:
+/// [`tree_to_text`](Self::tree_to_text) takes the tree of any [`RenderLang`].
+pub struct Converter<#[cfg(feature = "xp")] L = LatexlikeXp, #[cfg(not(feature = "xp"))] L>
+where
+    L: ParseLang,
+{
+    inner: Arc<Inner<L>>,
 }
 
-struct Inner {
-    language: Language<LatexlikeXp>,
+// Hand-written rather than derived: a derive would demand `L: Clone` of a language that
+// is only a marker type. Cloning is the `Arc`'s increment, whatever `L` is.
+impl<L: ParseLang> Clone for Converter<L> {
+    fn clone(&self) -> Converter<L> {
+        Converter {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+}
+
+struct Inner<L: ParseLang> {
+    language: Language<L>,
     config: RenderConfig,
     /// The fold side of the descent guard. The parse side lives on the `Language`; both
     /// come from the same `ConverterBuilder::descent_guard` call, because a document
@@ -206,9 +230,12 @@ struct Inner {
     descent_guard: StdDescentGuardInit,
 }
 
-impl Converter {
-    /// Start building a converter.
-    pub fn builder() -> ConverterBuilder {
+/// The conveniences of techy-xp's [`LatexlikeXp`], the default parse language under
+/// the `xp` feature.
+#[cfg(feature = "xp")]
+impl Converter<LatexlikeXp> {
+    /// Start building a converter, from the shipped definitions.
+    pub fn builder() -> ConverterBuilder<LatexlikeXp> {
         ConverterBuilder::new()
     }
 
@@ -221,7 +248,7 @@ impl Converter {
     /// assert_eq!(converter.latex_to_text("one\n\n\n\ntwo")?.text, "one\n\ntwo\n");
     /// # Ok::<(), techy::error::ParseError<Option<String>>>(())
     /// ```
-    pub fn standard() -> Converter {
+    pub fn standard() -> Converter<LatexlikeXp> {
         // The only inputs are techxt's own tables, so a failure here is a bug in this
         // crate rather than anything a caller did — there is no error for a caller to
         // handle, which is why this constructor is infallible.
@@ -229,7 +256,9 @@ impl Converter {
             .build()
             .expect("techxt's own definitions are well-formed")
     }
+}
 
+impl<L: ParseLang> Converter<L> {
     /// Parse and convert a document.
     ///
     /// The `Err` case is a parse failure that no recovery policy survives — a document
@@ -256,8 +285,8 @@ impl Converter {
     ///
     /// The tree's language is whatever parsed it: any [`RenderLang`], which is every
     /// latexlike language whose sources are origin-tagged and whose body slots are
-    /// marked. A converter's own [`language`](Self::language) is [`LatexlikeXp`], and a
-    /// tree it parsed is the inferred case; but rendering reads *payloads* and no
+    /// marked. A converter's own [`language`](Self::language) is its parse language `L`,
+    /// and a tree it parsed is the inferred case; but rendering reads *payloads* and no
     /// techy-xp facility, so a tree parsed by anybody's latexlike language — plain
     /// techy's [`Latexlike`](techy::latexlike::Latexlike), a language of your own —
     /// converts through the same rules. What such a tree cannot carry is techxt's rules
@@ -306,9 +335,11 @@ impl Converter {
 
     /// The parsing language this converter uses.
     ///
-    /// It is `Send + Sync` and reusable; parse with it directly when you want the tree
-    /// as well as the text.
-    pub fn language(&self) -> &Language<LatexlikeXp> {
+    /// It is reusable, and `Send + Sync` whenever `L`'s driver and parsing state are —
+    /// which they are for both shipped languages, techy's
+    /// [`Latexlike`](techy::latexlike::Latexlike) and techy-xp's [`LatexlikeXp`]. Parse
+    /// with it directly when you want the tree as well as the text.
+    pub fn language(&self) -> &Language<L> {
         &self.inner.language
     }
 
@@ -339,7 +370,7 @@ impl Converter {
     }
 }
 
-impl core::fmt::Debug for Converter {
+impl<L: ParseLang> core::fmt::Debug for Converter<L> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Converter")
             .field("options", &self.inner.config.options)
@@ -461,7 +492,14 @@ fn merge(
 /// survive** — the payload, the identifier, the message and the span all do. What is lost
 /// is measurable and small: a refusal carries exactly one frame, titled *"unsupported
 /// ‘\ifx’"*, which says what the message already says.
+#[cfg(feature = "xp")]
 fn at_techxt_severity(diagnostic: &Diagnostic<Option<String>>) -> Diagnostic<Option<String>> {
+    use techy_xp::presets::{
+        CategoryCodeChangeUnsupported, ConditionalUnsupported, CounterCommandUnsupported,
+        CsNameUnsupported, ExpandAfterUnsupported, NoExpandUnsupported,
+        RegisterAllocationUnsupported, RegisterUnsupported,
+    };
+
     if diagnostic.severity() != Severity::Error {
         return diagnostic.clone();
     }
@@ -485,10 +523,18 @@ fn at_techxt_severity(diagnostic: &Diagnostic<Option<String>>) -> Diagnostic<Opt
         .unwrap_or_else(|| diagnostic.clone())
 }
 
+/// The diagnostic unchanged: without the `xp` feature no parse raises a techy-xp refusal,
+/// so there is nothing to re-level (see the `xp` version of this function).
+#[cfg(not(feature = "xp"))]
+fn at_techxt_severity(diagnostic: &Diagnostic<Option<String>>) -> Diagnostic<Option<String>> {
+    diagnostic.clone()
+}
+
 /// The condition behind `data` as a warning, if `data` is a `T` at all (see
 /// [`at_techxt_severity`]).
-fn as_warning<T: DiagnosticInfo>(
-    data: &dyn DiagnosticData,
+#[cfg(feature = "xp")]
+fn as_warning<T: techy::error::DiagnosticInfo>(
+    data: &dyn techy::error::DiagnosticData,
     span: &SourceSpan<Option<String>>,
 ) -> Option<Diagnostic<Option<String>>> {
     data.downcast_ref::<T>()
@@ -525,41 +571,82 @@ impl techy::error::DiagnosticInfo for SuppressedSurplus {
 /// assert_eq!(converter.latex_to_text("A% note\nB")?.text, "A\n% note\nB\n");
 /// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
-pub struct ConverterBuilder {
+///
+/// # Two kinds of constructor
+///
+/// The builder is generic over the parse language `L`, like the [`Converter`] it builds.
+/// [`with_definitions`](Self::with_definitions) and every setter shared by all languages
+/// live in one impl block. With the `xp` feature, techy-xp's [`LatexlikeXp`] — then the
+/// default `L` — adds the argument-free [`new`](ConverterBuilder::new), its own three
+/// settings and their defaults in another. Each method name is in exactly one of the
+/// two.
+pub struct ConverterBuilder<#[cfg(feature = "xp")] L = LatexlikeXp, #[cfg(not(feature = "xp"))] L>
+where
+    L: ParseLang,
+{
     options: Options,
-    definitions: Option<DefinitionSet>,
+    definitions: DefinitionsChoice<L>,
     overrides: Vec<(CallableKind, Box<str>, TextRule)>,
     recovery: Recovery,
     unknown_macro_resolution: UnknownMacroResolution,
-    macro_definitions: MacroDefinitions,
-    expansion_depth_limit: usize,
-    expansion_count_limit: usize,
+    settings: L::Settings,
     descent_guard: StdDescentGuardInit,
     source_resolver: Option<Arc<dyn techy::source::SourceResolver<Option<String>>>>,
 }
 
-impl core::fmt::Debug for ConverterBuilder {
+/// The definitions a builder will build from.
+///
+/// The generic path holds only what it was given. The xp conveniences hold the function
+/// that makes the shipped set instead, and [`ConverterBuilder::build`] calls it — so a
+/// caller who replaces the definitions never pays for the library being assembled, and
+/// the generic `build` never names it.
+enum DefinitionsChoice<L: ParseLang> {
+    /// A set the caller passed in.
+    Given(DefinitionSet<L>),
+    /// The shipped set, still to be made.
+    #[cfg(feature = "xp")]
+    Shipped(fn() -> DefinitionSet<L>),
+}
+
+impl<L: ParseLang> DefinitionsChoice<L> {
+    /// The set to build from: the one given, or the shipped one, made now.
+    fn resolve(self) -> DefinitionSet<L> {
+        match self {
+            DefinitionsChoice::Given(definitions) => definitions,
+            #[cfg(feature = "xp")]
+            DefinitionsChoice::Shipped(make) => make(),
+        }
+    }
+}
+
+impl<L: ParseLang> core::fmt::Debug for ConverterBuilder<L> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ConverterBuilder")
             .field("options", &self.options)
             .field("recovery", &self.recovery)
             .field("unknown_macro_resolution", &self.unknown_macro_resolution)
-            .field("macro_definitions", &self.macro_definitions)
-            .field("expansion_depth_limit", &self.expansion_depth_limit)
-            .field("expansion_count_limit", &self.expansion_count_limit)
+            .field("language_settings", &self.settings)
             .field("descent_guard", &self.descent_guard)
             .field("has_source_resolver", &self.source_resolver.is_some())
             .finish_non_exhaustive()
     }
 }
 
-impl Default for ConverterBuilder {
-    fn default() -> ConverterBuilder {
+#[cfg(feature = "xp")]
+impl Default for ConverterBuilder<LatexlikeXp> {
+    fn default() -> ConverterBuilder<LatexlikeXp> {
         ConverterBuilder::new()
     }
 }
 
-impl ConverterBuilder {
+/// The conveniences of techy-xp's [`LatexlikeXp`]: the argument-free constructor, the
+/// three settings that language adds, and their defaults.
+///
+/// Each name here exists in this block alone, which is what lets
+/// `ConverterBuilder::new()` and `ConverterBuilder::DEFAULT_EXPANSION_DEPTH_LIMIT`
+/// resolve without naming the language.
+#[cfg(feature = "xp")]
+impl ConverterBuilder<LatexlikeXp> {
     /// The default of [`expansion_depth_limit`](Self::expansion_depth_limit): 64 nested
     /// expansions, where techy-xp's own default is 256.
     pub const DEFAULT_EXPANSION_DEPTH_LIMIT: usize = 64;
@@ -572,172 +659,21 @@ impl ConverterBuilder {
 
     /// A builder with the shipped definitions, [`Options::default`], and tolerant
     /// recovery.
-    pub fn new() -> ConverterBuilder {
+    ///
+    /// The shipped definitions are [`defs::standard`](crate::defs::standard), made only
+    /// when [`build`](Self::build) runs and only if [`definitions`](Self::definitions)
+    /// has not replaced them by then.
+    pub fn new() -> ConverterBuilder<LatexlikeXp> {
         ConverterBuilder {
             options: Options::default(),
-            definitions: None,
+            definitions: DefinitionsChoice::Shipped(crate::defs::standard::<LatexlikeXp>),
             overrides: Vec::new(),
             recovery: Recovery::Tolerant,
             unknown_macro_resolution: UnknownMacroResolution::default(),
-            macro_definitions: MacroDefinitions::default(),
-            expansion_depth_limit: ConverterBuilder::DEFAULT_EXPANSION_DEPTH_LIMIT,
-            expansion_count_limit: ConverterBuilder::DEFAULT_EXPANSION_COUNT_LIMIT,
+            settings: XpSettings::default(),
             descent_guard: StdDescentGuardInit::default(),
             source_resolver: None,
         }
-    }
-
-    /// Use these definitions instead of the shipped ones.
-    ///
-    /// Everything the converter knows about macros, environments and specials comes
-    /// from here — both how they parse and how they render. Categories shadow in push
-    /// order; see [`DefinitionSet`]. Left unset, the converter uses
-    /// [`defs::standard`](crate::defs::standard); assemble a smaller set from the
-    /// modules of [`techxt::defs`](crate::defs), or push a category of your own on top
-    /// of `defs::standard()` to override part of it.
-    pub fn definitions(mut self, definitions: DefinitionSet) -> ConverterBuilder {
-        self.definitions = Some(definitions);
-        self
-    }
-
-    /// Configure techy's descent guard, which is what keeps a pathologically nested
-    /// document from costing the process its stack.
-    ///
-    /// The choice is relayed to **both** sides: the parser, which spends stack per
-    /// syntactic nesting level, and the renderer's fold, which spends it per tree
-    /// nesting level. Reaching the limit is the one thing that abandons a conversion; a
-    /// parse refusal comes back as `Err` from [`Converter::latex_to_text`], and a fold
-    /// refusal as a `techxt.render-aborted` diagnostic with empty output.
-    ///
-    /// The default is techy's own — a fixed 250 KiB stack budget, which warns once at
-    /// half the budget and names this method in its refusal. techxt deliberately does
-    /// not raise it: a bigger fixed budget is unsafe on a small-stack thread, and a
-    /// library cannot measure the real stack. A caller that can measure it should say
-    /// so; a caller that wants a document's fate not to depend on the build profile
-    /// should ask for a depth limit instead:
-    ///
-    /// ```
-    /// use techxt::convert::StdDescentGuardInit;
-    /// use techxt::Converter;
-    ///
-    /// let converter = Converter::builder()
-    ///     .descent_guard(StdDescentGuardInit::depth_limit(24))
-    ///     .build()?;
-    /// assert!(converter.latex_to_text(&"{".repeat(400)).is_err());
-    /// # Ok::<(), Box<dyn core::error::Error>>(())
-    /// ```
-    ///
-    /// Note that the default budget is *tight* in an unoptimized build — on the order
-    /// of ten parse nesting levels — so a test that feeds deeply nested input should
-    /// configure the guard rather than rely on it.
-    pub fn descent_guard(mut self, descent_guard: StdDescentGuardInit) -> ConverterBuilder {
-        self.descent_guard = descent_guard;
-        self
-    }
-
-    /// Replace the whole options struct.
-    pub fn options(mut self, options: Options) -> ConverterBuilder {
-        self.options = options;
-        self
-    }
-
-    /// Render a macro with `rule` instead of whatever its definition says. The name
-    /// carries no escape character.
-    pub fn override_macro(mut self, name: impl Into<Box<str>>, rule: TextRule) -> ConverterBuilder {
-        self.overrides
-            .push((CallableKind::Macro, name.into(), rule));
-        self
-    }
-
-    /// Render an environment with `rule` instead of whatever its definition says.
-    pub fn override_environment(
-        mut self,
-        name: impl Into<Box<str>>,
-        rule: TextRule,
-    ) -> ConverterBuilder {
-        self.overrides
-            .push((CallableKind::Environment, name.into(), rule));
-        self
-    }
-
-    /// Render a specials construct with `rule` instead of whatever its definition says.
-    /// The name is the trigger characters.
-    pub fn override_specials(
-        mut self,
-        name: impl Into<Box<str>>,
-        rule: TextRule,
-    ) -> ConverterBuilder {
-        self.overrides
-            .push((CallableKind::Specials, name.into(), rule));
-        self
-    }
-
-    /// Resolve `\input`-like references at parse time.
-    ///
-    /// Source resolution is opt-in twice: the parser needs a resolver, and the resolver
-    /// has to answer. techy interprets the reference string not at all — path
-    /// resolution, sandboxing and cycle policy are the resolver's to define.
-    pub fn source_resolver<M>(
-        mut self,
-        resolver: impl IntoSourceResolver<Option<String>, M>,
-    ) -> ConverterBuilder {
-        self.source_resolver = Some(resolver.into_source_resolver());
-        self
-    }
-
-    /// Choose the parser's recovery policy. The default is [`Recovery::Tolerant`], which
-    /// converts a malformed document as best it can and reports what was wrong.
-    ///
-    /// # It decides the fate of an unknown command too
-    ///
-    /// A command no definition claims cannot be shaped into an invocation by the parser,
-    /// so what happens to it is a *parsing* question. Under the default
-    /// [`Tolerant`](Recovery::Tolerant) techxt registers a catch-all provider that
-    /// resolves every command as an argument-less callable, and `\foo` converts to
-    /// whatever [`Options::unknown_macro`] says, with a `techxt.unknown-macro` warning.
-    /// Under [`Strict`](Recovery::Strict) the catch-all is *not* registered, so an
-    /// unknown command is a hard parse error and
-    /// [`latex_to_text`](Converter::latex_to_text) answers `Err` — strict means strict.
-    ///
-    /// Decouple the two with [`unknown_macro_resolution`](Self::unknown_macro_resolution),
-    /// which overrides that pairing in either direction.
-    pub fn recovery(mut self, recovery: Recovery) -> ConverterBuilder {
-        self.recovery = recovery;
-        self
-    }
-
-    /// Decide the fate of a command no definition claims, independently of
-    /// [`recovery`](Self::recovery).
-    ///
-    /// The default, [`UnknownMacroResolution::FollowRecovery`], pairs the two: tolerant
-    /// parses accept unknown commands and strict ones refuse them.
-    /// [`Accept`](UnknownMacroResolution::Accept) keeps unknown commands convertible
-    /// under strict recovery — everything *else* strict still applies — and
-    /// [`Reject`](UnknownMacroResolution::Reject) refuses them under tolerant recovery,
-    /// where techy's own recovery then turns `\foo` into literal characters and reports
-    /// `core.specs.unresolvable-command`.
-    ///
-    /// ```
-    /// use techxt::convert::UnknownMacroResolution;
-    /// use techxt::Converter;
-    /// use techy::error::Recovery;
-    ///
-    /// let strict = Converter::builder().recovery(Recovery::Strict).build()?;
-    /// assert!(strict.latex_to_text(r"\nosuchmacro").is_err());
-    ///
-    /// let lenient = Converter::builder()
-    ///     .recovery(Recovery::Strict)
-    ///     .unknown_macro_resolution(UnknownMacroResolution::Accept)
-    ///     .build()?;
-    /// assert_eq!(lenient.latex_to_text(r"a \nosuchmacro b")?.text, "a b\n");
-    /// # Ok::<(), Box<dyn core::error::Error>>(())
-    /// ```
-    pub fn unknown_macro_resolution(
-        mut self,
-        resolution: UnknownMacroResolution,
-    ) -> ConverterBuilder {
-        self.unknown_macro_resolution = resolution;
-        self
     }
 
     /// Decide whether the macro-defining commands are *honoured* or only *declared*.
@@ -774,8 +710,11 @@ impl ConverterBuilder {
     /// wants the document's surface syntax, for a corpus where an adversarial input's
     /// expansion budget is not worth spending, or to reproduce techxt 0.1.0's output
     /// exactly.
-    pub fn macro_definitions(mut self, macro_definitions: MacroDefinitions) -> ConverterBuilder {
-        self.macro_definitions = macro_definitions;
+    pub fn macro_definitions(
+        mut self,
+        macro_definitions: MacroDefinitions,
+    ) -> ConverterBuilder<LatexlikeXp> {
+        self.settings.macro_definitions = macro_definitions;
         self
     }
 
@@ -802,8 +741,8 @@ impl ConverterBuilder {
     /// call away for a document that needs it. Note that it does *not* bound the runaways
     /// [`expansion_count_limit`](Self::expansion_count_limit) describes: those are the
     /// count budget's business, and measurably indifferent to this one.
-    pub fn expansion_depth_limit(mut self, limit: usize) -> ConverterBuilder {
-        self.expansion_depth_limit = limit;
+    pub fn expansion_depth_limit(mut self, limit: usize) -> ConverterBuilder<LatexlikeXp> {
+        self.settings.expansion_depth_limit = limit;
         self
     }
 
@@ -859,27 +798,219 @@ impl ConverterBuilder {
     /// trade: a default that is safe on input nobody vouched for, and a knob for a caller
     /// who *does* vouch for it. Raising it to techy-xp's own 100 000 is one call, and
     /// costs what the table above says on a document that abuses it.
-    pub fn expansion_count_limit(mut self, limit: usize) -> ConverterBuilder {
-        self.expansion_count_limit = limit;
+    pub fn expansion_count_limit(mut self, limit: usize) -> ConverterBuilder<LatexlikeXp> {
+        self.settings.expansion_count_limit = limit;
+        self
+    }
+}
+
+/// The builder of any [`ParseLang`]: the constructor that names its definitions, the
+/// setters every language shares, and [`build`](Self::build).
+impl<L: ParseLang> ConverterBuilder<L> {
+    /// A builder for `definitions`, [`Options::default`], tolerant recovery, and the
+    /// language's default [`Settings`](ParseLang::Settings).
+    ///
+    /// This is the constructor for any [`ParseLang`]: the definitions are named
+    /// explicitly, so building never reaches for a library the caller did not ask for.
+    /// For techy-xp's [`LatexlikeXp`], [`new`](ConverterBuilder::new) and
+    /// [`Converter::builder`] start from the shipped set instead.
+    pub fn with_definitions(definitions: DefinitionSet<L>) -> ConverterBuilder<L> {
+        ConverterBuilder {
+            options: Options::default(),
+            definitions: DefinitionsChoice::Given(definitions),
+            overrides: Vec::new(),
+            recovery: Recovery::Tolerant,
+            unknown_macro_resolution: UnknownMacroResolution::default(),
+            settings: L::Settings::default(),
+            descent_guard: StdDescentGuardInit::default(),
+            source_resolver: None,
+        }
+    }
+
+    /// Use these definitions instead of the ones the builder started with.
+    ///
+    /// Everything the converter knows about macros, environments and specials comes
+    /// from here — both how they parse and how they render. Categories shadow in push
+    /// order; see [`DefinitionSet`]. Left unset, a builder from
+    /// [`ConverterBuilder::new`] uses [`defs::standard`](crate::defs::standard); assemble a smaller set from the
+    /// modules of [`techxt::defs`](crate::defs), or push a category of your own on top
+    /// of `defs::standard()` to override part of it.
+    pub fn definitions(mut self, definitions: DefinitionSet<L>) -> ConverterBuilder<L> {
+        self.definitions = DefinitionsChoice::Given(definitions);
+        self
+    }
+
+    /// Configure techy's descent guard, which is what keeps a pathologically nested
+    /// document from costing the process its stack.
+    ///
+    /// The choice is relayed to **both** sides: the parser, which spends stack per
+    /// syntactic nesting level, and the renderer's fold, which spends it per tree
+    /// nesting level. Reaching the limit is the one thing that abandons a conversion; a
+    /// parse refusal comes back as `Err` from [`Converter::latex_to_text`], and a fold
+    /// refusal as a `techxt.render-aborted` diagnostic with empty output.
+    ///
+    /// The default is techy's own — a fixed 250 KiB stack budget, which warns once at
+    /// half the budget and names this method in its refusal. techxt deliberately does
+    /// not raise it: a bigger fixed budget is unsafe on a small-stack thread, and a
+    /// library cannot measure the real stack. A caller that can measure it should say
+    /// so; a caller that wants a document's fate not to depend on the build profile
+    /// should ask for a depth limit instead:
+    ///
+    /// ```
+    /// use techxt::convert::StdDescentGuardInit;
+    /// use techxt::Converter;
+    ///
+    /// let converter = Converter::builder()
+    ///     .descent_guard(StdDescentGuardInit::depth_limit(24))
+    ///     .build()?;
+    /// assert!(converter.latex_to_text(&"{".repeat(400)).is_err());
+    /// # Ok::<(), Box<dyn core::error::Error>>(())
+    /// ```
+    ///
+    /// Note that the default budget is *tight* in an unoptimized build — on the order
+    /// of ten parse nesting levels — so a test that feeds deeply nested input should
+    /// configure the guard rather than rely on it.
+    pub fn descent_guard(mut self, descent_guard: StdDescentGuardInit) -> ConverterBuilder<L> {
+        self.descent_guard = descent_guard;
+        self
+    }
+
+    /// Replace the whole options struct.
+    pub fn options(mut self, options: Options) -> ConverterBuilder<L> {
+        self.options = options;
+        self
+    }
+
+    /// Render a macro with `rule` instead of whatever its definition says. The name
+    /// carries no escape character.
+    pub fn override_macro(
+        mut self,
+        name: impl Into<Box<str>>,
+        rule: TextRule,
+    ) -> ConverterBuilder<L> {
+        self.overrides
+            .push((CallableKind::Macro, name.into(), rule));
+        self
+    }
+
+    /// Render an environment with `rule` instead of whatever its definition says.
+    pub fn override_environment(
+        mut self,
+        name: impl Into<Box<str>>,
+        rule: TextRule,
+    ) -> ConverterBuilder<L> {
+        self.overrides
+            .push((CallableKind::Environment, name.into(), rule));
+        self
+    }
+
+    /// Render a specials construct with `rule` instead of whatever its definition says.
+    /// The name is the trigger characters.
+    pub fn override_specials(
+        mut self,
+        name: impl Into<Box<str>>,
+        rule: TextRule,
+    ) -> ConverterBuilder<L> {
+        self.overrides
+            .push((CallableKind::Specials, name.into(), rule));
+        self
+    }
+
+    /// Resolve `\input`-like references at parse time.
+    ///
+    /// Source resolution is opt-in twice: the parser needs a resolver, and the resolver
+    /// has to answer. techy interprets the reference string not at all — path
+    /// resolution, sandboxing and cycle policy are the resolver's to define.
+    pub fn source_resolver<M>(
+        mut self,
+        resolver: impl IntoSourceResolver<Option<String>, M>,
+    ) -> ConverterBuilder<L> {
+        self.source_resolver = Some(resolver.into_source_resolver());
+        self
+    }
+
+    /// Choose the parser's recovery policy. The default is [`Recovery::Tolerant`], which
+    /// converts a malformed document as best it can and reports what was wrong.
+    ///
+    /// # It decides the fate of an unknown command too
+    ///
+    /// A command no definition claims cannot be shaped into an invocation by the parser,
+    /// so what happens to it is a *parsing* question. Under the default
+    /// [`Tolerant`](Recovery::Tolerant) techxt registers a catch-all provider that
+    /// resolves every command as an argument-less callable, and `\foo` converts to
+    /// whatever [`Options::unknown_macro`] says, with a `techxt.unknown-macro` warning.
+    /// Under [`Strict`](Recovery::Strict) the catch-all is *not* registered, so an
+    /// unknown command is a hard parse error and
+    /// [`latex_to_text`](Converter::latex_to_text) answers `Err` — strict means strict.
+    ///
+    /// Decouple the two with [`unknown_macro_resolution`](Self::unknown_macro_resolution),
+    /// which overrides that pairing in either direction.
+    pub fn recovery(mut self, recovery: Recovery) -> ConverterBuilder<L> {
+        self.recovery = recovery;
+        self
+    }
+
+    /// Decide the fate of a command no definition claims, independently of
+    /// [`recovery`](Self::recovery).
+    ///
+    /// The default, [`UnknownMacroResolution::FollowRecovery`], pairs the two: tolerant
+    /// parses accept unknown commands and strict ones refuse them.
+    /// [`Accept`](UnknownMacroResolution::Accept) keeps unknown commands convertible
+    /// under strict recovery — everything *else* strict still applies — and
+    /// [`Reject`](UnknownMacroResolution::Reject) refuses them under tolerant recovery,
+    /// where techy's own recovery then turns `\foo` into literal characters and reports
+    /// `core.specs.unresolvable-command`.
+    ///
+    /// ```
+    /// use techxt::convert::UnknownMacroResolution;
+    /// use techxt::Converter;
+    /// use techy::error::Recovery;
+    ///
+    /// let strict = Converter::builder().recovery(Recovery::Strict).build()?;
+    /// assert!(strict.latex_to_text(r"\nosuchmacro").is_err());
+    ///
+    /// let lenient = Converter::builder()
+    ///     .recovery(Recovery::Strict)
+    ///     .unknown_macro_resolution(UnknownMacroResolution::Accept)
+    ///     .build()?;
+    /// assert_eq!(lenient.latex_to_text(r"a \nosuchmacro b")?.text, "a b\n");
+    /// # Ok::<(), Box<dyn core::error::Error>>(())
+    /// ```
+    pub fn unknown_macro_resolution(
+        mut self,
+        resolution: UnknownMacroResolution,
+    ) -> ConverterBuilder<L> {
+        self.unknown_macro_resolution = resolution;
+        self
+    }
+
+    /// Replace the language's own parse-time settings
+    /// ([`ParseLang::Settings`]) whole.
+    ///
+    /// For techy-xp's [`LatexlikeXp`] that is an [`XpSettings`], whose fields the
+    /// builder's [`macro_definitions`](ConverterBuilder::macro_definitions),
+    /// [`expansion_depth_limit`](ConverterBuilder::expansion_depth_limit) and
+    /// [`expansion_count_limit`](ConverterBuilder::expansion_count_limit) also set one
+    /// at a time. A language with no settings of its own takes `()`.
+    pub fn language_settings(mut self, settings: L::Settings) -> ConverterBuilder<L> {
+        self.settings = settings;
         self
     }
 
     /// Build the converter, validating the definitions.
-    pub fn build(self) -> Result<Converter, BuildError> {
+    pub fn build(self) -> Result<Converter<L>, BuildError> {
         let ConverterBuilder {
             options,
             definitions,
             overrides: override_list,
             recovery,
             unknown_macro_resolution,
-            macro_definitions,
-            expansion_depth_limit,
-            expansion_count_limit,
+            settings,
             descent_guard,
             source_resolver,
         } = self;
 
-        let definitions = definitions.unwrap_or_else(crate::defs::standard);
+        let definitions = definitions.resolve();
         // The definitions never see the recovery mode: what they need is the answer,
         // and resolving `FollowRecovery` is the builder's job.
         let unknown_macro_fallback = match unknown_macro_resolution {
@@ -889,38 +1020,17 @@ impl ConverterBuilder {
         };
 
         // The driver is built *first*, before the definitions, because the definitions
-        // read two things off it: the names of the two definition scopes the definer
-        // specs write into, and the providers that seed those scopes. Both must be the
-        // driver's own — the leak hook that lets `\gdef` escape a group keys on the
-        // global scope's name, and a definer writing into a name the seed does not hold
-        // is not an error anywhere (techy creates the scope innermost, silently
-        // inverting techy-xp's ordering invariant). Reading them off one object is what
-        // makes them agree by construction.
-        //
-        // The latexlike driver carries the parse-time behavior; wrapping it in
-        // `XpDriver` is what installs the expanding token reader macro definitions are
-        // honored through, and it does so whichever way `macro_definitions` went: with
-        // no definer seeded the reader has nothing to expand and parses byte for byte as
-        // the bare `LatexlikeDriver` did — techy-xp's lockstep property. The two
-        // expansion budgets are techxt's own, lower than techy-xp's defaults for the
-        // reason `expansion_count_limit` gives. The resolver is handed to the wrapper,
-        // not the inner driver: the wrapper decides where it is needed.
-        let mut driver = XpDriver::wrapping(LatexlikeDriver::new(recovery))
-            .with_expansion_depth_limit(expansion_depth_limit)
-            .with_expansion_count_limit(expansion_count_limit);
-        if let Some(resolver) = source_resolver.clone() {
-            driver = driver.with_source_resolver(resolver);
-        }
-        let frame = match macro_definitions {
-            MacroDefinitions::Declared => ScopeFrame::declared(),
-            _ => ScopeFrame::honored(&driver),
-        };
-        let spec_cx = SpecBuildCx::for_converter(
-            source_resolver,
-            macro_definitions,
-            driver.local_scope_name(),
-            driver.global_scope_name(),
-        );
+        // may read things off it: for techy-xp's language, the names of the two
+        // definition scopes the definer specs write into, and the providers that seed
+        // those scopes. Both must be the driver's own — the leak hook that lets `\gdef`
+        // escape a group keys on the global scope's name, and a definer writing into a
+        // name the seed does not hold is not an error anywhere (techy creates the scope
+        // innermost, silently inverting techy-xp's ordering invariant). Reading them off
+        // one object is what makes them agree by construction.
+        let driver = L::make_driver(recovery, source_resolver.as_ref(), &settings);
+        let frame = L::scope_frame(&driver, &settings);
+        let spec_cx =
+            SpecBuildCx::new(&driver, &settings).with_source_resolver(source_resolver.as_ref());
         let BuiltDefinitions { state, fallback } =
             definitions.build(&spec_cx, unknown_macro_fallback, &frame)?;
 
@@ -960,87 +1070,87 @@ impl ConverterBuilder {
 }
 
 /// Per-option setters, one per [`Options`] field.
-impl ConverterBuilder {
+impl<L: ParseLang> ConverterBuilder<L> {
     /// See [`Options::math_mode`].
-    pub fn math_mode(mut self, math_mode: MathMode) -> ConverterBuilder {
+    pub fn math_mode(mut self, math_mode: MathMode) -> ConverterBuilder<L> {
         self.options.math_mode = math_mode;
         self
     }
 
     /// See [`Options::math_expression_in`].
-    pub fn math_expression_in(mut self, delimiters: MathWrapDelims) -> ConverterBuilder {
+    pub fn math_expression_in(mut self, delimiters: MathWrapDelims) -> ConverterBuilder<L> {
         self.options.math_expression_in = delimiters;
         self
     }
 
     /// See [`Options::matrix_delimiters`].
-    pub fn matrix_delimiters(mut self, delimiters: MatrixDelims) -> ConverterBuilder {
+    pub fn matrix_delimiters(mut self, delimiters: MatrixDelims) -> ConverterBuilder<L> {
         self.options.matrix_delimiters = delimiters;
         self
     }
 
     /// See [`Options::wrap_width`].
-    pub fn wrap_width(mut self, wrap_width: Option<usize>) -> ConverterBuilder {
+    pub fn wrap_width(mut self, wrap_width: Option<usize>) -> ConverterBuilder<L> {
         self.options.wrap_width = wrap_width;
         self
     }
 
     /// See [`Options::keep_comments`].
-    pub fn keep_comments(mut self, keep_comments: bool) -> ConverterBuilder {
+    pub fn keep_comments(mut self, keep_comments: bool) -> ConverterBuilder<L> {
         self.options.keep_comments = keep_comments;
         self
     }
 
     /// See [`Options::heading_style`].
-    pub fn heading_style(mut self, heading_style: HeadingStyle) -> ConverterBuilder {
+    pub fn heading_style(mut self, heading_style: HeadingStyle) -> ConverterBuilder<L> {
         self.options.heading_style = heading_style;
         self
     }
 
     /// See [`Options::footnote_style`].
-    pub fn footnote_style(mut self, footnote_style: FootnoteStyle) -> ConverterBuilder {
+    pub fn footnote_style(mut self, footnote_style: FootnoteStyle) -> ConverterBuilder<L> {
         self.options.footnote_style = footnote_style;
         self
     }
 
     /// See [`Options::list_style`].
-    pub fn list_style(mut self, list_style: ListStyle) -> ConverterBuilder {
+    pub fn list_style(mut self, list_style: ListStyle) -> ConverterBuilder<L> {
         self.options.list_style = list_style;
         self
     }
 
     /// See [`Options::text_font`].
-    pub fn text_font(mut self, text_font: FontStyle) -> ConverterBuilder {
+    pub fn text_font(mut self, text_font: FontStyle) -> ConverterBuilder<L> {
         self.options.text_font = text_font;
         self
     }
 
     /// See [`Options::math_font`].
-    pub fn math_font(mut self, math_font: FontStyle) -> ConverterBuilder {
+    pub fn math_font(mut self, math_font: FontStyle) -> ConverterBuilder<L> {
         self.options.math_font = math_font;
         self
     }
 
     /// See [`Options::unknown_macro`].
-    pub fn unknown_macro(mut self, policy: UnknownMacroPolicy) -> ConverterBuilder {
+    pub fn unknown_macro(mut self, policy: UnknownMacroPolicy) -> ConverterBuilder<L> {
         self.options.unknown_macro = policy;
         self
     }
 
     /// See [`Options::unknown_env`].
-    pub fn unknown_env(mut self, policy: UnknownEnvPolicy) -> ConverterBuilder {
+    pub fn unknown_env(mut self, policy: UnknownEnvPolicy) -> ConverterBuilder<L> {
         self.options.unknown_env = policy;
         self
     }
 
     /// See [`Options::unknown_specials`].
-    pub fn unknown_specials(mut self, policy: UnknownSpecialsPolicy) -> ConverterBuilder {
+    pub fn unknown_specials(mut self, policy: UnknownSpecialsPolicy) -> ConverterBuilder<L> {
         self.options.unknown_specials = policy;
         self
     }
 
     /// See [`Options::today`].
-    pub fn today(mut self, today: Option<Box<str>>) -> ConverterBuilder {
+    pub fn today(mut self, today: Option<Box<str>>) -> ConverterBuilder<L> {
         self.options.today = today;
         self
     }
@@ -1376,6 +1486,7 @@ pub enum UnknownMacroResolution {
 ///
 /// techy-xp implements no conditionals, category codes, registers or counters, so
 /// `\ifx`, `\catcode`, `\count` and `\setcounter` define nothing under either setting.
+#[cfg(feature = "xp")]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MacroDefinitions {
@@ -1462,7 +1573,9 @@ mod tests {
 
     #[test]
     fn converter_is_shareable() {
-        assert_send_sync::<Converter>();
+        assert_send_sync::<Converter<techy::latexlike::Latexlike>>();
+        #[cfg(feature = "xp")]
+        assert_send_sync::<Converter<LatexlikeXp>>();
         assert_send_sync::<Options>();
     }
 

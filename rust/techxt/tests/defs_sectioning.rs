@@ -1,6 +1,8 @@
 //! `defs::sectioning`: the seven heading commands, the counter rules, and the four
 //! heading styles.
 
+#![cfg(feature = "xp")]
+
 use techxt::convert::HeadingStyle;
 use techxt::Converter;
 

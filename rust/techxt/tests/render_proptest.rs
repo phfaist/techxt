@@ -7,6 +7,8 @@
 //! the characters that mean something to the parser, so that random strings actually
 //! reach the interesting code paths instead of being one long run of letters.
 
+#![cfg(feature = "xp")]
+
 use proptest::prelude::*;
 
 use techxt::convert::{MathMode, UnknownEnvPolicy, UnknownMacroPolicy, UnknownSpecialsPolicy};

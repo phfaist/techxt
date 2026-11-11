@@ -8,6 +8,8 @@
 //! behaviour — which `EnvironmentSpec::with_body_delta` does — would hide it again and
 //! silently cost the environment its rule, so every body kind is checked here.
 
+#![cfg(feature = "xp")]
+
 use std::any::Any;
 
 use techy::core::node::{NodeRef, NodeTree};

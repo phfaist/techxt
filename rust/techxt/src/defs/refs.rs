@@ -27,14 +27,14 @@
 
 use alloc::borrow::Cow;
 
-use crate::def::{Category, EnvDef, MacroDef, TextHandler, TextRule};
+use crate::def::{Category, EnvDef, MacroDef, ParseLang, TextHandler, TextRule};
 use crate::flow::{Flow, FlowItem};
 use crate::render::{NodeView, RenderCx, RenderError};
 
 use super::handler;
 
 /// The refs category.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("refs");
 
     // The reference family. `\vref` and `\autoref` add words of their own in LaTeX
@@ -105,7 +105,7 @@ impl TextHandler for EntryBreak {
 }
 
 /// A reference macro: one label argument, one fixed marker.
-fn reference(name: &str, marker: &'static str) -> MacroDef {
+fn reference<L: ParseLang>(name: &str, marker: &'static str) -> MacroDef<L> {
     MacroDef::new(name)
         .arg("m", "label")
         .rule(TextRule::Literal(Cow::Borrowed(marker)))

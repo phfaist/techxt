@@ -94,6 +94,13 @@ techxt/                        # repo root (language-neutral)
     dependencies are techy and `hashbrown`, techy's map choice and already in the
     tree through techy, so the crate graph gains no node. Still no cargo features,
     and `techxt-cli` still names neither upstream crate.
+  - **Amended for the `xp` feature** (`dev-docs/build-plan-xp-feature.md`): `techy-xp`
+    is optional, behind techxt's one cargo feature, `xp`, which is on by default. The
+    runtime set is `techy` and `unicode-width` always, plus `techy-xp` with `xp`; with
+    `default-features = false` techy-xp is neither compiled nor linked. `techxt-cli`
+    and the web crate depend on techxt with default features. The "No cargo features"
+    bullet below therefore reads "one cargo feature, `xp`": the definitions library
+    is still plain modules, not features.
 - `techxt-cli`: depends on `techxt`, `clap` (derive), std.
 - **No cargo features.** The definitions library is organized as Rust modules the
   user references explicitly; unreferenced modules are removed by dead-code
@@ -113,7 +120,17 @@ non-generic over the language (`Latexlike`) and over the tree annotation (`A = (
 work.) **Amended for M9 and M10:** the parse side is concrete over techy-xp's
 `LatexlikeXp` (§16 M9); the *render* side — everything that consumes a `NodeTree` —
 is generic over any `LatexlikeLang` (§16 M10, bounded by `RenderLang`), and the
-annotation stays `A = ()` on both sides. techy facts to rely on (narrative guides:
+annotation stays `A = ()` on both sides. **Amended for the `xp` feature**
+(`dev-docs/build-plan-xp-feature.md`): the parse side is no longer concrete either.
+`Converter`, `ConverterBuilder` and the definition types of `techxt::def` are generic
+over a parse language `L: ParseLang` (a `RenderLang` with techy's `Mode`, techy's
+`BodyMarker` and a defaultable argument ext, plus three hooks: the driver, the providers around the categories, and
+whether a defining command is honoured). techy's plain `Latexlike` is always a
+`ParseLang`, with no settings, no frame and every definer declared; techy-xp's
+`LatexlikeXp` is one under the `xp` feature, and then the default `L`. Without the
+feature there is no default language, and a converter is built through
+`ConverterBuilder::with_definitions`. The source origin stays `Option<String>` and the
+annotation `A = ()`. techy facts to rely on (narrative guides:
 techy `docs/ai-guide*.md`):
 
 **Parsing.**
@@ -1462,6 +1479,11 @@ a language-erased `NodeView`. The entry stays in the list above as the record of
 the first shape omitted; what remains omitted, by design, is the *parse* side (a
 `Converter` parses with `LatexlikeXp` only, and the spec types in `techxt::def` are
 built for it) and generalization over the tree annotation (`A = ()` on both sides).
+
+**Amended for the `xp` feature** (`dev-docs/build-plan-xp-feature.md`): the parse side
+is generic too, over `L: ParseLang` (see §3's amendment), so what remains omitted is
+generalization over the source origin (`Option<String>`, which `RenderLang` requires)
+and over the tree annotation (`A = ()` on both sides).
 
 Three things phase 2 leaves for later, each documented where a reader meets it:
 

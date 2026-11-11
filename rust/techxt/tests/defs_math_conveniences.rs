@@ -9,6 +9,8 @@
 //! that already worked, and `\coloneqq` against the bare `≔` that a plain replacement
 //! would have produced.
 
+#![cfg(feature = "xp")]
+
 use techy::error::Severity;
 
 use techxt::diag::UnknownMacro;

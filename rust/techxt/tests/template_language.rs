@@ -5,6 +5,8 @@
 //! surface — a definition carrying a template, built into a converter and run over a
 //! document.
 
+#![cfg(feature = "xp")]
+
 use techxt::convert::BuildError;
 use techxt::def::{
     Category, DefinitionSet, EnvDef, MacroDef, SpecialsDef, Template, TemplateError, TextRule,

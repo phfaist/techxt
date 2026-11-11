@@ -74,7 +74,7 @@
 
 use alloc::borrow::Cow;
 
-use crate::def::{Category, MacroDef, Template, TextRule};
+use crate::def::{Category, MacroDef, ParseLang, Template, TextRule};
 
 #[path = "symbols_extra_data.rs"]
 mod data;
@@ -128,7 +128,7 @@ enum SymbolMode {
 /// assert_eq!(converter.latex_to_text(r"\textreferencemark")?.text, "※\n");
 /// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("symbols_extra");
     for (name, rule, arguments, mode) in data::SYMBOLS {
         let mut definition = MacroDef::new(*name);
@@ -218,7 +218,7 @@ mod tests {
     fn the_category_holds_the_whole_table() {
         // `Category` does not expose its entries, so the count is checked the only way
         // a category ever is: by building it and asking whether it built.
-        let category = category();
+        let category: Category<techy::latexlike::Latexlike> = category();
         assert_eq!(category.name(), "symbols_extra");
     }
 }

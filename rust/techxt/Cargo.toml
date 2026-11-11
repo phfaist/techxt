@@ -14,9 +14,18 @@ categories = ["text-processing", "value-formatting"]
 [lints]
 workspace = true
 
-# Exactly three runtime dependencies, all no_std + alloc: techy, techy-xp (which
-# brings techy's own map choice, hashbrown, as the one transitive addition), and
-# unicode-width.
+# `xp` (on by default) adds techy-xp's `LatexlikeXp` as a parse language — the honored
+# defining commands, the expansion budgets — and the argument-free constructors built
+# on it. Without it techxt is generic over the parse language only, techy's plain
+# `Latexlike` is the ready-made one, and techy-xp is neither compiled nor linked.
+[features]
+default = ["xp"]
+xp = ["dep:techy-xp"]
+
+# At most three runtime dependencies, all no_std + alloc: techy and unicode-width
+# always, and techy-xp with the `xp` feature. techy-xp's own dependencies are techy and
+# techy's map choice, hashbrown, which techy already puts in the tree, so the feature
+# adds no other crate.
 #
 # techy default features are empty (its only feature, `serde`, is opt-in), so nothing
 # has to be turned off here to keep the no_std build honest; the CI `no_std` job
@@ -24,7 +33,7 @@ workspace = true
 # unicode-width's default `cjk` feature is data only, not std.
 [dependencies]
 techy.workspace = true
-techy-xp.workspace = true
+techy-xp = { workspace = true, optional = true }
 unicode-width.workspace = true
 
 # proptest drives the layout and joiner invariants. Tests are the one

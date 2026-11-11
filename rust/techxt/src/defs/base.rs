@@ -47,11 +47,10 @@ use techy::core::constructs::OptionalGroupArgumentParser;
 use techy::core::specs::ArgumentSpec;
 use techy::core::token::GroupRule;
 use techy::core::ParsingStateDelta;
-use techy::latexlike::{Event, GroupType, Mode};
-use techy_xp::lang::LatexlikeXp;
+use techy::latexlike::{LatexlikeEvent, LatexlikeGroupType, Mode};
 
 use crate::convert::FootnoteStyle;
-use crate::def::{Category, MacroDef, SpecialsDef, TextHandler, TextRule};
+use crate::def::{Category, MacroDef, ParseLang, SpecialsDef, TextHandler, TextRule};
 use crate::diag::{MisplacedAlignment, UnsupportedIgnored};
 use crate::flow::{Flow, FlowItem};
 use crate::layout::render_inline;
@@ -62,7 +61,7 @@ use super::handler;
 
 /// The base category: escapes, spacing, ligatures, `~`, `\\`, `\par`,
 /// and the miscellaneous text macros.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("base");
     escapes(&mut category);
     spacing(&mut category);
@@ -82,7 +81,7 @@ pub fn category() -> Category {
 ///
 /// Each is a macro whose *name* is the character, which is how techy registers a
 /// single-character command, and each renders as that character.
-fn escapes(category: &mut Category) {
+fn escapes<L: ParseLang>(category: &mut Category<L>) {
     for character in ["{", "}", "$", "&", "#", "_", "%"] {
         category.add_macro(MacroDef::symbol(character, character));
     }
@@ -91,7 +90,7 @@ fn escapes(category: &mut Category) {
 // ------------------------------------------------------------------------- spacing
 
 /// The spacing macros.
-fn spacing(category: &mut Category) {
+fn spacing<L: ParseLang>(category: &mut Category<L>) {
     // One inter-word space, and a place a line may break. `Literal(" ")` is not a
     // shortcut: rule text goes through the same word/space splitting as document text,
     // so a lone space *is* exactly one glue.
@@ -119,7 +118,7 @@ fn spacing(category: &mut Category) {
 
 /// Paragraph and line breaks, and the two constructs whose meaning depends on where
 /// they occur.
-fn breaks(category: &mut Category) {
+fn breaks<L: ParseLang>(category: &mut Category<L>) {
     category.add_macro(MacroDef::new("par").rule(handler(Emit(FlowItem::ParagraphBreak))));
     category.add_macro(MacroDef::new("newline").rule(handler(Emit(FlowItem::HardBreak))));
     // `\\` takes its optional `[len]`, parsed with the adjacency requirement, and
@@ -166,9 +165,9 @@ fn breaks(category: &mut Category) {
 /// [`require_adjacent`](OptionalGroupArgumentParser::require_adjacent) provides
 /// (pylatexenc's `allow_pre_space=False`), and it is the whole reason this argument
 /// cannot be written as the `o` code.
-fn optional_length() -> ArgumentSpec<LatexlikeXp> {
+fn optional_length<L: ParseLang>() -> ArgumentSpec<L> {
     let delimiters = Arc::new(GroupRule {
-        group_type: GroupType::Content,
+        group_type: L::GroupTypeId::content_group(),
         open: String::from("["),
         close: String::from("]"),
     });
@@ -185,7 +184,7 @@ fn optional_length() -> ArgumentSpec<LatexlikeXp> {
 /// Mode-restricted because they are a property of the *text* font: `--` in a formula is
 /// two minus signs, and `'` is a prime. techy matches the longest registered trigger,
 /// so `---` wins over `--` and `''` over `'` without any ordering rule here.
-fn ligatures(category: &mut Category) {
+fn ligatures<L: ParseLang>(category: &mut Category<L>) {
     for (trigger, replacement) in [
         ("``", "\u{201c}"),
         ("''", "\u{201d}"),
@@ -211,7 +210,7 @@ fn ligatures(category: &mut Category) {
 /// The optional argument is LaTeX's own way of overriding the mark; techxt numbers its
 /// notes itself, in document order, so it is parsed and dropped rather than used — a
 /// hand-written mark would collide with the numbers of the notes around it.
-fn footnotes(category: &mut Category) {
+fn footnotes<L: ParseLang>(category: &mut Category<L>) {
     category.add_macro(
         MacroDef::new("footnote")
             .arg("o", "mark")
@@ -223,7 +222,7 @@ fn footnotes(category: &mut Category) {
 // ---------------------------------------------------------------------------- misc
 
 /// The miscellaneous text macros: those that are neither symbols nor structure.
-fn misc(category: &mut Category) {
+fn misc<L: ParseLang>(category: &mut Category<L>) {
     category.add_macro(
         MacroDef::new("texorpdfstring")
             .arg("m", "tex")
@@ -315,7 +314,7 @@ fn misc(category: &mut Category) {
 /// content, though, and losing that would lose real text, so every box here renders
 /// its contents and nothing else, with the measurements parsed and discarded so that
 /// they cannot leak into the reader's paragraph.
-fn boxes(category: &mut Category) {
+fn boxes<L: ParseLang>(category: &mut Category<L>) {
     category.add_macro(
         MacroDef::new("fbox")
             .arg("m", CONTENT)
@@ -425,7 +424,7 @@ fn only_content() -> TextRule {
 /// no counters other than the heading numbers of [`defs::sectioning`](super::sectioning)
 /// — document numbering is left for a later version — so they render as nothing
 /// rather than as a wrong number.
-fn typesetting_only(category: &mut Category) {
+fn typesetting_only<L: ParseLang>(category: &mut Category<L>) {
     for name in [
         // Glue and leaders: horizontal or vertical space, filled or not.
         "hfill",
@@ -489,18 +488,18 @@ fn typesetting_only(category: &mut Category) {
 /// The exit is an [`Event`](techy::latexlike::Event) rather than a mode assignment
 /// (techy restores the enclosing non-math context, rules and all), and it is harmless
 /// outside math, where the enclosing context is the one being restored.
-fn exiting_math(name: &str) -> ArgumentSpec<LatexlikeXp> {
+fn exiting_math<L: ParseLang>(name: &str) -> ArgumentSpec<L> {
     ArgumentSpec::new(
-        techy::core::constructs::GroupArgumentParser::new(GroupType::Content),
+        techy::core::constructs::GroupArgumentParser::new(L::GroupTypeId::content_group()),
         name,
     )
-    .with_state_delta(ParsingStateDelta::new().event(Event::ExitMathContext))
+    .with_state_delta(ParsingStateDelta::new().event(L::Event::exit_math_context()))
 }
 
 /// An argument parsed as math (`\ensuremath{…}`).
-fn entering_math(name: &str) -> ArgumentSpec<LatexlikeXp> {
+fn entering_math<L: ParseLang>(name: &str) -> ArgumentSpec<L> {
     ArgumentSpec::new(
-        techy::core::constructs::GroupArgumentParser::new(GroupType::Content),
+        techy::core::constructs::GroupArgumentParser::new(L::GroupTypeId::content_group()),
         name,
     )
     .with_state_delta(ParsingStateDelta::new().mode(Mode::Math))
@@ -509,7 +508,7 @@ fn entering_math(name: &str) -> ArgumentSpec<LatexlikeXp> {
 // ------------------------------------------------------------------- text symbols
 
 /// The classic text symbols (see the module documentation for why they are here).
-fn text_symbols(category: &mut Category) {
+fn text_symbols<L: ParseLang>(category: &mut Category<L>) {
     for (name, replacement) in [
         // letters no ASCII keyboard has
         ("l", "\u{142}"),

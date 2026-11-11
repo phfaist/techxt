@@ -24,8 +24,13 @@
 //! # Ok::<(), Box<dyn core::error::Error>>(())
 //! ```
 //!
-//! There are no cargo features to pick between: a build that never names a module
-//! drops it through dead-code elimination.
+//! The modules are not cargo features to pick between (the crate's one feature, `xp`,
+//! is about the parse language): a build that never names a module can drop it through
+//! dead-code elimination. Hand the set to
+//! [`ConverterBuilder::with_definitions`](crate::ConverterBuilder::with_definitions) to
+//! keep that true. `Converter::builder()`, as above, records [`standard`] as its default
+//! choice; [`definitions`](crate::ConverterBuilder::definitions) replaces that choice
+//! before anything is built, but the builder still names the library.
 //!
 //! # How much LaTeX this covers
 //!
@@ -43,10 +48,13 @@
 //! itself when met:
 //!
 //! - **TeX's conditionals** (`\if…\else\fi`), and with them category codes, registers
-//!   and counters. Macro *definition* is no longer on this list — [`preamble`] seeds
-//!   techy-xp's definers, so `\newcommand` and `\def` are honoured —
-//!   but a conditional is outside techy-xp's scope by design, and reaching one raises
-//!   `techy-xp.presets.conditional-unsupported` and renders as nothing.
+//!   and counters. Macro *definition* is no longer on this list — under techy-xp's
+//!   language (the `xp` feature) [`preamble`] seeds techy-xp's definers, so
+//!   `\newcommand` and `\def` are honoured — but a conditional is outside techy-xp's
+//!   scope by design, and there reaching one raises
+//!   `techy-xp.presets.conditional-unsupported` and renders as nothing. Under techy's
+//!   plain `Latexlike`, or with the definitions only declared, a conditional is an
+//!   unknown macro instead (`techxt.unknown-macro`).
 //! - **`tabbing`**, whose `\=` and `\>` collide with the accent macros of
 //!   [`accents`] — it would have to be a mode of its own, and it is rare in documents
 //!   written this century.
@@ -62,7 +70,7 @@
 //! and a category of your own pushed after [`standard`]'s output overrides anything
 //! the library shipped.
 
-use crate::def::DefinitionSet;
+use crate::def::{DefinitionSet, ParseLang};
 
 pub mod accents;
 mod accents_data;
@@ -101,7 +109,7 @@ pub mod verbatim;
 /// assert_eq!(converter.latex_to_text(r"\textbf{hi}")?.text, "𝐡𝐢\n");
 /// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
-pub fn standard() -> DefinitionSet {
+pub fn standard<L: ParseLang>() -> DefinitionSet<L> {
     DefinitionSet::new()
         .with(symbols_extra::category())
         .with(base::category())
@@ -136,14 +144,14 @@ fn handler(handler: impl crate::def::TextHandler + 'static) -> crate::def::TextR
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Converter;
     use alloc::collections::BTreeSet;
     use alloc::string::String;
     use alloc::vec::Vec;
 
+    #[cfg(feature = "xp")]
     #[test]
     fn the_standard_set_builds() {
-        let converter = Converter::builder()
+        let converter = crate::Converter::builder()
             .definitions(standard())
             .build()
             .expect("the shipped definitions are well-formed");
@@ -152,7 +160,7 @@ mod tests {
 
     #[test]
     fn the_categories_are_pushed_in_the_plans_order() {
-        let definitions = standard();
+        let definitions: DefinitionSet<techy::latexlike::Latexlike> = standard();
         let names: Vec<&str> = definitions.categories().map(|c| c.name()).collect();
         assert_eq!(
             names,
@@ -182,7 +190,8 @@ mod tests {
 
     #[test]
     fn category_names_are_unique() {
-        let names: Vec<String> = standard()
+        let definitions: DefinitionSet<techy::latexlike::Latexlike> = standard();
+        let names: Vec<String> = definitions
             .categories()
             .map(|c| String::from(c.name()))
             .collect();
@@ -190,10 +199,11 @@ mod tests {
         assert_eq!(names.len(), unique.len());
     }
 
+    #[cfg(feature = "xp")]
     #[test]
     fn converter_standard_uses_the_shipped_library() {
         // Not the placeholder set any more: a heading numbers itself.
-        let converted = Converter::standard()
+        let converted = crate::Converter::standard()
             .latex_to_text(r"\section{Intro}")
             .expect("parses");
         assert_eq!(converted.text, "1 Intro\n-------\n");

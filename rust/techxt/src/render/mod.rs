@@ -578,7 +578,7 @@ fn footnote_block(footnotes: &[Flow], options: &Options) -> Flow {
     flow
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "xp"))]
 mod tests {
     use alloc::string::{String, ToString};
     use alloc::sync::Arc;
@@ -593,7 +593,7 @@ mod tests {
     use crate::def::{TextHandler, TextRule};
     use crate::layout::{render, LayoutOptions};
 
-    fn parse(converter: &Converter, latex: &str) -> NodeTree<LatexlikeXp> {
+    fn parse(converter: &Converter<LatexlikeXp>, latex: &str) -> NodeTree<LatexlikeXp> {
         converter.language().parse(latex).expect("parses").tree
     }
 

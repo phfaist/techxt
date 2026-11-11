@@ -5,6 +5,8 @@
 //! tree nesting level. `ConverterBuilder::descent_guard` configures both from one call,
 //! and techxt invents no limit of its own — the library default is techy's.
 
+#![cfg(feature = "xp")]
+
 use techxt::convert::{StdDescentGuard, StdDescentGuardInit};
 use techxt::Converter;
 

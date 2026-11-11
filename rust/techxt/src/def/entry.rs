@@ -11,16 +11,15 @@ use alloc::vec::Vec;
 
 use techy::core::specs::ArgumentSpec;
 use techy::latexlike::{argument_specs_named, ArgumentCodeError, Mode};
-use techy_xp::lang::LatexlikeXp;
 
 use crate::render::ListKind;
 
+use super::lang::ParseLang;
 use super::spec::{CallableSpecSource, EnvBodyKind};
 use super::TextRule;
 
 /// One declared argument, in declaration order.
-#[derive(Clone, Debug)]
-enum ArgDecl {
+enum ArgDecl<L: ParseLang> {
     /// An argument written as a techy argument code plus a name.
     Code {
         /// The techy argument code.
@@ -29,14 +28,58 @@ enum ArgDecl {
         name: Box<str>,
     },
     /// An argument built as a techy [`ArgumentSpec`] directly.
-    Spec(Arc<ArgumentSpec<LatexlikeXp>>),
+    Spec(Arc<ArgumentSpec<L>>),
+}
+
+// Hand-written rather than derived throughout this module: a derive would demand
+// `L: Clone` / `L: Debug` / `L: Default` of a language that is only a marker type.
+impl<L: ParseLang> Clone for ArgDecl<L> {
+    fn clone(&self) -> ArgDecl<L> {
+        match self {
+            ArgDecl::Code { code, name } => ArgDecl::Code {
+                code: code.clone(),
+                name: name.clone(),
+            },
+            ArgDecl::Spec(spec) => ArgDecl::Spec(Arc::clone(spec)),
+        }
+    }
+}
+
+impl<L: ParseLang> core::fmt::Debug for ArgDecl<L> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ArgDecl::Code { code, name } => f
+                .debug_struct("Code")
+                .field("code", code)
+                .field("name", name)
+                .finish(),
+            ArgDecl::Spec(spec) => f.debug_tuple("Spec").field(spec).finish(),
+        }
+    }
 }
 
 /// The argument declarations of one entry, shared by the three builders.
-#[derive(Clone, Debug, Default)]
-struct Args(Vec<ArgDecl>);
+struct Args<L: ParseLang>(Vec<ArgDecl<L>>);
 
-impl Args {
+impl<L: ParseLang> Clone for Args<L> {
+    fn clone(&self) -> Args<L> {
+        Args(self.0.clone())
+    }
+}
+
+impl<L: ParseLang> Default for Args<L> {
+    fn default() -> Args<L> {
+        Args(Vec::new())
+    }
+}
+
+impl<L: ParseLang> core::fmt::Debug for Args<L> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("Args").field(&self.0).finish()
+    }
+}
+
+impl<L: ParseLang> Args<L> {
     fn code(&mut self, code: &str, name: &str) {
         self.0.push(ArgDecl::Code {
             code: code.into(),
@@ -44,7 +87,7 @@ impl Args {
         });
     }
 
-    fn spec(&mut self, spec: ArgumentSpec<LatexlikeXp>) {
+    fn spec(&mut self, spec: ArgumentSpec<L>) {
         self.0.push(ArgDecl::Spec(Arc::new(spec)));
     }
 
@@ -52,7 +95,7 @@ impl Args {
     ///
     /// Codes are resolved through techy's own factory, one call for the whole entry so
     /// that an invalid code reports the position it was written at.
-    fn build(&self) -> Result<Vec<Arc<ArgumentSpec<LatexlikeXp>>>, ArgumentCodeError> {
+    fn build(&self) -> Result<Vec<Arc<ArgumentSpec<L>>>, ArgumentCodeError> {
         let codes: Vec<(&str, &str)> = self
             .0
             .iter()
@@ -61,7 +104,7 @@ impl Args {
                 ArgDecl::Spec(_) => None,
             })
             .collect();
-        let mut built = argument_specs_named(codes)?.into_iter();
+        let mut built = argument_specs_named::<L, _, _, _>(codes)?.into_iter();
         let mut specs = Vec::with_capacity(self.0.len());
         for declaration in &self.0 {
             match declaration {
@@ -114,7 +157,7 @@ type Modes = Option<Vec<Mode>>;
 /// ```
 /// use techxt::def::{Category, EnvDef, MacroDef, Template, TextRule};
 ///
-/// let category = Category::new("links")
+/// let category: Category = Category::new("links")
 ///     .with_macro(
 ///         MacroDef::new("href")
 ///             // A URL must never swallow a following expression, so it is a group and
@@ -149,19 +192,53 @@ type Modes = Option<Vec<Mode>>;
 /// An argument that needs more than a code can say (a state delta of its own, an
 /// adjacency requirement) is declared with [`arg_spec`](Self::arg_spec), which takes a
 /// techy [`ArgumentSpec`] built by hand.
-#[derive(Clone, Debug)]
-pub struct MacroDef {
+///
+/// # The language
+///
+/// An entry is built at the [`ParseLang`] its converter parses with, because the
+/// argument specs it holds are. The parameter is almost always inferred from the
+/// [`Category`](super::Category) or builder the entry reaches.
+pub struct MacroDef<
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+> where
+    L: ParseLang,
+{
     name: Box<str>,
-    args: Args,
+    args: Args<L>,
     rule: Option<TextRule>,
     modes: Modes,
-    spec: Option<Arc<dyn CallableSpecSource>>,
+    spec: Option<Arc<dyn CallableSpecSource<L>>>,
 }
 
-impl MacroDef {
+impl<L: ParseLang> Clone for MacroDef<L> {
+    fn clone(&self) -> MacroDef<L> {
+        MacroDef {
+            name: self.name.clone(),
+            args: self.args.clone(),
+            rule: self.rule.clone(),
+            modes: self.modes.clone(),
+            spec: self.spec.clone(),
+        }
+    }
+}
+
+impl<L: ParseLang> core::fmt::Debug for MacroDef<L> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MacroDef")
+            .field("name", &self.name)
+            .field("args", &self.args)
+            .field("rule", &self.rule)
+            .field("modes", &self.modes)
+            .field("spec", &self.spec)
+            .finish()
+    }
+}
+
+impl<L: ParseLang> MacroDef<L> {
     /// A macro called `name`, written **without** its escape character (`"emph"`, not
     /// `"\\emph"`), taking no arguments and having no rule yet.
-    pub fn new(name: impl Into<Box<str>>) -> MacroDef {
+    pub fn new(name: impl Into<Box<str>>) -> MacroDef<L> {
         MacroDef {
             name: name.into(),
             args: Args::default(),
@@ -174,14 +251,14 @@ impl MacroDef {
     /// An argument-less macro that renders as fixed text: `\alpha` → `α`.
     ///
     /// The overwhelming majority of a definitions library is this one line.
-    pub fn symbol(name: impl Into<Box<str>>, replacement: impl Into<Box<str>>) -> MacroDef {
+    pub fn symbol(name: impl Into<Box<str>>, replacement: impl Into<Box<str>>) -> MacroDef<L> {
         let replacement: Box<str> = replacement.into();
         MacroDef::new(name).rule(TextRule::Literal(Cow::Owned(String::from(replacement))))
     }
 
     /// Declare the next argument: a techy argument code and the name rules refer to it
     /// by.
-    pub fn arg(mut self, code: &str, name: &str) -> MacroDef {
+    pub fn arg(mut self, code: &str, name: &str) -> MacroDef<L> {
         self.args.code(code, name);
         self
     }
@@ -192,7 +269,7 @@ impl MacroDef {
     /// its own (`\text{…}`, which leaves math for the extent of its argument), or one
     /// whose parser is configured (`\\`'s optional `[len]`, which must refuse a
     /// preceding space).
-    pub fn arg_spec(mut self, spec: ArgumentSpec<LatexlikeXp>) -> MacroDef {
+    pub fn arg_spec(mut self, spec: ArgumentSpec<L>) -> MacroDef<L> {
         self.args.spec(spec);
         self
     }
@@ -213,14 +290,14 @@ impl MacroDef {
     /// [`arg`](Self::arg) still name what the foreign spec parses, for the templates and
     /// handlers that read them — a foreign spec whose argument names differ is why a
     /// handler should tolerate both spellings.
-    pub fn spec(mut self, source: impl CallableSpecSource + 'static) -> MacroDef {
+    pub fn spec(mut self, source: impl CallableSpecSource<L> + 'static) -> MacroDef<L> {
         self.spec = Some(Arc::new(source));
         self
     }
 
     /// Declare an optional `*` argument named `star` — the same as
     /// `.arg("s", "star")`.
-    pub fn star(self) -> MacroDef {
+    pub fn star(self) -> MacroDef<L> {
         self.arg("s", "star")
     }
 
@@ -229,7 +306,7 @@ impl MacroDef {
     /// A macro with no rule parses but does not render: it falls through to the name
     /// fallback table and then to
     /// [`Options::unknown_macro`](crate::Options::unknown_macro).
-    pub fn rule(mut self, rule: TextRule) -> MacroDef {
+    pub fn rule(mut self, rule: TextRule) -> MacroDef<L> {
         self.rule = Some(rule);
         self
     }
@@ -238,7 +315,7 @@ impl MacroDef {
     ///
     /// See [`math_mode_only`](Self::math_mode_only) for what a mode restriction does
     /// and does not buy.
-    pub fn text_mode_only(mut self) -> MacroDef {
+    pub fn text_mode_only(mut self) -> MacroDef<L> {
         self.modes = Some(alloc::vec![Mode::Text]);
         self
     }
@@ -268,7 +345,7 @@ impl MacroDef {
     /// arguments are read as ordinary groups and rendered: a text-only `\textcolor`
     /// would print `redx` for `$\textcolor{red}{x}$`. Restrict symbols, not macros with
     /// arguments.
-    pub fn math_mode_only(mut self) -> MacroDef {
+    pub fn math_mode_only(mut self) -> MacroDef<L> {
         self.modes = Some(alloc::vec![Mode::Math]);
         self
     }
@@ -279,9 +356,7 @@ impl MacroDef {
     }
 
     /// The techy argument specs, in declaration order.
-    pub(crate) fn arg_specs(
-        &self,
-    ) -> Result<Vec<Arc<ArgumentSpec<LatexlikeXp>>>, ArgumentCodeError> {
+    pub(crate) fn arg_specs(&self) -> Result<Vec<Arc<ArgumentSpec<L>>>, ArgumentCodeError> {
         self.args.build()
     }
 
@@ -306,7 +381,7 @@ impl MacroDef {
     }
 
     /// What supplies this macro's techy spec, when it is not techxt that does.
-    pub(crate) fn spec_source(&self) -> Option<&Arc<dyn CallableSpecSource>> {
+    pub(crate) fn spec_source(&self) -> Option<&Arc<dyn CallableSpecSource<L>>> {
         self.spec.as_ref()
     }
 }
@@ -318,18 +393,44 @@ impl MacroDef {
 /// needs: [`math_body`](Self::math_body) parses the body as math,
 /// [`verbatim_body`](Self::verbatim_body) parses it as raw characters, and
 /// [`list_body`](Self::list_body) brings `\item` into scope for it.
-#[derive(Clone, Debug)]
-pub struct EnvDef {
+pub struct EnvDef<
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+> where
+    L: ParseLang,
+{
     name: Box<str>,
-    args: Args,
+    args: Args<L>,
     body: EnvBodyKind,
     rule: Option<TextRule>,
 }
 
-impl EnvDef {
+impl<L: ParseLang> Clone for EnvDef<L> {
+    fn clone(&self) -> EnvDef<L> {
+        EnvDef {
+            name: self.name.clone(),
+            args: self.args.clone(),
+            body: self.body,
+            rule: self.rule.clone(),
+        }
+    }
+}
+
+impl<L: ParseLang> core::fmt::Debug for EnvDef<L> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("EnvDef")
+            .field("name", &self.name)
+            .field("args", &self.args)
+            .field("body", &self.body)
+            .field("rule", &self.rule)
+            .finish()
+    }
+}
+
+impl<L: ParseLang> EnvDef<L> {
     /// An environment called `name`, as it is written in `\begin{…}`, with an ordinary
     /// body, no arguments and no rule yet.
-    pub fn new(name: impl Into<Box<str>>) -> EnvDef {
+    pub fn new(name: impl Into<Box<str>>) -> EnvDef<L> {
         EnvDef {
             name: name.into(),
             args: Args::default(),
@@ -339,32 +440,32 @@ impl EnvDef {
     }
 
     /// Declare the next argument of `\begin{name}` — see [`MacroDef::arg`].
-    pub fn arg(mut self, code: &str, name: &str) -> EnvDef {
+    pub fn arg(mut self, code: &str, name: &str) -> EnvDef<L> {
         self.args.code(code, name);
         self
     }
 
     /// Declare the next argument as a techy [`ArgumentSpec`] — see
     /// [`MacroDef::arg_spec`].
-    pub fn arg_spec(mut self, spec: ArgumentSpec<LatexlikeXp>) -> EnvDef {
+    pub fn arg_spec(mut self, spec: ArgumentSpec<L>) -> EnvDef<L> {
         self.args.spec(spec);
         self
     }
 
     /// Render this environment through `rule`.
-    pub fn rule(mut self, rule: TextRule) -> EnvDef {
+    pub fn rule(mut self, rule: TextRule) -> EnvDef<L> {
         self.rule = Some(rule);
         self
     }
 
     /// Parse the body in math mode (`equation`, `align`).
-    pub fn math_body(mut self) -> EnvDef {
+    pub fn math_body(mut self) -> EnvDef<L> {
         self.body = EnvBodyKind::Math;
         self
     }
 
     /// Parse the body as raw characters, with no markup at all (`verbatim`).
-    pub fn verbatim_body(mut self) -> EnvDef {
+    pub fn verbatim_body(mut self) -> EnvDef<L> {
         self.body = EnvBodyKind::Verbatim;
         self
     }
@@ -373,7 +474,7 @@ impl EnvDef {
     ///
     /// The `\item` brought into scope is the one the definition set itself defines, so
     /// a library that customizes `\item` customizes it inside every list too.
-    pub fn list_body(mut self, kind: ListKind) -> EnvDef {
+    pub fn list_body(mut self, kind: ListKind) -> EnvDef<L> {
         self.body = EnvBodyKind::List(kind);
         self
     }
@@ -384,9 +485,7 @@ impl EnvDef {
     }
 
     /// The techy argument specs, in declaration order.
-    pub(crate) fn arg_specs(
-        &self,
-    ) -> Result<Vec<Arc<ArgumentSpec<LatexlikeXp>>>, ArgumentCodeError> {
+    pub(crate) fn arg_specs(&self) -> Result<Vec<Arc<ArgumentSpec<L>>>, ArgumentCodeError> {
         self.args.build()
     }
 
@@ -416,17 +515,43 @@ impl EnvDef {
 ///
 /// techy matches the **longest** registered trigger, and mode visibility is what keeps
 /// `---` out of math and `^` out of text.
-#[derive(Clone, Debug)]
-pub struct SpecialsDef {
+pub struct SpecialsDef<
+    #[cfg(feature = "xp")] L = techy_xp::lang::LatexlikeXp,
+    #[cfg(not(feature = "xp"))] L,
+> where
+    L: ParseLang,
+{
     chars: Box<str>,
-    args: Args,
+    args: Args<L>,
     rule: Option<TextRule>,
     modes: Modes,
 }
 
-impl SpecialsDef {
+impl<L: ParseLang> Clone for SpecialsDef<L> {
+    fn clone(&self) -> SpecialsDef<L> {
+        SpecialsDef {
+            chars: self.chars.clone(),
+            args: self.args.clone(),
+            rule: self.rule.clone(),
+            modes: self.modes.clone(),
+        }
+    }
+}
+
+impl<L: ParseLang> core::fmt::Debug for SpecialsDef<L> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SpecialsDef")
+            .field("chars", &self.chars)
+            .field("args", &self.args)
+            .field("rule", &self.rule)
+            .field("modes", &self.modes)
+            .finish()
+    }
+}
+
+impl<L: ParseLang> SpecialsDef<L> {
     /// A specials triggered by exactly these characters.
-    pub fn new(chars: impl Into<Box<str>>) -> SpecialsDef {
+    pub fn new(chars: impl Into<Box<str>>) -> SpecialsDef<L> {
         SpecialsDef {
             chars: chars.into(),
             args: Args::default(),
@@ -436,32 +561,32 @@ impl SpecialsDef {
     }
 
     /// Declare the next argument — see [`MacroDef::arg`]. `^` and `_` each take one.
-    pub fn arg(mut self, code: &str, name: &str) -> SpecialsDef {
+    pub fn arg(mut self, code: &str, name: &str) -> SpecialsDef<L> {
         self.args.code(code, name);
         self
     }
 
     /// Declare the next argument as a techy [`ArgumentSpec`] — see
     /// [`MacroDef::arg_spec`].
-    pub fn arg_spec(mut self, spec: ArgumentSpec<LatexlikeXp>) -> SpecialsDef {
+    pub fn arg_spec(mut self, spec: ArgumentSpec<L>) -> SpecialsDef<L> {
         self.args.spec(spec);
         self
     }
 
     /// Render this specials through `rule`.
-    pub fn rule(mut self, rule: TextRule) -> SpecialsDef {
+    pub fn rule(mut self, rule: TextRule) -> SpecialsDef<L> {
         self.rule = Some(rule);
         self
     }
 
     /// Make this specials fire in text mode only — the ligatures (`---`, ` `` `).
-    pub fn text_mode_only(mut self) -> SpecialsDef {
+    pub fn text_mode_only(mut self) -> SpecialsDef<L> {
         self.modes = Some(alloc::vec![Mode::Text]);
         self
     }
 
     /// Make this specials fire in math mode only — `^` and `_`.
-    pub fn math_mode_only(mut self) -> SpecialsDef {
+    pub fn math_mode_only(mut self) -> SpecialsDef<L> {
         self.modes = Some(alloc::vec![Mode::Math]);
         self
     }
@@ -472,9 +597,7 @@ impl SpecialsDef {
     }
 
     /// The techy argument specs, in declaration order.
-    pub(crate) fn arg_specs(
-        &self,
-    ) -> Result<Vec<Arc<ArgumentSpec<LatexlikeXp>>>, ArgumentCodeError> {
+    pub(crate) fn arg_specs(&self) -> Result<Vec<Arc<ArgumentSpec<L>>>, ArgumentCodeError> {
         self.args.build()
     }
 

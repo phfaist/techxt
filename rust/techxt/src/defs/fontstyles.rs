@@ -40,7 +40,7 @@
 //! weight back to medium — therefore reads like `\textrm` and `\textup`, there being no
 //! medium-weight alphabet for it to select.
 
-use crate::def::{Category, MacroDef, TextHandler, TextRule};
+use crate::def::{Category, MacroDef, ParseLang, TextHandler, TextRule};
 use crate::flow::Flow;
 use crate::mathfmt::{FontStyle, FontStyleKind};
 use crate::render::{NodeView, RenderCx, RenderError};
@@ -48,7 +48,7 @@ use crate::render::{NodeView, RenderCx, RenderError};
 use super::handler;
 
 /// The font category.
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("fontstyles");
 
     // The text-mode family. Every one of them takes one argument and installs one
@@ -133,7 +133,7 @@ pub fn category() -> Category {
 ///
 /// Sizes are declared for a second reason as well: plain text has one size, so `\huge`
 /// could not change anything even if it did reach the characters after it.
-fn declarations(category: &mut Category) {
+fn declarations<L: ParseLang>(category: &mut Category<L>) {
     for name in [
         // LaTeX2e's family, series and shape declarations …
         "rmfamily",

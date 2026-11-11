@@ -4,6 +4,8 @@
 //! Expected strings are exact, trailing newline included. These are behaviour law: an
 //! example that changes is a design change, not a test that needs updating.
 
+#![cfg(feature = "xp")]
+
 use techxt::Converter;
 
 /// Convert with the shipped definitions and the default options.

@@ -5,6 +5,8 @@
 //! star and up to two bracketed notes, and a definition that does not declare them
 //! leaves `[see]` and `[p. 5]` standing in the reader's sentence.
 
+#![cfg(feature = "xp")]
+
 use techxt::Converter;
 
 fn text(latex: &str) -> String {

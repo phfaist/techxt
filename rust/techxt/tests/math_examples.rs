@@ -4,6 +4,8 @@
 //! table, converted with the shipped definitions and (except where a test says
 //! otherwise) the default options.
 
+#![cfg(feature = "xp")]
+
 use techxt::convert::{MathMode, MatrixDelims};
 use techxt::Converter;
 

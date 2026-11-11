@@ -12,6 +12,8 @@
 //! with the square of the budget (see `ConverterBuilder::expansion_count_limit`), so a
 //! budget of 64 makes a thousand generated documents a matter of milliseconds each.
 
+#![cfg(feature = "xp")]
+
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 

@@ -13,6 +13,8 @@
 //! indent inserted *inside* it. Both are checked across a spread of wrap widths and
 //! inside a list.
 
+#![cfg(feature = "xp")]
+
 use proptest::prelude::*;
 use techxt::convert::{
     MathMode, OutputRegion, UnknownEnvPolicy, UnknownMacroPolicy, VerbatimProvenance,

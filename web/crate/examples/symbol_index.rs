@@ -21,10 +21,10 @@
 //! module that is size-budgeted to serve a development tool would be
 //! the wrong trade even though an example never reaches `dist/`.
 
-use techxt::def::{CallableKind, ModeVisibility};
+use techxt::def::{CallableKind, DefinitionSet, ModeVisibility};
 
 fn main() {
-    let definitions = techxt::defs::standard();
+    let definitions: DefinitionSet = techxt::defs::standard();
     let symbols = definitions.symbols();
 
     let mut out = String::from("[\n");

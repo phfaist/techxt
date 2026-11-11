@@ -1,5 +1,7 @@
 //! `defs::fontstyles`: the font macros, the two stacks, and `\emph`'s toggle.
 
+#![cfg(feature = "xp")]
+
 use techxt::mathfmt::FontStyle;
 use techxt::Converter;
 

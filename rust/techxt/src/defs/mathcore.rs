@@ -39,7 +39,7 @@
 use alloc::format;
 use alloc::string::String;
 
-use crate::def::{Category, MacroDef, Template, TextHandler, TextRule};
+use crate::def::{Category, MacroDef, ParseLang, Template, TextHandler, TextRule};
 use crate::flow::{Flow, FlowItem};
 use crate::mathfmt::{
     frac_atom, script_atom, sqrt_atom, Atom, AtomClass, FontStyle, FontStyleKind, ScriptKind,
@@ -60,7 +60,7 @@ use super::handler;
 /// );
 /// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("mathcore");
     greek(&mut category);
     symbols(&mut category);
@@ -84,7 +84,7 @@ pub fn category() -> Category {
 /// `\varepsilon` the ordinary `ε`, `\phi` is the phi *symbol* `ϕ` and `\varphi` the
 /// ordinary `φ`. That is LaTeX's own pairing, and reversing it would silently change
 /// every physics paper that converts through techxt.
-fn greek(category: &mut Category) {
+fn greek<L: ParseLang>(category: &mut Category<L>) {
     for (name, small, capital) in GREEK_LETTERS {
         category.add_macro(MacroDef::symbol(*name, *small));
         category.add_macro(MacroDef::symbol(capitalized(name), *capital));
@@ -150,7 +150,7 @@ const GREEK_VARIANTS: &[(&str, &str)] = &[
 // ------------------------------------------------------------------------- symbols
 
 /// Every symbol that is one character and needs no class of its own.
-fn symbols(category: &mut Category) {
+fn symbols<L: ParseLang>(category: &mut Category<L>) {
     for (name, replacement) in SYMBOLS {
         category.add_macro(MacroDef::symbol(*name, *replacement));
     }
@@ -397,7 +397,7 @@ const SYMBOLS: &[(&str, &str)] = &[
 /// The `\var…` forms are alternative typesettings — a bar or an arrow instead of the
 /// spelled-out words — that plain text cannot show, so each renders as the operator it
 /// stands for.
-fn operator_names(category: &mut Category) {
+fn operator_names<L: ParseLang>(category: &mut Category<L>) {
     for (name, text) in OPERATOR_NAMES.iter().chain(EXTRA_OPERATOR_NAMES) {
         category.add_macro(MacroDef::new(*name).rule(handler(FixedAtom {
             text,
@@ -498,7 +498,7 @@ const EXTRA_OPERATOR_NAMES: &[(&str, &str)] = &[("Tr", "Tr"), ("tr", "tr")];
 // -------------------------------------------------------- fractions and roots
 
 /// `\frac` and `\sqrt`, and the aliases that render identically.
-fn fractions_and_roots(category: &mut Category) {
+fn fractions_and_roots<L: ParseLang>(category: &mut Category<L>) {
     // `\dfrac`/`\tfrac` only choose display or text size, and `\cfrac` only sets a
     // continued fraction more openly; plain text has one size and one shape.
     for name in ["frac", "dfrac", "tfrac", "cfrac", "nicefrac", "textfrac"] {
@@ -531,7 +531,7 @@ fn fractions_and_roots(category: &mut Category) {
 /// base — `\stackrel{\mathrm{def}}{=}` becomes `=ᵈᵉᶠ` — through the same all-or-nothing
 /// ladder `^` and `_` run, which falls back to `^`/`_` notation for an
 /// annotation unicode cannot show. Nothing is dropped either way.
-fn stacked(category: &mut Category) {
+fn stacked<L: ParseLang>(category: &mut Category<L>) {
     for name in ["binom", "dbinom", "tbinom"] {
         category.add_macro(
             MacroDef::new(name)
@@ -580,7 +580,7 @@ const BASE: &str = "base";
 /// `\nonumber` and `\notag` suppress an equation number techxt never printed. Plain
 /// text has one size, one place for a script and no equation numbers, so all of them
 /// are declared — so that they are not reported as unknown — and render as nothing.
-fn styles(category: &mut Category) {
+fn styles<L: ParseLang>(category: &mut Category<L>) {
     for name in [
         "displaystyle",
         "textstyle",
@@ -618,7 +618,7 @@ const RADICAND: &str = "radicand";
 /// Plain text has one size, so all that is left to do is render the delimiter the macro
 /// was pointed at — and to drop `.`, which is LaTeX's way of writing "no delimiter on
 /// this side" in `\left. … \right)`.
-fn delimiters(category: &mut Category) {
+fn delimiters<L: ParseLang>(category: &mut Category<L>) {
     for (names, side) in [
         (&["left", "bigl", "Bigl", "biggl", "Biggl"][..], Side::Left),
         (&["right", "bigr", "Bigr", "biggr", "Biggr"][..], Side::Right),
@@ -975,7 +975,7 @@ impl TextHandler for Delimited {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "xp"))]
 mod tests {
     use crate::Converter;
 

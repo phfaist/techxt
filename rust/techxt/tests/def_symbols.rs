@@ -11,6 +11,8 @@
 //! fourteen hundred names, and the table is sorted precisely so that a caller answering
 //! a keystroke does a binary search rather than another walk of nineteen categories.
 
+#![cfg(feature = "xp")]
+
 use techxt::def::{
     CallableKind, Category, DefinitionSet, EnvDef, MacroDef, ModeVisibility, SpecialsDef, Template,
     TextRule,
@@ -24,7 +26,7 @@ fn set_of(category: Category) -> DefinitionSet {
 
 #[test]
 fn a_category_reads_back_the_entries_it_was_built_from() {
-    let category = Category::new("mine")
+    let category: Category = Category::new("mine")
         .with_macro(MacroDef::symbol("me", "Philippe"))
         .with_macro(
             MacroDef::new("shout")
@@ -44,7 +46,7 @@ fn a_category_reads_back_the_entries_it_was_built_from() {
 
 #[test]
 fn a_set_with_nothing_in_it_indexes_to_nothing() {
-    let definitions = DefinitionSet::new();
+    let definitions: DefinitionSet = DefinitionSet::new();
     let symbols = definitions.symbols();
     assert!(symbols.is_empty());
     assert_eq!(symbols.len(), 0);
@@ -310,7 +312,7 @@ fn an_entry_reports_the_modes_its_definition_is_visible_in() {
 
 #[test]
 fn the_shipped_library_reads_back() {
-    let definitions = techxt::defs::standard();
+    let definitions: DefinitionSet = techxt::defs::standard();
     let symbols = definitions.symbols();
 
     // The generated long tail declares `\alpha` too; the curated `mathcore` is pushed
@@ -375,7 +377,7 @@ fn the_shipped_library_reads_back() {
 
 #[test]
 fn the_shipped_library_is_indexed_once_and_then_only_searched() {
-    let definitions = techxt::defs::standard();
+    let definitions: DefinitionSet = techxt::defs::standard();
     // One walk of nineteen categories, here and nowhere else in this test.
     let symbols = definitions.symbols();
 
@@ -412,7 +414,7 @@ fn the_shipped_library_never_shadows_a_name_with_a_narrower_one() {
     // simplification if the library ever restricted a definition that shadows an
     // unrestricted one. It never does — the generated long tail is the restricted layer
     // and every curated category sits above it — and this test is what keeps that true.
-    let definitions = techxt::defs::standard();
+    let definitions: DefinitionSet = techxt::defs::standard();
     let mut narrowed = Vec::new();
     for category in definitions.categories() {
         for definition in category.macros() {

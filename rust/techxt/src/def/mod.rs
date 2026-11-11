@@ -44,6 +44,19 @@
 //! # Ok::<(), Box<dyn core::error::Error>>(())
 //! ```
 //!
+//! # The parse language
+//!
+//! Entries, categories and sets are built at the [`ParseLang`] their converter parses
+//! with, because the argument specs they register are. The parameter is inferred from
+//! the builder or converter a definition reaches — above, from `Converter::builder()`.
+//! With the `xp` feature a bare `DefinitionSet` in type position means
+//! `DefinitionSet<`[`LatexlikeXp`](crate::convert::LatexlikeXp)`>`, which is what the
+//! annotated binding below relies on. One library serves every language: the
+//! language, not the definition, decides what only it can, such as whether the
+//! defining commands of [`defs::preamble`](crate::defs::preamble) are honoured
+//! ([`ParseLang::definer_spec`]) and which providers sit around the categories
+//! ([`ScopeFrame`]).
+//!
 //! # Reading definitions back
 //!
 //! The same structures read as well as they write. [`Category`] hands back the entries
@@ -53,15 +66,16 @@
 //! reference page.
 //!
 //! ```
-//! use techxt::def::CallableKind;
+//! use techxt::def::{CallableKind, DefinitionSet};
 //!
-//! let definitions = techxt::defs::standard();
+//! let definitions: DefinitionSet = techxt::defs::standard();
 //! let symbols = definitions.symbols();
 //! let alpha = symbols.get(CallableKind::Macro, "alpha").expect("the library has it");
 //! assert_eq!(alpha.replacement, Some("α"));
 //! ```
 
 mod entry;
+mod lang;
 mod rule;
 mod set;
 mod spec;
@@ -69,15 +83,16 @@ mod symbols;
 mod template;
 
 pub use entry::{EnvDef, MacroDef, SpecialsDef};
+pub use lang::{Definer, ParseLang, ScopeFrame, SpecBuildCx};
 pub use rule::{CallableKind, TextHandler, TextRule};
 pub use set::{Category, DefinitionSet};
 pub use spec::{
-    CallableSpecSource, EnvBodyKind, SpecBuildCx, TechxtEnvironmentBehavior, TechxtMacroSpec,
+    CallableSpecSource, EnvBodyKind, TechxtEnvironmentBehavior, TechxtMacroSpec,
     TechxtSpecialsSpec,
 };
 pub use symbols::{ModeVisibility, SymbolEntry, SymbolIndex};
 pub use template::{Template, TemplateError};
 
-pub(crate) use set::{BuiltDefinitions, RuleTable, ScopeFrame};
+pub(crate) use set::{BuiltDefinitions, RuleTable};
 pub(crate) use spec::{embedded_rule, is_refusal};
 pub(crate) use template::{ArgRef, Seg, TemplateScope};

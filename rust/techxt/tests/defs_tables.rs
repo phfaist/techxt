@@ -1,5 +1,7 @@
 //! `defs::tables`: `tabular` and its relatives, column alignment, rules and spans.
 
+#![cfg(feature = "xp")]
+
 use techxt::diag::UnsupportedIgnored;
 use techxt::{Conversion, Converter};
 

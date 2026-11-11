@@ -5,6 +5,8 @@
 //! disagreements, the matrix family, and the cases the port reference
 //! (`/home/user/ref/notes/pylatexenc-math.md` §10) singles out as easy to get wrong.
 
+#![cfg(feature = "xp")]
+
 use techxt::convert::{FontStyle, MathMode, MathWrapDelims, MatrixDelims, StdDescentGuardInit};
 use techxt::Converter;
 

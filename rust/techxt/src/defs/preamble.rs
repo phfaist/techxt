@@ -25,10 +25,11 @@
 //!
 //! `\newcommand`, `\renewcommand`, `\providecommand`, `\newenvironment`,
 //! `\renewenvironment`, `\def`, `\gdef`, `\let`, `\edef`, `\xdef`,
-//! `\NewDocumentCommand` and `\DeclareMathOperator` are the `DEFINERS` table, and each
-//! is registered as the definer spec that actually makes the definition. A later use of
-//! the defined macro is expanded by the token reader techy-xp puts under techxt's
-//! parser, so
+//! `\NewDocumentCommand` and `\DeclareMathOperator` are the `DEFINERS` table. Under
+//! techy-xp's [`LatexlikeXp`](crate::convert::LatexlikeXp) — the default parse language
+//! with the `xp` feature — each is registered as the definer spec that actually makes
+//! the definition. A later use of the defined macro is expanded by the token reader
+//! techy-xp puts under techxt's parser, so
 //! `\newcommand\greet[1]{Hello #1!}\greet{world}` converts to `Hello world!` — the
 //! definition itself still renders as nothing, which is what a definer contributes to a
 //! document's text.
@@ -42,6 +43,13 @@
 //! );
 //! # Ok::<(), Box<dyn core::error::Error>>(())
 //! ```
+//!
+//! Whether a definer is honoured is the parse language's decision, not this module's:
+//! each entry asks [`ParseLang::definer_spec`], and where the language declines, the
+//! entry registers the argument shape written beside it (see *A declared definition's
+//! name and body are read as characters* below), which consumes the definition and
+//! defines nothing. techy's plain [`Latexlike`](techy::latexlike::Latexlike) always
+//! declines; `LatexlikeXp` declines when told to (*Turning it off*, below).
 //!
 //! Each definer parses its invocation the way *it* defines, not the way this module's
 //! own table declares: the name form (`{\x}` or `\x`), the parameter declaration
@@ -80,7 +88,7 @@
 //! refuse every definition ever written and `\providecommand` would make none.
 //!
 //! So each definer is registered with
-//! [`RedefinitionRule::Always`]. The cost is
+//! [`RedefinitionRule::Always`](techy_xp::define::RedefinitionRule::Always). The cost is
 //! `techy-xp.define.definition-already-exists` and its sibling
 //! `…definition-does-not-exist`, which techxt never reports; the alternative is a feature
 //! that silently does nothing whenever
@@ -91,7 +99,7 @@
 //!
 //! ## `\DeclareMathOperator` is techxt's own definer
 //!
-//! techy-xp ships no definer for amsmath's operator declaration, so this module does.
+//! techy-xp ships no definer for amsmath's operator declaration, so techxt does.
 //! `\DeclareMathOperator{\Tr}{Tr}` is `\newcommand{\Tr}{\operatorname{Tr}}` by another
 //! name, and the starred form is `\operatorname*`: `MathOperatorDefiner` reads the name
 //! and the body the way `\newcommand` does and builds the same token-time macro, with
@@ -116,9 +124,10 @@
 //! ## Turning it off
 //!
 //! [`ConverterBuilder::macro_definitions`](crate::ConverterBuilder::macro_definitions)
-//! takes [`MacroDefinitions::Declared`], and
+//! takes [`MacroDefinitions::Declared`](crate::convert::MacroDefinitions::Declared), and
 //! every entry of that table then falls back to the argument-consuming declaration
-//! written beside it — the shapes below, which are what techxt 0.1.0 registered.
+//! written beside it — the shapes below, which are what techxt 0.1.0 registered, and
+//! what a converter for techy's plain `Latexlike` always registers.
 //!
 //! # A declared definition's name and body are read as characters
 //!
@@ -145,25 +154,15 @@
 //! silently. `\def\x{…}`, which is *only* written unbraced, therefore keeps the
 //! ordinary parser for its name. Neither restriction applies once the definers are on.
 
-use alloc::format;
-use alloc::string::ToString;
 use alloc::sync::Arc;
 
 use techy::core::constructs::CharsGroupArgumentParser;
 use techy::core::specs::{ArgumentSpec, CallableSpec};
-use techy::latexlike::GroupType;
-use techy_xp::define::{
-    def_definer, gdef_definer, let_definer, new_command_definer, new_document_command_definer,
-    provide_command_definer, renew_command_definer, Defined, DefinerSpec, DefinitionRefused,
-    DefinitionScope, NameForm, ParameterSyntax, ParsedDefinition, RedefinitionRule, StarForm,
-};
-use techy_xp::envs::{new_environment_definer, renew_environment_definer};
-use techy_xp::expand::{Delivery, ExpandableSpec, MacroBody};
-use techy_xp::lang::LatexlikeXp;
-use techy_xp::presets::ExpandedDefinerSpec;
+use techy::latexlike::LatexlikeGroupType;
 
-use crate::convert::MacroDefinitions;
-use crate::def::{CallableSpecSource, Category, EnvDef, MacroDef, SpecBuildCx, TextRule};
+use crate::def::{
+    CallableSpecSource, Category, Definer, EnvDef, MacroDef, ParseLang, SpecBuildCx, TextRule,
+};
 
 /// The preamble category.
 ///
@@ -178,7 +177,7 @@ use crate::def::{CallableSpecSource, Category, EnvDef, MacroDef, SpecBuildCx, Te
 /// assert!(!converted.diagnostics.has_errors());
 /// # Ok::<(), Box<dyn core::error::Error>>(())
 /// ```
-pub fn category() -> Category {
+pub fn category<L: ParseLang>() -> Category<L> {
     let mut category = Category::new("preamble");
 
     // The document itself: its body is the text, and `\begin{document}` is where the
@@ -203,7 +202,7 @@ pub fn category() -> Category {
 }
 
 /// Apply an entry's argument declaration and its `Skip` rule.
-fn declared(definition: MacroDef, codes: &[(&str, &str)]) -> MacroDef {
+fn declared<L: ParseLang>(definition: MacroDef<L>, codes: &[(&str, &str)]) -> MacroDef<L> {
     let mut definition = definition;
     for (code, argument) in codes {
         definition = match *code {
@@ -226,168 +225,26 @@ const RAW: &str = "raw";
 ///
 /// See the module documentation for why a definition's name and body are read this way
 /// — and for the one thing it costs.
-fn raw_group(name: &str) -> ArgumentSpec<LatexlikeXp> {
-    ArgumentSpec::new(CharsGroupArgumentParser::new(GroupType::Content), name)
+fn raw_group<L: ParseLang>(name: &str) -> ArgumentSpec<L> {
+    ArgumentSpec::new(CharsGroupArgumentParser::new(L::GroupTypeId::content_group()), name)
 }
 
-/// Which techy-xp definer a `DEFINERS` entry hands over.
-///
-/// One variant per shipped definer rather than one per command, because `\edef` and
-/// `\xdef` are `\def` and `\gdef` under a warning rather than definers of their own.
-#[derive(Clone, Copy, Debug)]
-enum Definer {
-    /// `\newcommand{\x}[n][d]{body}`.
-    NewCommand,
-    /// `\renewcommand{\x}[n][d]{body}`.
-    RenewCommand,
-    /// `\providecommand{\x}[n][d]{body}`.
-    ProvideCommand,
-    /// `\newenvironment{x}[n][d]{begin}{end}`.
-    NewEnvironment,
-    /// `\renewenvironment{x}[n][d]{begin}{end}`.
-    RenewEnvironment,
-    /// `\def\x#1{body}` — TeX's, into the local scope.
-    Def,
-    /// `\gdef\x#1{body}` — the same, into the global scope, so it escapes its group.
-    Gdef,
-    /// `\let\a=\b` — copy `\b`'s meaning to `\a`.
-    Let,
-    /// `\edef` — `\def`, plus techy-xp's approximation warning.
-    Edef,
-    /// `\xdef` — `\gdef`, plus the same warning.
-    Xdef,
-    /// `\NewDocumentCommand\x{m o}{body}` — xparse's, with `m`, `o`, `O{…}` and `s`.
-    NewDocumentCommand,
-    /// `\DeclareMathOperator{\x}{name}` — amsmath's, which is
-    /// `\newcommand{\x}{\operatorname{name}}`; techxt's own definer, since techy-xp
-    /// ships none.
-    DeclareMathOperator,
-}
-
-impl Definer {
-    /// The techy-xp spec, built to write into `local` and `global`.
-    fn spec(self, local: &str, global: &str) -> Arc<dyn CallableSpec<LatexlikeXp>> {
-        let scoped = |spec: DefinerSpec<LatexlikeXp>| {
-            spec.with_definition_scopes(local, global)
-                // Unconditionally, whatever the definer's own rule was: techxt's
-                // stack cannot answer "is this name new?" — the module documentation's
-                // *Every definer here redefines unconditionally* says why.
-                .with_redefinition(RedefinitionRule::Always)
-        };
-        match self {
-            Definer::NewCommand => Arc::new(scoped(new_command_definer())),
-            Definer::RenewCommand => Arc::new(scoped(renew_command_definer())),
-            Definer::ProvideCommand => Arc::new(scoped(provide_command_definer())),
-            Definer::NewEnvironment => Arc::new(scoped(new_environment_definer())),
-            Definer::RenewEnvironment => Arc::new(scoped(renew_environment_definer())),
-            Definer::Def => Arc::new(scoped(def_definer())),
-            Definer::Gdef => Arc::new(scoped(gdef_definer())),
-            Definer::Let => Arc::new(scoped(let_definer())),
-            Definer::Edef => Arc::new(ExpandedDefinerSpec::new(scoped(def_definer()), "def")),
-            Definer::Xdef => Arc::new(ExpandedDefinerSpec::new(scoped(gdef_definer()), "gdef")),
-            Definer::NewDocumentCommand => Arc::new(scoped(new_document_command_definer())),
-            Definer::DeclareMathOperator => Arc::new(scoped(declare_math_operator_definer())),
-        }
-    }
-}
-
-/// Registers techy-xp's definer spec, unless the converter only *declares* the defining
-/// commands.
+/// Registers the definer spec the parse language hands over for one defining command,
+/// or nothing when the language declines it ([`ParseLang::definer_spec`]).
 ///
 /// Declining is what makes
 /// [`ConverterBuilder::macro_definitions`](crate::ConverterBuilder::macro_definitions) a
 /// runtime switch rather than two libraries: with the source silent, the entry registers
 /// exactly the argument-consuming declaration written beside it in [`DEFINERS`], which is
-/// what techxt 0.1.0 registered.
+/// what techxt 0.1.0 registered — and what every language that honours no definer
+/// registers too.
 #[derive(Debug)]
 struct Definers(Definer);
 
-impl CallableSpecSource for Definers {
-    fn callable_spec(&self, cx: &SpecBuildCx) -> Option<Arc<dyn CallableSpec<LatexlikeXp>>> {
-        match cx.macro_definitions() {
-            MacroDefinitions::Declared => None,
-            _ => Some(self.0.spec(cx.local_scope_name(), cx.global_scope_name())),
-        }
+impl<L: ParseLang> CallableSpecSource<L> for Definers {
+    fn callable_spec(&self, cx: &SpecBuildCx<'_, L>) -> Option<Arc<dyn CallableSpec<L>>> {
+        L::definer_spec(self.0, cx)
     }
-}
-
-/// The definer behind `\DeclareMathOperator`: a token-time macro whose body is the
-/// operator's name wrapped in `\operatorname{…}`.
-///
-/// techy-xp ships no definer for amsmath's declaration (its own docs list it among the
-/// deferred ones), and there is nothing to defer: `\DeclareMathOperator{\Tr}{Tr}` is
-/// `\newcommand{\Tr}{\operatorname{Tr}}`, and the starred form is `\operatorname*`.
-/// So this is techy-xp's macro definer with one step in front — the body's text is
-/// prefixed with `\operatorname`, spelled with the escape character the author used,
-/// and braced. The macro is otherwise what `\newcommand` would have made: the same
-/// token rules (those in force where the declaration was written), the same definition
-/// site, no parameters. `\operatorname` is techxt's own
-/// ([`defs::mathcore`](super::mathcore)), so wherever the operator is used its name is
-/// set upright and classed as an operator, and a document's later
-/// `\renewcommand{\Tr}{…}` shadows it like any other macro.
-#[derive(Debug)]
-struct MathOperatorDefiner;
-
-/// `MathOperatorDefiner`'s wire identity, namespaced the way every techy identifier is.
-const MATH_OPERATOR_DEFINER_IDENTIFIER: &str = "techxt.define.math-operator";
-
-impl techy_xp::define::Definer<LatexlikeXp> for MathOperatorDefiner {
-    fn identifier(&self) -> &str {
-        MATH_OPERATOR_DEFINER_IDENTIFIER
-    }
-
-    fn define(
-        &self,
-        mut parsed: ParsedDefinition<LatexlikeXp>,
-    ) -> Result<Defined<LatexlikeXp>, DefinitionRefused> {
-        // Empty by construction — the spec declares no parameter syntax — and handed
-        // over rather than invented, so that the spec stays the one source of truth.
-        let shapes = parsed.take_shapes();
-        let mut bodies = parsed.take_bodies();
-        if bodies.is_empty() {
-            return Err(DefinitionRefused::new(
-                parsed.name(),
-                "this definer read no operator name, and the operator is its name",
-            ));
-        }
-        let body = bodies.remove(0);
-        let star = if parsed.starred() { "*" } else { "" };
-        let text = format!(
-            "{escape}operatorname{star}{{{name}}}",
-            escape = parsed.escape_char(),
-            name = body.text(),
-        );
-        let macro_body = MacroBody::new(
-            text,
-            Arc::clone(body.definition_state()),
-            body.parameters(),
-        );
-        let spec = ExpandableSpec::new(macro_body, shapes, Delivery::TokenTime)
-            .map_err(|error| DefinitionRefused::new(parsed.name(), error.to_string()))?
-            .with_definition_site(parsed.site().clone());
-        Ok(Defined::one(
-            parsed.scope(),
-            parsed.callable_type(),
-            parsed.name(),
-            Arc::new(spec),
-        ))
-    }
-}
-
-/// `\DeclareMathOperator{\x}{name}` and `\DeclareMathOperator*{\x}{name}` — amsmath's.
-///
-/// The `\newcommand` shape without the parameter declaration: a `{\cs}`-or-`\cs` name
-/// and one body. The star is read the way the `\newcommand` family reads it
-/// ([`StarForm::AcceptedAndIgnored`] is techy-xp's name for *read and recorded*), and
-/// this definer does not ignore it: it chooses `\operatorname*`.
-fn declare_math_operator_definer() -> DefinerSpec<LatexlikeXp> {
-    DefinerSpec::new(Arc::new(MathOperatorDefiner))
-        .with_name_form(NameForm::BracedOrBare)
-        .with_parameters(ParameterSyntax::None)
-        .with_bodies(1)
-        .with_redefinition(RedefinitionRule::Always)
-        .with_scope(DefinitionScope::Local)
-        .with_star(StarForm::AcceptedAndIgnored)
 }
 
 /// One defining command: its name, the definer it hands over, and the shape it declares
