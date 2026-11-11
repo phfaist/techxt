@@ -219,6 +219,10 @@ export const TEX_INPUT: {
     arccosh: '\\operatorname{arccosh}',
     arcsinh: '\\operatorname{arcsinh}',
     arctanh: '\\operatorname{arctanh}',
+    // The trace, which `defs::mathcore` sets as an operator beside `\\det`. Both are
+    // `physics`'s, and `physics` was measured and rejected above, so they are defined here.
+    Tr: '\\operatorname{Tr}',
+    tr: '\\operatorname{tr}',
     // Three literals, each the character techxt's own table renders the macro to. The
     // brackets carry their delimiter class as well, so that `\llbracket x \rrbracket`
     // spaces like the fence it is rather than like an ordinary symbol.
