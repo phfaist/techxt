@@ -406,7 +406,7 @@
 //!
 //! ## Status
 //!
-//! Version 0.1.0 is feature-complete: the layout engine and the flow model; the
+//! techxt is feature-complete: the layout engine and the flow model; the
 //! renderer, its state and the diagnostics channel; the definitions model with its
 //! template mini-language; and the whole definitions library — escapes and spacing,
 //! accents, font styles, sectioning, lists, verbatim, tables, theorems and the other
